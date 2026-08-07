@@ -1,9 +1,9 @@
-# HF LLM Agent
+# Firik Agent
 
-HF LLM Agent is a workspace-scoped software-development agent powered by
-Hugging Face models. It can inspect and edit code, search official
-documentation and the public web, run development commands, recursively verify
-multi-language repositories, and keep a durable development record.
+Firik Agent is a workspace-scoped software-development agent. It can inspect
+and edit code, search official documentation and the public web, run
+development commands, recursively verify multi-language repositories, and keep
+a durable development record.
 
 It is deliberately more than a prompt plus shell access. Architecture,
 planning, mutations, verification, retries, and completion are enforced by
@@ -18,7 +18,7 @@ deterministic Python code.
 - Non-shell command execution with executable, timeout, cwd, environment, and
   output policies.
 - Recursive formatting and quality checks for Python, Node, Rust, Go, and Make
-  projects, with `.hf-agent.toml` overrides.
+  projects, with `.firik-agent.toml` overrides.
 - Root-cause correction loop with a bounded verification retry budget.
 - Read-only Git status and diff tools.
 - Official-documentation search, public web search, and bounded URL fetching
@@ -42,7 +42,7 @@ SeniorDevelopmentAgent
        -> CommandRunner + ProjectVerifier
        -> ResearchClient (web and docs)
   -> smolagents ToolCallingAgent
-  -> Hugging Face hosted or local model
+  -> hosted or local model
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for boundaries, state
@@ -73,7 +73,7 @@ Hosted inference uses your Hugging Face credentials (`hf auth login` or
 `HF_TOKEN`):
 
 ```bash
-hf-agent develop \
+firik-agent develop \
   --workspace /path/to/repository \
   --model Qwen/Qwen3-Coder-30B-A3B-Instruct \
   "Add cursor pagination to the users API without breaking existing clients"
@@ -82,7 +82,7 @@ hf-agent develop \
 Choose an Inference Provider when needed:
 
 ```bash
-hf-agent develop \
+firik-agent develop \
   --workspace . \
   --provider novita \
   --model Qwen/Qwen3-Coder-30B-A3B-Instruct \
@@ -92,14 +92,14 @@ hf-agent develop \
 Run locally only with a tool-calling instruct model that fits the machine:
 
 ```bash
-hf-agent develop --workspace . --local --model <model-id> "Fix the failing tests"
+firik-agent develop --workspace . --local --model <model-id> "Fix the failing tests"
 ```
 
-Task evidence is stored under `.hf-agent/tasks/` and is ignored by Git. Inspect
+Task evidence is stored under `.firik-agent/tasks/` and is ignored by Git. Inspect
 a previous task with:
 
 ```bash
-hf-agent status <task-id> --workspace .
+firik-agent status <task-id> --workspace .
 ```
 
 The command exits `0` only when the deterministic process reaches `complete`;
@@ -108,7 +108,7 @@ an incomplete, blocked, or unverified model answer exits `2`.
 ## Python API
 
 ```python
-from hf_llm_agent import SeniorDevelopmentAgent
+from firik_agent import SeniorDevelopmentAgent
 
 agent = SeniorDevelopmentAgent(
     workspace="/path/to/repository",
@@ -139,7 +139,7 @@ the latest full verification passed.
 ## Verification configuration
 
 The default recursive verifier discovers repository manifests. To use exact
-project commands, add `.hf-agent.toml`:
+project commands, add `.firik-agent.toml`:
 
 ```toml
 [verification]
@@ -152,7 +152,9 @@ commands = [
 ```
 
 Commands are argument arrays or shell-like strings parsed with `shlex`; no
-shell is launched and control operators are rejected.
+shell is launched and control operators are rejected. Python inline code and
+interactive mode are disabled; approved `python -m` quality tools and workspace
+`.py` files are supported.
 
 ## Built-in tools
 
@@ -173,7 +175,7 @@ before building the smolagents runtime.
 python -m pip install -e '.[dev,agent]'
 ruff format .
 ruff check .
-mypy hf_llm_agent
+mypy firik_agent
 pytest
 python -m build
 ```

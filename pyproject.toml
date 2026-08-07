@@ -1,50 +1,72 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.build_meta:__legacy__"
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "hf-llm-agent"
-version = "0.1.0"
-description = "LLM Agent System with Dynamic Hugging Face Model Loading/Ejection"
+name = "firik-agent"
+version = "0.2.0"
+description = "A gated senior software-development agent with pluggable model providers"
 readme = "README.md"
-requires-python = ">=3.9"
-license = {text = "MIT"}
-authors = [
-    {name = "HF-LLM Agent Team", email = "team@hf-llm-agent.dev"},
-]
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Firik Agent contributors" }]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development",
 ]
-
-dependencies = [
-    "huggingface_hub>=0.21.0",
-    "transformers>=4.36.0",
-    "torch>=2.1.0",
-    "accelerate>=0.25.0",
-]
+dependencies = ["huggingface-hub>=0.34"]
 
 [project.optional-dependencies]
+agent = [
+    "ddgs>=9.14,<10",
+    "smolagents>=1.26,<2",
+]
+web = ["ddgs>=9.14,<10"]
+local = [
+    "accelerate>=1.10",
+    "ddgs>=9.14,<10",
+    "smolagents[transformers]>=1.26,<2",
+    "torch>=2.4",
+    "transformers>=4.56",
+]
 dev = [
-    "pytest>=7.4.0",
-    "black>=23.12.0",
-    "ruff>=0.1.0",
-    "pre-commit>=3.6.0",
+    "build>=1.3",
+    "mypy>=1.17",
+    "pytest>=8.4",
+    "pytest-cov>=6.2",
+    "ruff>=0.12",
 ]
 
-[project.urls]
-Homepage = "https://github.com/hf-llm-agent"
-Repository = "https://github.com/hf-llm-agent/hf-llm-agent"
-Documentation = "https://hf-llm-agent.readthedocs.io"
+[project.scripts]
+firik-agent = "firik_agent.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["hf_llm_agent*"]
+include = ["firik_agent*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = ["smolagents", "torch", "transformers"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--strict-config --strict-markers"

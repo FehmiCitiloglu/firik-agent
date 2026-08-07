@@ -1,5 +1,5 @@
 {
-  "name": "HF LLM Agent",
+  "name": "Firik Agent",
   "build": {
     "dockerfile": "Dockerfile",
     "context": ".."
@@ -12,13 +12,13 @@
     "PATH": "/opt/venv/bin:${containerEnv:PATH}"
   },
   "mounts": [
-    "source=hf-llm-agent-huggingface-cache,target=/home/vscode/.cache/huggingface,type=volume",
-    "source=hf-llm-agent-pip-cache,target=/home/vscode/.cache/pip,type=volume"
+    "source=firik-agent-huggingface-cache,target=/home/vscode/.cache/huggingface,type=volume",
+    "source=firik-agent-pip-cache,target=/home/vscode/.cache/pip,type=volume"
   ],
   "runArgs": [
     "--shm-size=2g"
   ],
-  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cache && /opt/venv/bin/python -m pip install --index-url https://download.pytorch.org/whl/cpu 'torch>=2.1.0' && /opt/venv/bin/python -m pip install -e '.[dev]'",
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cache && /opt/venv/bin/python -m pip install --index-url https://download.pytorch.org/whl/cpu 'torch>=2.4.0' && /opt/venv/bin/python -m pip install -e '.[dev,agent]'",
   "customizations": {
     "vscode": {
       "extensions": [

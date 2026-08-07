@@ -2,8 +2,9 @@
 
 ## Purpose
 
-HF LLM Agent is a workspace-scoped software-development agent. It combines a
-Hugging Face model with deterministic tools and a gated engineering workflow.
+Firik Agent is a workspace-scoped software-development agent. It combines a
+pluggable model provider with deterministic tools and a gated engineering
+workflow.
 The model may decide what to do next, but Python code owns safety, state
 transitions, command execution, and verification.
 
@@ -35,14 +36,14 @@ transitions, command execution, and verification.
 CLI / Python API
        |
        v
-SeniorDevelopmentAgent ----> Hugging Face model adapter
+SeniorDevelopmentAgent ----> model provider adapter
        |                       (InferenceClientModel or TransformersModel)
        v
 DevelopmentProcess
   DISCOVERY -> ARCHITECTURE -> PLANNING -> IMPLEMENTATION
        -> VERIFICATION <-> IMPLEMENTATION -> REVIEW -> COMPLETE
        |
-       +---- DevelopmentRecord (.hf-agent/tasks/<task-id>.json)
+       +---- DevelopmentRecord (.firik-agent/tasks/<task-id>.json)
        |
        v
 ToolRegistry
@@ -57,15 +58,15 @@ WorkspacePolicy + CommandPolicy + NetworkPolicy
 
 ## Package boundaries
 
-- `hf_llm_agent.agent`: public senior-agent facade and smolagents integration.
-- `hf_llm_agent.process`: phase state machine, task records, architecture gate,
+- `firik_agent.agent`: public senior-agent facade and smolagents integration.
+- `firik_agent.process`: phase state machine, task records, architecture gate,
   plans, verification retries, and completion rules.
-- `hf_llm_agent.tools`: framework-neutral tool implementations and registry.
-- `hf_llm_agent.workspace`: canonical path confinement and bounded I/O.
-- `hf_llm_agent.commands`: subprocess policy, execution, and project quality
+- `firik_agent.tools`: framework-neutral tool implementations and registry.
+- `firik_agent.workspace`: canonical path confinement and bounded I/O.
+- `firik_agent.commands`: subprocess policy, execution, and project quality
   command discovery.
-- `hf_llm_agent.research`: bounded HTTP fetch and search provider abstraction.
-- `hf_llm_agent.model_manager` and `registry`: backward-compatible local model
+- `firik_agent.research`: bounded HTTP fetch and search provider abstraction.
+- `firik_agent.model_manager` and `registry`: backward-compatible local model
   lifecycle API.
 
 No layer below `agent` imports smolagents. This makes the safety and workflow
@@ -120,14 +121,14 @@ also be invoked directly in tests and integrations.
 
 The verifier walks upward from manifests at the workspace root and builds a
 deduplicated gate list. Initial support includes Python, Node, Rust, Go, and
-generic Make projects. A repository-level `.hf-agent.toml` may add or replace
+generic Make projects. A repository-level `.firik-agent.toml` may add or replace
 commands. Each gate captures argv, exit code, duration, stdout, stderr, and
 truncation. The standard Python development gate for this repository is:
 
 ```text
 ruff format --check .
 ruff check .
-mypy hf_llm_agent
+mypy firik_agent
 pytest
 python -m build
 ```
@@ -141,4 +142,3 @@ python -m build
   OpenAI-compatible inference.
 - Add approval callbacks for deployments, dependency changes, or other
   high-impact commands.
-

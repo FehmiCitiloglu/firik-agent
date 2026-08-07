@@ -1,1 +1,1 @@
-"""Test suite for HF-LLM Agent."""
+"""Test suite for Firik Agent."""

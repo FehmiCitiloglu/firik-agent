@@ -17,7 +17,7 @@ build/
 MANIFEST
 
 # Local agent task records
-.hf-agent/
+.firik-agent/
 
 # PyBuilder
 target/
