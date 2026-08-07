@@ -1,0 +1,46 @@
+{
+  "name": "HF LLM Agent",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "HF_HOME": "/home/vscode/.cache/huggingface"
+  },
+  "remoteEnv": {
+    "PATH": "/opt/venv/bin:${containerEnv:PATH}"
+  },
+  "mounts": [
+    "source=hf-llm-agent-huggingface-cache,target=/home/vscode/.cache/huggingface,type=volume",
+    "source=hf-llm-agent-pip-cache,target=/home/vscode/.cache/pip,type=volume"
+  ],
+  "runArgs": [
+    "--shm-size=2g"
+  ],
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cache && /opt/venv/bin/python -m pip install --index-url https://download.pytorch.org/whl/cpu 'torch>=2.1.0' && /opt/venv/bin/python -m pip install -e '.[dev]'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/venv/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": [
+          "tests"
+        ],
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+          }
+        }
+      }
+    }
+  }
+}
