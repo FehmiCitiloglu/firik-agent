@@ -16,6 +16,9 @@ build/
 *.egg-info/
 MANIFEST
 
+# Local agent task records
+.hf-agent/
+
 # PyBuilder
 target/
 

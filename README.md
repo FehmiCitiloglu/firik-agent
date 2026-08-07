@@ -1,280 +1,205 @@
-# HF-LLM Agent
+# HF LLM Agent
 
-A Python-based LLM agent system that can dynamically **load, use, and eject models** from Hugging Face Hub.
+HF LLM Agent is a workspace-scoped software-development agent powered by
+Hugging Face models. It can inspect and edit code, search official
+documentation and the public web, run development commands, recursively verify
+multi-language repositories, and keep a durable development record.
 
-## Features
+It is deliberately more than a prompt plus shell access. Architecture,
+planning, mutations, verification, retries, and completion are enforced by
+deterministic Python code.
 
-- 🔌 **Dynamic Model Loading** - Load any model from Hugging Face Hub on-demand
-- 🗑️ **Model Ejection** - Unload models to free up memory/resources
-- 🔄 **Hot-Swapping** - Swap between different models seamlessly
-- 📊 **Model Registry** - Track loaded models, their configs, and usage stats
-- ⚡ **Memory Management** - Monitor GPU/CPU memory usage
-- 🧠 **Agent Framework** - Chain multiple models with different specializations
+## Capabilities
+
+- Architecture-before-code gate with persisted components, interfaces,
+  constraints, risks, and acceptance evidence.
+- Stable implementation plans and audited lifecycle phases.
+- Confined file listing, search, reading, atomic writing, and exact replacement.
+- Non-shell command execution with executable, timeout, cwd, environment, and
+  output policies.
+- Recursive formatting and quality checks for Python, Node, Rust, Go, and Make
+  projects, with `.hf-agent.toml` overrides.
+- Root-cause correction loop with a bounded verification retry budget.
+- Read-only Git status and diff tools.
+- Official-documentation search, public web search, and bounded URL fetching
+  with redirect and private-network protections.
+- Hosted Hugging Face Inference Providers or local Transformers models.
+- Extensible, framework-neutral tool registry.
+
+The runtime uses Hugging Face
+[`ToolCallingAgent`](https://huggingface.co/docs/smolagents/reference/agents),
+which emits structured tool calls. The tool contract follows the standard
+Hugging Face function-calling shape described in the
+[Transformers tool-use guide](https://huggingface.co/docs/transformers/main/chat_extras).
 
 ## Architecture
 
-```
-hf-llm-agent/
-├── core/               # Core agent and model management logic
-│   ├── __init__.py     # Package exports
-│   ├── agent.py        # Main LLM Agent class
-│   ├── model_manager.py# Model lifecycle (load/eject/clear)
-│   └── registry.py     # Model metadata tracking
-├── models/             # Pre-configured model presets
-│   ├── __init__.py     # Package exports
-│   └── presets.py      # Popular models with configs
-├── utils/              # Utility functions
-│   ├── __init__.py     # Package exports
-│   └── memory.py       # Memory monitoring utilities
-├── examples/           # Usage examples
-│   ├── basic.py        # Simple model loading example
-│   ├── multi_model.py  # Multi-model agent chaining
-│   └── memory_demo.py  # Memory usage demonstration
-├── tests/              # Test suite
-│   ├── __init__.py     # Package exports
-│   └── test_model_manager.py  # Unit tests
-├── .gitignore          # Git ignore rules
-├── pyproject.toml      # Project configuration
-└── README.md           # This file
+```text
+SeniorDevelopmentAgent
+  -> DevelopmentProcess (architecture, plan, verify, review gates)
+  -> ToolRegistry
+       -> Workspace (path and file policy)
+       -> CommandRunner + ProjectVerifier
+       -> ResearchClient (web and docs)
+  -> smolagents ToolCallingAgent
+  -> Hugging Face hosted or local model
 ```
 
-## Quick Start
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for boundaries, state
+transitions, security controls, and extension points.
 
-### Installation
+## Installation
+
+Python 3.11 or newer is required.
 
 ```bash
-# Install dependencies
-pip install -e .
-# or: pip install huggingface_hub transformers torch accelerate
-
-# Or install dependencies manually
-pip install huggingface_hub transformers torch accelerate
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[agent]'
 ```
 
-### Basic Usage
-
-```python
-from hf_llm_agent import LLMAgent
-
-# Create agent with automatic device selection
-agent = LLMAgent(
-    model_id="mistralai/Mistral-7B-Instruct-v0.1",
-    max_model_length=4096,
-    device="auto"  # 'cuda', 'cpu', or 'mps'
-)
-
-# Generate text
-response = agent.generate("Explain quantum computing in 3 paragraphs")
-print(response['outputs'][0]['generated_text'])
-
-# Eject model to free memory
-agent.eject()
-```
-
-### Using Model Presets
-
-```python
-from hf_llm_agent import LLMAgent
-from models.presets import get_preset
-
-# Load using preset name
-agent = LLMAgent(preset="gemma-2b")
-
-# Or get config and customize
-config = get_preset("llama3.1-8b-instruct")
-agent = LLMAgent(
-    model_id=config["model_id"],
-    max_model_length=config["max_model_length"],
-    temperature=config["temperature"],
-)
-```
-
-### Search Models
-
-```python
-from hf_llm_agent import LLMAgent
-
-agent = LLMAgent()
-
-# Search for models
-models = agent.search_models(
-    query="instruction",
-    task="text-generation",
-    limit=5,
-)
-
-for model in models:
-    print(f"{model['id']} - {model.get('downloads', 'N/A')} downloads")
-```
-
-### Multi-Model Agent
-
-```python
-from hf_llm_agent import LLMAgent
-
-# Create agent with first model (small/fast)
-agent = LLMAgent(preset="gemma-2b")
-
-# Quick chat with small model
-response = agent.generate("What's your favorite programming language?")
-
-# Eject and load larger model
-agent.eject()
-agent.load(preset="llama3.1-8b-instruct")
-
-# Complex reasoning with larger model
-response = agent.generate("Analyze this Python code...")
-```
-
-## Model Lifecycle
-
-1. **Search** - Browse available models on Hugging Face Hub
-2. **Load** - Download and load model into memory
-3. **Use** - Generate responses using the loaded model
-4. **Eject** - Unload model and free resources
-
-## Supported Model Types
-
-- 📝 Text Generation (LLMs)
-- 😊 Sentiment Analysis
-- 🔍 Text Classification
-
-## Memory Management
-
-### Monitor Memory Usage
-
-```python
-from utils.memory import MemoryMonitor
-
-monitor = MemoryMonitor()
-print(monitor.report())
-```
-
-### Estimate Model Size
-
-```python
-from utils.memory import estimate_model_size
-
-size_gb = estimate_model_size("mistralai/Mistral-7B-Instruct-v0.1")
-print(f"Estimated size: {size_gb:.2f} GB")
-```
-
-### Clear Cache After Ejection
-
-```python
-from utils.memory import MemoryMonitor
-
-# After ejecting a model:
-MemoryMonitor.clear_cache()
-```
-
-## CLI Interface
-
-Run the CLI tool for quick interactions:
+For local Transformers inference:
 
 ```bash
-# List available presets
-python run.py --action list_presets
-
-# Search for models
-python run.py --action search --query "instruction"
-
-# Load a model
-python run.py --action load --model gemma-2b
-
-# Generate text
-python run.py --action generate --prompt "Explain quantum computing"
-
-# Eject a model
-python run.py --action eject --model gemma-2b
-
-# Check status
-python run.py --action status
+python -m pip install -e '.[local]'
 ```
 
-## Running Tests
+Local models can be many gigabytes. Installation does not download a model;
+the first local run does.
+
+## Run a development task
+
+Hosted inference uses your Hugging Face credentials (`hf auth login` or
+`HF_TOKEN`):
 
 ```bash
-# Install test dependencies
-pip install pytest
-
-# Run all tests
-pytest
-
-# Run specific test file
-pytest tests/test_model_manager.py -v
+hf-agent develop \
+  --workspace /path/to/repository \
+  --model Qwen/Qwen3-Coder-30B-A3B-Instruct \
+  "Add cursor pagination to the users API without breaking existing clients"
 ```
 
-## Available Presets
+Choose an Inference Provider when needed:
 
-### Small Models (< 7B parameters)
-- `gemma-2b`: Google's Gemma-2B - efficient and high-quality
-- `mistral-7b`: Mistral-7B - excellent balance of quality and speed
-- `phi-2`: Microsoft Phi-2 - surprisingly capable
-- `tinyllama`: Tiny Llama - tiny model, big results
-- `qwen2.5-1b`: Qwen's smallest model
-
-### Medium Models (7B - 13B parameters)
-- `gemma-7b`: Google's Gemma-7B
-- `llama2-13b`: Llama-2-13B
-
-### Large Models (70B+ parameters)
-- `llama2-70b`: Llama-2-70B - state-of-the-art
-
-## Requirements
-
-### System
-- Python 3.9+
-- CUDA-capable GPU (optional, for faster inference)
-
-### Dependencies
+```bash
+hf-agent develop \
+  --workspace . \
+  --provider novita \
+  --model Qwen/Qwen3-Coder-30B-A3B-Instruct \
+  "Implement the next planned milestone"
 ```
-huggingface_hub>=0.21.0
-transformers>=4.36.0
-torch>=2.1.0
-accelerate>=0.25.0
+
+Run locally only with a tool-calling instruct model that fits the machine:
+
+```bash
+hf-agent develop --workspace . --local --model <model-id> "Fix the failing tests"
 ```
+
+Task evidence is stored under `.hf-agent/tasks/` and is ignored by Git. Inspect
+a previous task with:
+
+```bash
+hf-agent status <task-id> --workspace .
+```
+
+The command exits `0` only when the deterministic process reaches `complete`;
+an incomplete, blocked, or unverified model answer exits `2`.
+
+## Python API
+
+```python
+from hf_llm_agent import SeniorDevelopmentAgent
+
+agent = SeniorDevelopmentAgent(
+    workspace="/path/to/repository",
+    model_id="Qwen/Qwen3-Coder-30B-A3B-Instruct",
+    provider="novita",
+)
+result = agent.run("Add rate limiting and tests to the public API")
+
+print(result.phase)
+print(result.record_path)
+```
+
+You can supply an already constructed smolagents model through `model=`. This
+is the preferred integration point for custom endpoints and test doubles.
+
+## Enforced workflow
+
+```text
+discovery -> architecture -> planning -> implementation
+    -> verification --failure--> implementation (bounded retry)
+    -> verification --success--> review -> complete
+```
+
+Source writes and development commands are rejected until the architecture and
+plan gates pass. Completion is rejected unless all plan items are complete and
+the latest full verification passed.
+
+## Verification configuration
+
+The default recursive verifier discovers repository manifests. To use exact
+project commands, add `.hf-agent.toml`:
+
+```toml
+[verification]
+commands = [
+  { name = "format", command = ["ruff", "format", "--check", "."] },
+  { name = "lint", command = ["ruff", "check", "."] },
+  { name = "types", command = ["mypy", "src"] },
+  { name = "tests", command = ["pytest", "-q"], timeout_seconds = 600 },
+]
+```
+
+Commands are argument arrays or shell-like strings parsed with `shlex`; no
+shell is launched and control operators are rejected.
+
+## Built-in tools
+
+| Area | Tools |
+|---|---|
+| Process | `inspect_project`, `set_architecture`, `set_plan`, `update_plan_item`, `development_status`, `complete_task` |
+| Code | `list_files`, `search_code`, `read_file`, `write_file`, `replace_text` |
+| Build | `run_command`, `format_project`, `verify_project` |
+| Git | `git_status`, `git_diff` |
+| Research | `search_documentation`, `search_web`, `fetch_url` |
+
+Register organization-specific tools directly on `DevelopmentToolbox.registry`
+before building the smolagents runtime.
 
 ## Development
 
-### Dev Container
-
-With Docker running, open this repository in VS Code and run
-**Dev Containers: Reopen in Container**. The container installs the project and
-its development dependencies automatically. Hugging Face downloads are kept in
-a named Docker volume so rebuilding the container does not download models
-again.
-
-Run the development checks inside the container:
-
 ```bash
-pytest
+python -m pip install -e '.[dev,agent]'
+ruff format .
 ruff check .
-black --check .
+mypy hf_llm_agent
+pytest
+python -m build
 ```
 
-### Code Structure
+Tests do not load an LLM or make network requests. Heavy ML dependencies live
+in the optional `local` group.
 
-| Directory | Purpose |
-|-----------|---------|
-| `core/` | Core agent and model management logic |
-| `models/` | Pre-configured model presets |
-| `utils/` | Utility functions (memory monitoring, etc.) |
-| `examples/` | Usage examples and demos |
-| `tests/` | Test suite |
+## Security notes
 
-### Adding New Models
+- Tool access is confined to one canonical workspace; traversal and symlink
+  escapes are rejected.
+- Internal task records cannot be modified through model-facing file tools.
+- Arbitrary shells, destructive Git commands, private network targets, URL
+  credentials, unbounded downloads, and remote model code are disabled.
+- Package scripts and build tools execute repository code. Run the agent only
+  against repositories you trust, or place it in a stronger OS/container
+  sandbox for hostile code.
+- Internet and documentation content is returned with an explicit untrusted
+  content warning and is never an authority for tool policy.
 
-1. Create a new preset in `models/presets.py`
-2. Add model ID, pipeline type, and configuration parameters
-3. Test loading the model with `python run.py --action load --model <preset_name>`
+## Legacy model lifecycle API
 
-### Adding New Model Types
-
-1. Add support in `core/model_manager.py`'s `_load_model()` method
-2. Handle any special requirements for the model type
-3. Add tests in `tests/test_model_manager.py`
+`LLMAgent` and `ModelManager` remain available for direct local model loading,
+generation, search, ejection, and memory cleanup. New development automation
+should use `SeniorDevelopmentAgent`.
 
 ## License
 
-MIT License - feel free to use and modify as needed.
+MIT
