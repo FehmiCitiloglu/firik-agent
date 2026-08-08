@@ -36,7 +36,7 @@ transitions, command execution, and verification.
 CLI / Python API
        |
        v
-SeniorDevelopmentAgent ----> model provider adapter
+DevelopmentAgent ----> model provider adapter
        |                       (InferenceClientModel or TransformersModel)
        v
 DevelopmentProcess
@@ -58,7 +58,7 @@ WorkspacePolicy + CommandPolicy + NetworkPolicy
 
 ## Package boundaries
 
-- `firik_agent.agent`: public senior-agent facade and smolagents integration.
+- `firik_agent.agent`: public development-agent facade and smolagents integration.
 - `firik_agent.process`: phase state machine, task records, architecture gate,
   plans, verification retries, and completion rules.
 - `firik_agent.tools`: framework-neutral tool implementations and registry.

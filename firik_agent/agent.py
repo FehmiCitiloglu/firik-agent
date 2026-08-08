@@ -13,8 +13,8 @@ from .registry import ModelRegistry
 from .tools import DevelopmentToolbox
 from .workspace import Workspace
 
-SENIOR_ENGINEER_INSTRUCTIONS = """
-You are the senior software-development owner for the supplied workspace.
+DEVELOPMENT_INSTRUCTIONS = """
+You are the software-development owner for the supplied workspace.
 
 Required operating procedure:
 1. Inspect the project and all applicable repository instructions before proposing edits.
@@ -102,8 +102,8 @@ class DevelopmentRunResult:
     record_path: str
 
 
-class SeniorDevelopmentAgent:
-    """Senior engineering agent with gated process and safe workspace tools."""
+class DevelopmentAgent:
+    """Development agent with a gated process and safe workspace tools."""
 
     def __init__(
         self,
@@ -209,7 +209,7 @@ class SeniorDevelopmentAgent:
         return ToolCallingAgent(
             tools=tools,
             model=model,
-            instructions=SENIOR_ENGINEER_INSTRUCTIONS,
+            instructions=DEVELOPMENT_INSTRUCTIONS,
             max_steps=self.max_steps,
             planning_interval=self.planning_interval,
             return_full_result=True,

@@ -7,7 +7,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
-from .agent import SeniorDevelopmentAgent
+from .agent import DevelopmentAgent
 from .process import DevelopmentProcess
 from .workspace import Workspace
 
@@ -15,7 +15,7 @@ from .workspace import Workspace
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="firik-agent",
-        description="Gated senior software-development agent",
+        description="Gated software-development agent",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -45,7 +45,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(record.to_dict(), indent=2))
         return 0
 
-    agent = SeniorDevelopmentAgent(
+    agent = DevelopmentAgent(
         workspace=Path(arguments.workspace),
         model_id=arguments.model,
         provider=arguments.provider,

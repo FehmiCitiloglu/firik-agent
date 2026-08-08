@@ -35,7 +35,7 @@ Hugging Face function-calling shape described in the
 ## Architecture
 
 ```text
-SeniorDevelopmentAgent
+DevelopmentAgent
   -> DevelopmentProcess (architecture, plan, verify, review gates)
   -> ToolRegistry
        -> Workspace (path and file policy)
@@ -108,9 +108,9 @@ an incomplete, blocked, or unverified model answer exits `2`.
 ## Python API
 
 ```python
-from firik_agent import SeniorDevelopmentAgent
+from firik_agent import DevelopmentAgent
 
-agent = SeniorDevelopmentAgent(
+agent = DevelopmentAgent(
     workspace="/path/to/repository",
     model_id="Qwen/Qwen3-Coder-30B-A3B-Instruct",
     provider="novita",
@@ -200,7 +200,7 @@ in the optional `local` group.
 
 `LLMAgent` and `ModelManager` remain available for direct local model loading,
 generation, search, ejection, and memory cleanup. New development automation
-should use `SeniorDevelopmentAgent`.
+should use `DevelopmentAgent`.
 
 ## License
 

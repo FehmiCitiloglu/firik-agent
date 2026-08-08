@@ -1,4 +1,4 @@
-"""Built-in senior software-development tools for Firik Agent."""
+"""Built-in software-development tools for Firik Agent."""
 
 from __future__ import annotations
 
