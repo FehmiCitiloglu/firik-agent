@@ -50,6 +50,9 @@ firik-agent = "firik_agent.cli:main"
 where = ["."]
 include = ["firik_agent*"]
 
+[tool.setuptools.package-data]
+firik_agent = ["web/*", "web/assets/*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -64,8 +67,20 @@ warn_unreachable = true
 pretty = true
 
 [[tool.mypy.overrides]]
-module = ["smolagents", "torch", "transformers"]
+module = [
+    "numpy",
+    "numpy.*",
+    "huggingface_hub",
+    "huggingface_hub.*",
+    "smolagents",
+    "smolagents.*",
+    "torch",
+    "torch.*",
+    "transformers",
+    "transformers.*",
+]
 ignore_missing_imports = true
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

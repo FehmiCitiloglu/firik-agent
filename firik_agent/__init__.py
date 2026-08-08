@@ -1,6 +1,7 @@
 """Firik Agent: a workspace-scoped software-development agent."""
 
 from .agent import DevelopmentAgent, LLMAgent
+from .model_catalog import DownloadManager, ModelCatalog
 from .model_manager import ModelManager
 from .process import DevelopmentPhase, DevelopmentProcess
 from .registry import ModelMetadata, ModelRegistry, ModelStatus
@@ -11,7 +12,9 @@ __all__ = [
     "DevelopmentAgent",
     "DevelopmentPhase",
     "DevelopmentProcess",
+    "DownloadManager",
     "LLMAgent",
+    "ModelCatalog",
     "ModelManager",
     "ModelMetadata",
     "ModelRegistry",

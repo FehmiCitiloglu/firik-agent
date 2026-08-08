@@ -54,6 +54,14 @@ ToolRegistry
        |
        v
 WorkspacePolicy + CommandPolicy + NetworkPolicy
+
+Model library CLI (`firik-agent models`)
+       |
+       v
+Loopback ModelLibraryServer ----> packaged React UI
+       |
+       +---- ModelCatalog ----> bounded Hugging Face metadata
+       +---- DownloadManager -> safe files in the Hub cache
 ```
 
 ## Package boundaries
@@ -68,6 +76,12 @@ WorkspacePolicy + CommandPolicy + NetworkPolicy
 - `firik_agent.research`: bounded HTTP fetch and search provider abstraction.
 - `firik_agent.model_manager` and `registry`: backward-compatible local model
   lifecycle API.
+- `firik_agent.model_catalog`: bounded public model discovery, local cache
+  inventory, safe-file selection, background download state, and disk policy.
+- `firik_agent.model_server`: loopback-only HTTP and packaged-static-asset
+  boundary for the model library.
+- `ui/`: React and Vite source for the model library. Its production build is
+  stored under `firik_agent/web/` and included in the Python distribution.
 
 No layer below `agent` imports smolagents. This makes the safety and workflow
 code testable without loading an LLM or installing ML runtimes.
@@ -116,6 +130,15 @@ also be invoked directly in tests and integrations.
   default, limit redirects, bytes, and request duration, and label fetched text
   as untrusted.
 - Remote model code is disabled by default.
+- The model-library server binds only to IPv4 loopback and validates the Host
+  header. API mutations require same-origin JSON requests; cross-origin
+  preflight is rejected and static responses include a restrictive CSP.
+- Model downloads require canonical `owner/model` identifiers, keep a 1 GiB
+  disk reserve, cap repository file counts, and allow only tokenizer/config,
+  documentation, and safetensors files. Pickle weights and remote Python model
+  code are excluded.
+- Download cancellation is recoverable: partial cache data is retained for a
+  later resume rather than implicitly deleted.
 
 ## Verification strategy
 
@@ -133,6 +156,11 @@ pytest
 python -m build
 ```
 
+The repository also runs `npm --prefix ui run check` and
+`npm --prefix ui run build`. Browser QA verifies search, selection, local cache
+inventory, confirmation, and download-state interactions against the accepted
+visual concept. Public-network behavior is mocked in the automated tests.
+
 ## Extension points
 
 - Register language-specific inspectors or quality gates.
@@ -142,3 +170,6 @@ python -m build
   OpenAI-compatible inference.
 - Add approval callbacks for deployments, dependency changes, or other
   high-impact commands.
+- Add catalog providers behind `ModelApi` without changing the React contract,
+  or add storage backends behind `DownloadManager` while preserving explicit
+  confirmation and safe-file policy.

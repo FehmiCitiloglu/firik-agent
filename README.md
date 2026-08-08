@@ -24,6 +24,8 @@ deterministic Python code.
 - Official-documentation search, public web search, and bounded URL fetching
   with redirect and private-network protections.
 - Hosted Hugging Face Inference Providers or local Transformers models.
+- Browser-based model library for discovering, inspecting, and downloading
+  open models into the local Hugging Face cache.
 - Extensible, framework-neutral tool registry.
 
 The runtime uses Hugging Face
@@ -66,6 +68,43 @@ python -m pip install -e '.[local]'
 
 Local models can be many gigabytes. Installation does not download a model;
 the first local run does.
+
+## Local model library
+
+Open the model manager:
+
+```bash
+firik-agent models
+```
+
+The command binds only to `127.0.0.1:7860` and opens a browser. Use
+`firik-agent models --no-open` when you want to open the URL yourself, or
+`--port 9876` to select another loopback port.
+
+The interface provides:
+
+- bounded search over public Transformers text-generation models;
+- model details including license, parameters, download size, tool-call
+  support, and safetensors availability;
+- an inventory of models already present in the Hugging Face cache;
+- explicit download confirmation with disk-space information;
+- file-level download progress, pause, resume, cancellation, and error states.
+
+Downloads accept only model IDs in `owner/model` form and include safe
+Transformers metadata plus safetensors weights. Remote model code and pickle
+weights are not downloaded. Cancelling preserves partial data so a future
+download can resume it.
+
+After a model is downloaded, run the development agent without provider calls:
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+firik-agent develop \
+  --local \
+  --workspace /path/to/repository \
+  --model Qwen/Qwen2.5-Coder-7B-Instruct \
+  "Fix the failing tests"
+```
 
 ## Run a development task
 
@@ -180,6 +219,19 @@ pytest
 python -m build
 ```
 
+The model-library frontend lives under `ui/`. Build the package-owned web
+assets after frontend changes:
+
+```bash
+cd ui
+npm ci
+npm run check
+npm run build
+```
+
+The Vite build writes hashed production assets to `firik_agent/web/`; those
+assets are included in the Python wheel.
+
 Tests do not load an LLM or make network requests. Heavy ML dependencies live
 in the optional `local` group.
 
@@ -190,6 +242,9 @@ in the optional `local` group.
 - Internal task records cannot be modified through model-facing file tools.
 - Arbitrary shells, destructive Git commands, private network targets, URL
   credentials, unbounded downloads, and remote model code are disabled.
+- The model library is loopback-only, validates the Host header, rejects
+  cross-origin preflight requests, requires JSON for mutations, and serves a
+  restrictive content security policy.
 - Package scripts and build tools execute repository code. Run the agent only
   against repositories you trust, or place it in a stronger OS/container
   sandbox for hostile code.

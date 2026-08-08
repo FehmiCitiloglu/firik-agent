@@ -4,5 +4,7 @@ commands = [
   { name = "lint", command = ["python", "-m", "ruff", "check", "."] },
   { name = "types", command = ["python", "-m", "mypy", "firik_agent"] },
   { name = "tests", command = ["python", "-m", "pytest", "-q"], timeout_seconds = 600 },
+  { name = "ui-types", command = ["npm", "--prefix", "ui", "run", "check"] },
+  { name = "ui-build", command = ["npm", "--prefix", "ui", "run", "build"] },
   { name = "build", command = ["python", "-m", "build"] },
 ]

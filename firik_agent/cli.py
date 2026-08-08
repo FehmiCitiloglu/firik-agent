@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .agent import DevelopmentAgent
+from .model_server import serve_model_library
 from .process import DevelopmentProcess
 from .workspace import Workspace
 
@@ -34,11 +35,18 @@ def build_parser() -> argparse.ArgumentParser:
     status = subparsers.add_parser("status", help="Read a persisted task record")
     status.add_argument("task_id")
     status.add_argument("--workspace", default=".")
+
+    models = subparsers.add_parser("models", help="Open the local model library")
+    models.add_argument("--port", type=int, default=7860, help="Loopback port (default: 7860)")
+    models.add_argument("--no-open", action="store_true", help="Do not open a browser")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
+    if arguments.command == "models":
+        serve_model_library(port=arguments.port, open_browser=not arguments.no_open)
+        return 0
     if arguments.command == "status":
         process = DevelopmentProcess(Workspace(arguments.workspace))
         record = process.load(arguments.task_id)
