@@ -86,6 +86,21 @@ class ProviderRegistry:
         )
         registry.register("openai", openai_prov)
 
+        # Opt-in local/OpenAI-compatible servers share the existing provider.
+        # A model name never implies tool or context-window capability.
+        for name, provider_conf in providers_conf.items():
+            if name in registry.list_providers() or not isinstance(provider_conf, dict):
+                continue
+            if provider_conf.get("type") != "openai_compatible" and name not in {"ollama", "lmstudio"}:
+                continue
+            defaults = {"ollama": "http://127.0.0.1:11434/v1", "lmstudio": "http://127.0.0.1:1234/v1"}
+            base_url = provider_conf.get("base_url", defaults.get(name))
+            if not base_url:
+                raise ValueError(f"'{name}' sağlayıcısının sunucu adresi belirtilmeli.")
+            registry.register(name, OpenAIProvider(
+                api_key=get_api_key(name, provider_conf) or "local",
+                base_url=base_url, default_model=provider_conf.get("default_model", ""), name=name))
+
         # Set default active
         default_prov = config.get("agent", {}).get("default_provider", "evren")
         if default_prov in registry.list_providers():

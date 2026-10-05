@@ -32,15 +32,17 @@ class ChatSession:
         max_tokens: int = 2048,
         active_mcp_servers: Optional[Set[str]] = None,
         enabled_tool_names: Optional[Set[str]] = None,
+        reasoning_effort: Optional[str] = None,
     ):
         self.session_id: str = session_id or f"session_{uuid4().hex[:12]}"
         self.title: str = title
         self.model: str = model
+        self.reasoning_effort: Optional[str] = reasoning_effort
         self.system_prompt: str = system_prompt
         self.temperature: float = temperature
         self.max_tokens: int = max_tokens
         self.active_mcp_servers: Set[str] = set(active_mcp_servers or [])
-        self.enabled_tool_names: Optional[Set[str]] = set(enabled_tool_names) if enabled_tool_names else None
+        self.enabled_tool_names: Optional[Set[str]] = set(enabled_tool_names) if enabled_tool_names is not None else None
         self.messages: List[Message] = []
         self.created_at: float = time.time()
 

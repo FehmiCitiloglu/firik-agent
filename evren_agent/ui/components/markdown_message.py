@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import tkinter.font as tkfont
 import math
+import re
 import webbrowser
 from urllib.parse import urlsplit
 from typing import Callable
@@ -95,6 +96,7 @@ class _TextBlock(ctk.CTkTextbox):
         mono = "code" in names or self.fixed_width
         family = tkfont.nametofont("TkFixedFont").cget("family") if mono else self._prose_family
         size = {1: 24, 2: 20, 3: 17}.get(heading, 15 if heading else 14)
+        size = size * getattr(self, "coding_font_size", 14) / 14
         font = (family, -round(size * self._get_widget_scaling()),
                 "bold" if "strong" in names or heading else "normal",
                 "italic" if "em" in names else "roman")
@@ -174,6 +176,7 @@ class MarkdownMessage(ctk.CTkFrame):
     def _new_text(self, *, fixed_width=False, master=None):
         block = _TextBlock(master or self, fixed_width=fixed_width,
                            on_layout=self._layout_changed)
+        block.coding_font_size = getattr(self, "coding_font_size", 14)
         block.pack(fill="x", pady=(0, 6))
         self.blocks.append(block)
         return block
@@ -197,6 +200,9 @@ class MarkdownMessage(ctk.CTkFrame):
                     block._textbox.tag_bind(tag, "<Button-1>", lambda event, u=url: webbrowser.open(u))
                     block._textbox.tag_bind(tag, "<Enter>", lambda event, b=block: b._textbox.configure(cursor="hand2"))
                     block._textbox.tag_bind(tag, "<Leave>", lambda event, b=block: b._textbox.configure(cursor="xterm"))
+                elif getattr(self, "coding_on_file", None) and (
+                        not urlsplit(url).scheme or re.fullmatch(r"[^:\r\n]+:\d+(?:#L\d+)?", url)):
+                    block._textbox.tag_bind(tag, "<Button-1>", lambda event, u=url: self.coding_on_file(u))
                 links.append(tag)
                 names.append("link")
             elif token.type == "link_close":
@@ -238,10 +244,34 @@ class MarkdownMessage(ctk.CTkFrame):
         ctk.CTkButton(header, text="Kodu kopyala", width=100, height=22,
                       fg_color="transparent", text_color=("#475569", "#94a3b8"),
                       command=lambda c=code: self._copy_code(c)).pack(side="right")
+        if getattr(self, "coding_on_context", None):
+            ctk.CTkButton(header, text="Bağlama ekle", width=95, height=22,
+                          command=lambda c=code: self.coding_on_context(c)).pack(side="right")
         block = self._new_text(fixed_width=True, master=frame)
         block.pack_configure(padx=8)
         self._insert(block, code.rstrip("\n"))
+        if getattr(self, "coding_on_context", None):
+            self._highlight_code(block, code)
+            block._textbox.bind("<Control-Shift-C>", lambda event: self._selection_context(block), add="+")
         self._finish(block)
+
+    def _selection_context(self, block):
+        try:
+            self.coding_on_context(block._textbox.get("sel.first", "sel.last"))
+        except Exception:
+            pass
+        return "break"
+
+    @staticmethod
+    def _highlight_code(block, code):
+        # Lightweight lexical highlighting; never execute code or import a lexer.
+        pattern = re.compile(r"(?P<comment>\#[^\n]*|//[^\n]*)|(?P<string>'[^'\n]*'|\"[^\"\n]*\")|(?P<keyword>\b(?:def|class|return|if|else|elif|for|while|import|from|async|await|try|except|const|let|function|public|private|void|true|false|null|None|True|False)\b)|(?P<number>\b\d+(?:\.\d+)?\b)")
+        colors = {"comment": "#7b8797", "string": "#35a875", "keyword": "#b379e2", "number": "#c88431"}
+        for name, color in colors.items():
+            block._textbox.tag_configure("syntax-" + name, foreground=color)
+        for match in pattern.finditer(code[:24000]):
+            block._textbox.tag_add("syntax-" + match.lastgroup,
+                                   f"1.0+{match.start()}c", f"1.0+{match.end()}c")
 
     def _copy_code(self, code):
         self.clipboard_clear()

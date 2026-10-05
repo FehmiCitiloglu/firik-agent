@@ -6,7 +6,7 @@ import difflib
 import os
 from pathlib import Path
 
-from evren_agent.projects.indexer import IGNORED_DIRS, IGNORED_EXTENSIONS, is_sensitive_file
+from evren_agent.projects.indexer import IGNORED_DIRS, IGNORED_EXTENSIONS, is_sensitive_file, safe_project_path
 
 
 @dataclass
@@ -30,6 +30,7 @@ def capture_workspace(root: str | Path, max_files: int = 2000,
     root = Path(root).resolve()
     if not root.is_dir():
         raise ValueError("Proje klasörü bulunamadı.")
+    safe_project_path(root, ".")
     snapshot = WorkspaceSnapshot()
     total_bytes = 0
     count = 0
@@ -41,7 +42,7 @@ def capture_workspace(root: str | Path, max_files: int = 2000,
                          and not d.startswith(".") and not (Path(directory) / d).is_symlink())
         for name in sorted(files):
             path = Path(directory) / name
-            if path.is_symlink() or is_sensitive_file(path) or path.suffix.lower() in IGNORED_EXTENSIONS:
+            if path.is_symlink() or is_sensitive_file(path, project_root=root) or path.suffix.lower() in IGNORED_EXTENSIONS:
                 continue
             relative = path.relative_to(root).as_posix()
             count += 1

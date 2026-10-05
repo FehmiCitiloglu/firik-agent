@@ -48,8 +48,9 @@ class ProjectDatabase:
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        conn = sqlite3.connect(str(self.db_path), timeout=30, check_same_thread=False)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=30000;")
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA foreign_keys=ON;")
         return conn
@@ -379,9 +380,73 @@ class ProjectDatabase:
                 CREATE INDEX IF NOT EXISTS idx_code_index_project ON code_index(project_id);
                 CREATE INDEX IF NOT EXISTS idx_code_index_path ON code_index(project_id, file_path);
                 """)
+                self._migrate_coding_storage(conn)
                 conn.commit()
             finally:
                 conn.close()
+
+    @staticmethod
+    def _migrate_coding_storage(conn: sqlite3.Connection) -> None:
+        """Add durable runs without recreating or deleting historical tables."""
+        conn.execute("BEGIN IMMEDIATE")
+        additions = {
+            "session_id": "TEXT NOT NULL DEFAULT ''",
+            "run_id": "TEXT NOT NULL DEFAULT ''",
+            "provider": "TEXT NOT NULL DEFAULT ''",
+            "model": "TEXT NOT NULL DEFAULT ''",
+            "mode": "TEXT NOT NULL DEFAULT 'plan'",
+            "permissions": "TEXT NOT NULL DEFAULT '{}'",
+            "status": "TEXT NOT NULL DEFAULT 'completed'",
+            "messages": "TEXT NOT NULL DEFAULT '[]'",
+            "completed_steps": "TEXT NOT NULL DEFAULT '[]'",
+            "checkpoints": "TEXT NOT NULL DEFAULT '[]'",
+            "file_journal": "TEXT NOT NULL DEFAULT '[]'",
+            "decisions": "TEXT NOT NULL DEFAULT '[]'",
+            "context_summary": "TEXT NOT NULL DEFAULT ''",
+            "context_report": "TEXT NOT NULL DEFAULT '{}'",
+            "usage": "TEXT NOT NULL DEFAULT '{}'",
+            "error": "TEXT NOT NULL DEFAULT ''",
+            "updated_at": "TEXT NOT NULL DEFAULT ''",
+            "ended_at": "TEXT",
+            "resumed_from": "TEXT",
+        }
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(coding_sessions)")}
+        for name, definition in additions.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE coding_sessions ADD COLUMN {name} {definition}")
+        settings_columns = {row[1] for row in conn.execute("PRAGMA table_info(project_settings)")}
+        if "coding_preferences" not in settings_columns:
+            conn.execute("ALTER TABLE project_settings ADD COLUMN coding_preferences TEXT NOT NULL DEFAULT '{}'")
+        conn.execute("UPDATE coding_sessions SET session_id=id WHERE session_id=''")
+        conn.execute("UPDATE coding_sessions SET run_id=id WHERE run_id=''")
+        conn.execute("UPDATE coding_sessions SET updated_at=COALESCE(created_at, '') WHERE updated_at=''")
+        schema = """
+            CREATE TABLE IF NOT EXISTS coding_run_events (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                task_id TEXT,
+                sequence INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                data TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                UNIQUE(run_id, sequence),
+                FOREIGN KEY(run_id) REFERENCES coding_sessions(id) ON DELETE CASCADE,
+                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_coding_runs_project ON coding_sessions(project_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_coding_runs_session ON coding_sessions(session_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_coding_events_run ON coding_run_events(run_id, sequence);
+            CREATE TABLE IF NOT EXISTS project_schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT OR IGNORE INTO project_schema_migrations(version) VALUES (1);
+        """
+        for statement in schema.split(";"):
+            if statement.strip():
+                conn.execute(statement)
 
     # --- Project CRUD ---
 
@@ -514,6 +579,7 @@ class ProjectDatabase:
                 max_checks_per_hour=row["max_checks_per_hour"] or 10,
                 max_tokens_per_check=row["max_tokens_per_check"] or 4000,
                 min_change_threshold=row["min_change_threshold"] or 1,
+                coding_preferences=json.loads(row["coding_preferences"] or "{}"),
             )
         finally:
             conn.close()
@@ -527,14 +593,15 @@ class ProjectDatabase:
                     INSERT OR REPLACE INTO project_settings (
                         project_id, coding_model, pm_model, review_model, fast_model,
                         autonomy_level, pm_check_interval, permissions, token_budget,
-                        max_checks_per_hour, max_tokens_per_check, min_change_threshold
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        max_checks_per_hour, max_tokens_per_check, min_change_threshold, coding_preferences
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         s.project_id, s.coding_model, s.pm_model, s.review_model, s.fast_model,
                         s.autonomy_level.value if hasattr(s.autonomy_level, "value") else str(s.autonomy_level),
                         s.pm_check_interval, json.dumps(s.permissions), json.dumps(s.token_budget),
                         s.max_checks_per_hour, s.max_tokens_per_check, s.min_change_threshold,
+                        json.dumps(s.coding_preferences, ensure_ascii=False),
                     ),
                 )
                 conn.commit()
@@ -1130,44 +1197,61 @@ class ProjectDatabase:
         conn = self._get_connection()
         try:
             rows = conn.execute("SELECT * FROM coding_sessions WHERE project_id = ? ORDER BY created_at DESC", (project_id,)).fetchall()
-            return [
-                CodingSession(
-                    id=r["id"], project_id=r["project_id"], task_id=r["task_id"], feature_id=r["feature_id"],
-                    title=r["title"] or "Coding Session", user_request=r["user_request"] or "", plan=r["plan"] or "",
-                    agent_actions=json.loads(r["agent_actions"] or "[]"),
-                    files_changed=json.loads(r["files_changed"] or "[]"),
-                    commands_executed=json.loads(r["commands_executed"] or "[]"),
-                    tests_executed=json.loads(r["tests_executed"] or "[]"),
-                    git_diff=r["git_diff"] or "", result=r["result"] or "",
-                    summary=r["summary"] or "", duration_sec=r["duration_sec"] or 0,
-                    commit_hash=r["commit_hash"] or "", tokens_used=r["tokens_used"] or 0,
-                    cost_est=r["cost_est"] or 0.0, created_at=r["created_at"] or "",
-                )
-                for r in rows
-            ]
+            return [self._row_to_session(r) for r in rows]
         finally:
             conn.close()
+
+    @staticmethod
+    def _row_to_session(row: sqlite3.Row) -> CodingSession:
+        data = dict(row)
+        json_defaults = {
+            "agent_actions": [], "files_changed": [], "commands_executed": [],
+            "tests_executed": [], "permissions": {}, "messages": [],
+            "completed_steps": [], "checkpoints": [], "file_journal": [],
+            "decisions": [], "context_report": {}, "usage": {},
+        }
+        for name, default in json_defaults.items():
+            data[name] = json.loads(data.get(name) or json.dumps(default))
+        # Very old records allow NULL in summary fields; retain their old defaults.
+        for name in CodingSession.model_fields:
+            if data.get(name) is None and name not in {"task_id", "feature_id", "ended_at", "resumed_from"}:
+                data.pop(name, None)
+        data["session_id"] = data.get("session_id") or data["id"]
+        data["run_id"] = data.get("run_id") or data["id"]
+        return CodingSession.model_validate(data)
+
+    @staticmethod
+    def _write_session(conn: sqlite3.Connection, session: CodingSession) -> None:
+        from evren_agent.projects.coding_sessions import redact_sensitive
+
+        data = redact_sensitive(session.model_dump(mode="json"))
+        data["session_id"] = session.session_id or session.id
+        data["run_id"] = session.run_id or session.id
+        if data["run_id"] != session.id:
+            raise ValueError("Çalışma kimliği oturum kaydının kimliğiyle uyuşmuyor.")
+        existing = conn.execute("SELECT project_id, task_id, session_id FROM coding_sessions WHERE id=?", (session.id,)).fetchone()
+        if existing and (existing["project_id"] != session.project_id or existing["task_id"] != session.task_id
+                         or existing["session_id"] != data["session_id"]):
+            raise ValueError("Bir çalışmanın proje, görev veya oturum kimliği değiştirilemez.")
+        task = conn.execute("SELECT project_id FROM tasks WHERE id=?", (session.task_id,)).fetchone() if session.task_id else None
+        if session.task_id and (task is None or task["project_id"] != session.project_id):
+            raise ValueError("Görev bu projeye ait değil.")
+        # UPSERT retains child event rows, unlike the historical INSERT OR REPLACE.
+        columns = list(CodingSession.model_fields)
+        values = [json.dumps(data[name], ensure_ascii=False) if isinstance(data[name], (dict, list)) else data[name]
+                  for name in columns]
+        updates = ", ".join(f"{name}=excluded.{name}" for name in columns if name != "id")
+        conn.execute(
+            f"INSERT INTO coding_sessions ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)}) "
+            f"ON CONFLICT(id) DO UPDATE SET {updates}", values,
+        )
 
     def save_session(self, cs: CodingSession) -> None:
         with self._lock:
             conn = self._get_connection()
             try:
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO coding_sessions (
-                        id, project_id, task_id, feature_id, title, user_request, plan,
-                        agent_actions, files_changed, commands_executed, tests_executed,
-                        git_diff, result, summary, duration_sec, commit_hash, tokens_used, cost_est, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        cs.id, cs.project_id, cs.task_id, cs.feature_id, cs.title, cs.user_request, cs.plan,
-                        json.dumps(cs.agent_actions), json.dumps(cs.files_changed),
-                        json.dumps(cs.commands_executed), json.dumps(cs.tests_executed),
-                        cs.git_diff, cs.result, cs.summary, cs.duration_sec,
-                        cs.commit_hash, cs.tokens_used, cs.cost_est, cs.created_at,
-                    ),
-                )
+                conn.execute("BEGIN IMMEDIATE")
+                self._write_session(conn, cs)
                 conn.commit()
             finally:
                 conn.close()

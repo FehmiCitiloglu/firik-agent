@@ -26,6 +26,12 @@ datas += ctk_datas
 binaries += ctk_binaries
 hiddenimports += ctk_hidden
 
+# Yerel dosya sürükle/bırak için platformun TkDND uzantısını pakete dahil et.
+dnd_datas, dnd_binaries, dnd_hidden = collect_all("tkinterdnd2")
+datas += dnd_datas
+binaries += dnd_binaries
+hiddenimports += dnd_hidden
+
 # Certifi SSL kök sertifikaları (HTTPS istekleri için)
 cert_datas, cert_binaries, cert_hidden = collect_all("certifi")
 datas += cert_datas

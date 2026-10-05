@@ -150,6 +150,8 @@ class ProjectSettings(BaseModel):
     max_checks_per_hour: int = 10
     max_tokens_per_check: int = 4000
     min_change_threshold: int = 1
+    # Coding workspace preferences are extensible and independent of PM settings.
+    coding_preferences: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ProjectInstruction(BaseModel):
@@ -353,6 +355,39 @@ class CodingSession(BaseModel):
     commit_hash: str = ""
     tokens_used: int = 0
     cost_est: float = 0.0
+    created_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    # id remains the historical record identifier; a new record represents one run.
+    # session_id groups multiple explicitly started runs of the same conversation.
+    session_id: str = ""
+    run_id: str = ""
+    provider: str = ""
+    model: str = ""
+    mode: str = "plan"
+    permissions: Dict[str, str | bool] = Field(default_factory=dict)
+    status: str = "completed"  # Legacy history contains completed session summaries.
+    messages: List[Dict[str, Any]] = Field(default_factory=list)
+    completed_steps: List[Dict[str, Any]] = Field(default_factory=list)
+    checkpoints: List[Dict[str, Any]] = Field(default_factory=list)
+    file_journal: List[Dict[str, Any]] = Field(default_factory=list)
+    decisions: List[Dict[str, Any]] = Field(default_factory=list)
+    context_summary: str = ""
+    context_report: Dict[str, Any] | List[Dict[str, Any]] = Field(default_factory=dict)
+    usage: Dict[str, Any] = Field(default_factory=dict)
+    error: str = ""
+    updated_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    ended_at: Optional[str] = None
+    resumed_from: Optional[str] = None
+
+
+class CodingRunEvent(BaseModel):
+    id: str
+    run_id: str
+    session_id: str
+    project_id: str
+    task_id: Optional[str] = None
+    sequence: int
+    event_type: str
+    data: Dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
 
 

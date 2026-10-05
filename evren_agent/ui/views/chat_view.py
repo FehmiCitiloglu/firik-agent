@@ -5,6 +5,7 @@ parametre kontrolleri ve sohbet geçmişi yönetimi sunar.
 Tüm etiket ve açıklamalar Türkçedir.
 """
 from __future__ import annotations
+from evren_agent.ui.components.effort_selector import EffortSelector
 
 import datetime
 import base64
@@ -296,6 +297,10 @@ class ChatView(ctk.CTkFrame):
         )
         self.model_combo.set(self.service.default_model)
         self.model_combo.pack(side="left", padx=4, pady=10)
+
+        self.effort_selector = EffortSelector(model_bar, self.service, self._on_effort_selected)
+        self.effort_selector.pack(side="left", padx=6, pady=4)
+        self._refresh_effort()
 
         # MCP Seçici Butonu (Current Chat MCP Indicator)
         self.mcp_btn = ctk.CTkButton(
@@ -627,18 +632,31 @@ class ChatView(ctk.CTkFrame):
                 selected = self.model_combo.get() or self.session.model
                 self.model_combo.configure(values=models if selected in models else [selected, *models])
                 self.model_combo.set(selected)
+                self._refresh_effort()
 
         self.service.fetch_models_async(on_success=on_models)
+
+    def _refresh_effort(self) -> None:
+        self.session.reasoning_effort = self.effort_selector.refresh(
+            self.session.model, self.session.reasoning_effort, self.is_streaming)
+
+    def _on_effort_selected(self, effort) -> None:
+        if self.is_streaming:
+            return
+        self.session.reasoning_effort = effort
+        self._save_history()
 
     def _on_model_selected(self, model: str) -> bool:
         try:
             self.service.set_default_model(model)
         except Exception as error:
             self.model_combo.set(self.session.model)
+            self._refresh_effort()
             messagebox.showerror("Model kaydedilemedi", turkce_hata_mesaji(error))
             return False
         self.session.model = model.strip()
         self.model_combo.set(self.session.model)
+        self._refresh_effort()
         self._save_history()
         return True
 
@@ -701,6 +719,7 @@ class ChatView(ctk.CTkFrame):
                 activity.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 6))
                 record["activity"] = activity.to_record()
         self.model_combo.set(session.model)
+        self._refresh_effort()
         self.temp_slider.set(session.temperature)
         self._on_temp_change(session.temperature)
         self.tokens_slider.set(session.max_tokens)
@@ -744,6 +763,7 @@ class ChatView(ctk.CTkFrame):
             return
         self.session = self.service.get_or_create_session(None)
         self.model_combo.set(self.session.model)
+        self._refresh_effort()
         self.clear_chat()
         self._update_mcp_chips()
         self._refresh_history()
@@ -875,6 +895,7 @@ class ChatView(ctk.CTkFrame):
 
         # Akışı Başlat
         self.is_streaming = True
+        self._refresh_effort()
         self._show_activity_stage("Hazırlanıyor", "Model ve araç bağlantıları hazırlanıyor…")
         self.send_btn.configure(text="Durdur", fg_color="#ef4444", hover_color="#dc2626")
 
@@ -988,6 +1009,8 @@ class ChatView(ctk.CTkFrame):
     def _finish_streaming(self) -> None:
         following = self._capture_scroll_anchor() is not None
         self.is_streaming = False
+        if hasattr(self, "effort_selector"):
+            self._refresh_effort()
         self.activity_stage = "Hazır"
         self.live_activity.stop()
         self.live_activity.grid_remove()
@@ -1089,6 +1112,7 @@ class ChatView(ctk.CTkFrame):
             return
         self.session = self.service.get_or_create_session(None)
         self.model_combo.set(self.session.model)
+        self._refresh_effort()
         self.clear_chat()
         self._update_mcp_chips()
         self._refresh_history()

@@ -44,6 +44,7 @@ from evren_agent.mcp.models import (
 )
 from evren_agent.projects.service import ProjectService
 from evren_agent.projects.workspace import WorkspaceSnapshot, capture_workspace, compare_workspaces
+from evren_agent.ui.coding_bridge import CodingBridge
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ def turkce_hata_mesaji(hata: Exception) -> str:
     return f"Beklenmeyen bir hata oluştu: {str(hata)}"
 
 
-class EvrenService:
+class EvrenService(CodingBridge):
     """evren masaüstü uygulaması için merkezi API yöneticisi."""
 
     def __init__(self, dispatch=None) -> None:
@@ -118,6 +119,8 @@ class EvrenService:
         self.base_url = self._provider_cfg.get("base_url", DEFAULT_BASE_URL)
         self.default_model = self._provider_cfg.get("default_model", "glm-5.3")
         self.timeout = float(self.config.get("timeout", 180.0))
+        self._model_metadata: Dict[str, Dict[str, Any]] = {}
+        self._model_metadata_url = self.base_url
         self._cached_models: List[str] = VARSAYILAN_MODELLER.copy()
         self._active_stream_cancel: Optional[threading.Event] = None
         self._stream_lock = threading.RLock()
@@ -138,6 +141,7 @@ class EvrenService:
         self.mcp_manager.load_from_config(self.config.get("mcp_servers", {}))
         self.session_tool_filter = SessionToolFilter(self.mcp_manager.tool_registry, self.mcp_manager)
         self.sessions: Dict[str, ChatSession] = {}
+        self._init_coding_bridge()
         self.agent: Optional[Agent] = None
         self._mcp_listeners: List[Callable[[], None]] = []
         self.mcp_manager.add_listener(self._on_mcp_status)
@@ -225,6 +229,16 @@ class EvrenService:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def model_effort_levels(self, model: str) -> List[str]:
+        from evren_agent.providers.reasoning import effort_levels
+        if self._model_metadata_url != self.base_url:
+            return []
+        return effort_levels(self._model_metadata.get(model))
+
+    def configure_model_metadata(self, provider) -> None:
+        if provider.name == self.provider and provider.base_url.rstrip("/") == self.base_url.rstrip("/"):
+            provider.model_metadata = dict(self._model_metadata) if self._model_metadata_url == self.base_url else {}
+
     def fetch_models_async(
         self,
         on_success: Callable[[List[str]], None],
@@ -232,10 +246,15 @@ class EvrenService:
     ) -> None:
         """Model listesini arka planda çeker."""
         def worker():
+            catalogue_url = self.base_url
             async def run():
-                async with EvrenAPI(self.get_key(), self.base_url, timeout=self.timeout) as client:
+                async with EvrenAPI(self.get_key(), catalogue_url, timeout=self.timeout) as client:
                     data = await client.models()
                     models = []
+                    rows = data.get("data", []) if isinstance(data, dict) else data if isinstance(data, list) else []
+                    self._model_metadata = {item["id"]: item for item in rows
+                                            if isinstance(item, dict) and item.get("id")}
+                    self._model_metadata_url = catalogue_url
                     if isinstance(data, dict) and "data" in data:
                         models = [item.get("id") for item in data["data"] if item.get("id")]
                     elif isinstance(data, list):
@@ -904,10 +923,13 @@ class EvrenService:
         on_event: Optional[Callable[[AgentEvent], None]] = None,
         on_done: Optional[Callable[[str], None]] = None,
         on_error: Optional[Callable[[str], None]] = None,
+        coding_options: Optional[Dict[str, Any]] = None,
     ) -> Future:
         """
         Desktop Chat bridge executing the real Agent loop with streaming events and session-scoped MCP tools.
         """
+        if coding_options is not None:
+            return self._coding_stream_async(session_id, prompt, cwd, on_event, on_done, on_error, coding_options)
         cancel_event = threading.Event()
         with self._stream_lock:
             if session_id in self._streams and not self._streams[session_id].is_set():
@@ -926,6 +948,7 @@ class EvrenService:
             agent.default_cwd = cwd
             await agent.initialize()
             agent.providers.get_active().set_model(session.model)
+            self.configure_model_metadata(agent.providers.get_active())
             tool_filter = SessionToolFilter(agent.tools, self.mcp_manager, self.mcp_manager.tool_registry)
 
             # Acquire/connect active MCPs for this session

@@ -88,6 +88,7 @@ class OpenAIProvider(BaseProvider):
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
+        payload.update(self.reasoning_options())
         return payload
 
     async def chat(

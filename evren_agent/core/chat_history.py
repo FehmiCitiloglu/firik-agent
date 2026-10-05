@@ -35,6 +35,7 @@ class ChatHistoryStore:
         return {
             "model": session.model, "system_prompt": session.system_prompt,
             "temperature": session.temperature, "max_tokens": session.max_tokens,
+            "reasoning_effort": session.reasoning_effort,
             "active_mcp_servers": sorted(session.active_mcp_servers),
             "enabled_tool_names": sorted(session.enabled_tool_names) if session.enabled_tool_names is not None else None,
             "messages": [message.model_dump(mode="json") for message in list(session.messages)],
@@ -144,6 +145,7 @@ class ChatHistoryStore:
                               system_prompt=context.get("system_prompt", ""),
                               temperature=context.get("temperature", 0.7),
                               max_tokens=context.get("max_tokens", 2048),
+                              reasoning_effort=context.get("reasoning_effort"),
                               active_mcp_servers=set(context.get("active_mcp_servers", [])),
                               enabled_tool_names=context.get("enabled_tool_names"))
         session.created_at = record["created_at"]

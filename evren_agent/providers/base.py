@@ -18,9 +18,15 @@ class BaseProvider(ABC):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or ""
         self.current_model = default_model
+        self.model_metadata: Dict[str, Dict[str, Any]] = {}
+        self.reasoning_effort: Optional[str] = None
 
     def set_model(self, model_name: str) -> None:
         self.current_model = model_name
+
+    def reasoning_options(self) -> Dict[str, Any]:
+        from evren_agent.providers.reasoning import effort_payload
+        return effort_payload(self.model_metadata.get(self.current_model), self.reasoning_effort)
 
     @abstractmethod
     async def chat(

@@ -243,6 +243,7 @@ class EvrenProvider(BaseProvider):
         if stream:
             payload["stream_options"] = {"include_usage": True}
 
+        payload.update(self.reasoning_options())
         return payload
 
     async def chat(

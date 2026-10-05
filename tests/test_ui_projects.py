@@ -23,6 +23,14 @@ def synchronous_workspace_inspection(monkeypatch):
             on_success(snapshot)
 
     monkeypatch.setattr(EvrenService, "inspect_workspace_async", inspect)
+    def prepare(self, project_id, prompt, on_success, on_error, **options):
+        try:
+            data = self.projects.coding.prepare_coding_prompt(project_id, prompt, **options)
+        except Exception as error:
+            on_error(str(error))
+        else:
+            on_success(data)
+    monkeypatch.setattr(EvrenService, "prepare_coding_async", prepare)
 
 
 def test_projects_view_full_lifecycle(monkeypatch):
@@ -334,7 +342,11 @@ def test_coding_changes_activity_preview_and_editor(tmp_path, monkeypatch):
                 pv.coding_tabs.set(name)
                 app.update()
                 if name == "Değişiklikler":
-                    assert pv.coding_diff_box.winfo_height() >= 80
+                    assert pv.coding_diff_box.winfo_height() >= 80, str({
+                        name: (widget.winfo_width(), widget.winfo_height(), widget.winfo_reqheight())
+                        for name, widget in {"window": app, "body": pv.workspace_body, "pane": pv.coding_mid,
+                                             "tabs": pv.coding_tabs, "diff": pv.coding_diff_box,
+                                             "summary": pv.coding_changes_summary, "list": pv.coding_changes_list}.items()})
                 for widget in (pv.coding_open_project_btn, pv.coding_send_btn, pv.coding_diff_box):
                     # Inactive tabs retain their previous native geometry;
                     # bounds only describe the currently displayed controls.

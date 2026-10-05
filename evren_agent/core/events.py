@@ -16,6 +16,13 @@ class AgentEventType(str, Enum):
     MCP_CONNECTING = "mcp_connecting"
     MCP_CONNECTED = "mcp_connected"
     MCP_ERROR = "mcp_error"
+    TASK_STATE = "task_state"
+    PLAN_UPDATED = "plan_updated"
+    APPROVAL_REQUIRED = "approval_required"
+    APPROVAL_DECIDED = "approval_decided"
+    FILE_CHANGED = "file_changed"
+    VERIFICATION = "verification"
+    MODEL_USAGE = "model_usage"
     DONE = "done"
     ERROR = "error"
 
@@ -31,3 +38,5 @@ class AgentEvent:
     arguments: Optional[Dict[str, Any]] = None
     duration_ms: Optional[float] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    project_id: Optional[str] = None
+    task_id: Optional[str] = None
