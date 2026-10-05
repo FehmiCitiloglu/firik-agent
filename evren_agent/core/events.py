@@ -23,6 +23,7 @@ class AgentEventType(str, Enum):
     FILE_CHANGED = "file_changed"
     VERIFICATION = "verification"
     MODEL_USAGE = "model_usage"
+    SUBAGENT_EVENT = "subagent_event"
     DONE = "done"
     ERROR = "error"
 

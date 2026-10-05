@@ -142,6 +142,8 @@ class CodingBridge:
         started = time.monotonic()
         entered, notified = threading.Event(), threading.Event()
         control = session = record = None
+        subagents = None
+        initial_system_prompt = None
         acquired = set()
         terminal_events = []
         checkpoints, decisions, usage_requests, commands = [], [], {}, []
@@ -238,6 +240,17 @@ class CodingBridge:
                                        metadata=self._coding_redact({**event.metadata, **expected}))
             try:
                 self.coding_store.append_event(run_id, safe)
+                if event.type == AgentEventType.SUBAGENT_EVENT:
+                    child = safe.metadata
+                    if child.get("child_event_type") == "model_usage":
+                        detail = child.get("child_metadata", {})
+                        usage_requests[(child["agent_id"], detail.get("iteration", child.get("request_iteration", 1)))] = detail.get("usage", {})
+                    if child.get("status") != "running" and not child.get("child_event_type"):
+                        decisions.append({"kind": "subagent", **child, "result": safe.content})
+                    persist_snapshot(force=not child.get("child_event_type"))
+                    if on_event:
+                        self._dispatch(on_event, safe)
+                    return
                 first_delta = event.type == AgentEventType.TEXT_DELTA and not state["partial"]
                 if event.type == AgentEventType.MODEL_REQUEST_STARTED:
                     state.update(partial="", partial_start=len(session.messages),
@@ -267,7 +280,7 @@ class CodingBridge:
                 self._dispatch(on_event, safe)
 
         async def run():
-            nonlocal control, session, record
+            nonlocal control, session, record, subagents, initial_system_prompt
             entered.set()
             status, final = "completed", ""
             try:
@@ -276,6 +289,7 @@ class CodingBridge:
                     raise ValueError("Çalışma klasörü seçili projeyle eşleşmiyor.")
                 session = self.get_or_create_session(session_id)
                 session.system_prompt = self._coding_redact(session.system_prompt)
+                initial_system_prompt = session.system_prompt
                 session.messages = [Message.model_validate(self._coding_redact(m.model_dump(exclude_none=True))) for m in session.messages]
                 safe_prompt = self._coding_redact(prompt)
                 state["prior_count"] = len(session.messages)
@@ -353,6 +367,23 @@ class CodingBridge:
                 tool_filter = CodingToolFilter(cwd, control, mcp_registry=policy_registry,
                                                trusted_mcp_tools=allowed)
                 self._coding_filters[session_id] = tool_filter
+                stream_filter = tool_filter
+                if options.get("subagents_enabled") is True:
+                    from evren_agent.projects.subagents import SubagentToolFilter
+                    def child_agent():
+                        worker = Agent(config=deepcopy(config), config_path=str(self.config_path) if self.config_path else None)
+                        worker._is_initialized = True
+                        worker.providers.set_active(options.get("provider", self.provider))
+                        worker.providers.get_active().set_model(session.model)
+                        self.configure_model_metadata(worker.providers.get_active())
+                        return worker
+                    subagents = SubagentToolFilter(tool_filter, session, child_agent, receive, self._coding_redact)
+                    stream_filter = subagents
+                    session.system_prompt += (
+                        "\nAraştırma ve inceleme alt ajanları kullanılabilir. Yalnız bağımsız işlerde spawn_subagent kullan. "
+                        "Göreve ilgili dosyaları ve beklenen çıktıyı ekle. Alt ajanlar salt okunurdur; sonuçları doğrula. "
+                        "Son yanıtı vermeden önce açtığın tüm alt ajanları wait_subagent ile bekle veya cancel_subagent ile durdur."
+                    )
                 if continuation:
                     revalidation = self._coding_revalidate(tool_filter, continuation.file_journal)
                     checkpoints.append({"kind": "resume_revalidation", "previous_run_id": continuation.id,
@@ -363,7 +394,7 @@ class CodingBridge:
                     self.coding_store.checkpoint(run_id, checkpoints[-1])
                 await control.checkpoint()
                 async for event in agent.run_stream(prompt=safe_prompt, session=session,
-                                                     session_tool_filter=tool_filter,
+                                                     session_tool_filter=stream_filter,
                                                      cancel_event=cancel_event, run_control=control, cwd=cwd):
                     receive(event)
                     if event.type == AgentEventType.ERROR:
@@ -380,6 +411,14 @@ class CodingBridge:
             except Exception as error:
                 status, final = "failed", str(error)
             finally:
+                if subagents is not None:
+                    try:
+                        await subagents.close()
+                    except Exception as error:
+                        status, final = "failed", f"Alt ajan kaydı saklanamadı: {self._coding_redact(str(error))}"
+                        terminal_events.clear()
+                if session is not None and initial_system_prompt is not None:
+                    session.system_prompt = initial_system_prompt
                 state["terminal_status"] = status
                 if status == "cancelled":
                     terminal_events.clear()

@@ -22,7 +22,7 @@ Bu kayıt, mevcut CustomTkinter masaüstü uygulamasını koruyarak yapılan gel
 | 2. Arayüz | `ui/coding_workspace.py`, `ui/components/coding_conversation.py`, `ui/components/coding_explorer.py`: üç panel, kademeli ağaç, kaynak araması, Markdown/kod kartları, kopyalama, işlem/onay kartları, çok satırlı giriş, durdurma/devam, model seçimi, dışa aktarma, kalıcı tercihler. `ui/coding_strings.py` merkezi mod/durum/izin metinleri. | Gerçek ekran boyutları ve tema/klavye davranışı GUI testleriyle ayrıca kontrol edilir. |
 | 3. Bağlam ve doğrulama | `projects/context_builder.py`, `projects/coding_service.py`, `projects/indexer.py`: her tur güncel kurallar ve dosyalar, sembol/anahtar sözcük seçimi, doğrudan Python bağımlılıkları, görev kabul kriterleri, onaylı/pinli hafıza ve kabul edilmiş ADR, oturum kararları/test sonuçları. `coding_runtime.py`: tam konuşma korunurken eski turları yerel bütçeyle sıkıştırma, gerçek test kanıtıyla kriter kaydı. | Token sayımı karakter hesabına dayalı yerel tahmindir. Bilinmeyen model penceresi veya fiyat kesin değer olarak sunulmaz. Anlamsal arama eklenmemiştir. |
 | 4. Araçlar ve proje entegrasyonu | Hedefli `edit_file`/tek dosyalı `apply_patch`, SHA-256 beklenen sürüm, eşzamanlı kullanıcı değişikliğini koruyan geri alma, test komutu ve gerçek çıkış kodu, Git durum/farkı, proje/oturum MCP seçimi, metadata katalogu ve yalnız seçilen beceri talimatları. Mevcut Git çalışma alanı korunur; Git olmayan projede anlık görüntü farkı çalışır. | Açık onay olmadan commit/push yapan kodlama aracı yoktur. Ajanın test başarısı, tek başına bütün görev kriterlerinin sağlandığı anlamına gelmez. |
-| 5. İleri yetenek temeli | `projects/specialists.py`: planlama/kodlama/test/inceleme/dokümantasyon rolleri, isteğe bağlı kayıtlı yürütücü, ana izinlerle kesişim, aynı gerçek araç kapısından yürütme, dosya/klasör düzenleme kilidi, mevcut veya önceden oluşturulmuş izole çalışma alanı kimliği. | Varsayılan kapalıdır. Kendiliğinden alt ajan veya worktree oluşturulmaz. Sağlayıcı üzerinde uzman ajan çalıştırma ve ayrı checkout sağlama, ayrıca yapılandırılacak entegrasyonlardır. |
+| 5. İleri yetenek temeli | `projects/specialists.py`: rol ve izin kesişimi, gerçek araç kapısı ve dosya kilitleri. `projects/subagents.py`: gerçek sağlayıcıyla salt okunur araştırma/inceleme alt ajanları. | Alt ajanlar proje seçeneğiyle etkinleşir; varsayılan kapalıdır. Ayrı checkout ve dosya düzenleyen alt ajanlar sonraki aşamadır. |
 
 ## Güvenlik ve veri davranışı
 
@@ -81,6 +81,27 @@ Aşağıdaki test dosyaları istenen senaryoları kapsar. Test altyapısındaki 
 
 - İşletim sistemi düzeyinde terminal/ağ sandboxı ve sunucu tarafında MCP sandboxı bu değişikliğin parçası değildir.
 - Native dosya sürükle/bırak için platforma özel Tk entegrasyonu eklenmemiştir; dosya ekleme düğmesi, gezginden bağlam seçimi ve sohbet kodu ekleme mevcuttur.
-- Embedding tabanlı anlamsal arama, gerçek uzman sağlayıcı yürütücüleri ve otomatik worktree oluşturma ayrı ilerleme aşamalarıdır.
+- Embedding tabanlı anlamsal arama, dosya düzenleyen uzman sağlayıcı yürütücüleri ve otomatik worktree oluşturma ayrı ilerleme aşamalarıdır.
 - GUI kontrolleri ve doğrulama kayıtları görev sistemiyle bağlanmıştır; otomatik alt görev veya hafıza/ADR kesinleştirme yapılmaz. Kullanıcı onayıyla öneri inceleme akışı ayrıca genişletilebilir.
 - Gerçek model sunucusu/provider testi ve paketlenmiş masaüstü dağıtımı ayrıca doğrulanmalıdır; kaynak veya birim test değişikliği yayımlanmış uygulama paketini güncellemez.
+
+## Araştırma ve inceleme alt ajanları — 5 Ekim 2026
+
+Kodlama ekranındaki **Araştırma / inceleme alt ajanları** seçeneği proje tercihine kaydedilir ve varsayılan kapalıdır. Etkinleştirildiğinde ana modele `spawn_subagent`, `wait_subagent` ve `cancel_subagent` araçları sunulur. Bağımsız görevlerde ana ajan araştırma (`research`) veya inceleme (`review`) rolü seçer ve sonuçları toplar.
+
+`projects/subagents.py` mevcut `SpecialistCoordinator` ve gerçek `Agent.run_stream` döngüsünü kullanır. Çocuklar ana ajanın sağlayıcısını, modelini ve düşünme seviyesini kullanır; mesaj geçmişleri ayrıdır. Her çocuğun ayrı `agent_id` kimliği vardır. Yalnız mevcut ana izin kapısından geçen okuma araçları görünür; terminal, dosya düzenleme, MCP, plan/doğrulama değiştirme ve başka alt ajan oluşturma araçları sunulmaz.
+
+Sınırlar: aynı anda iki, çalışma boyunca dört alt ajan; çocuk başına 120 saniye, sekiz model turu ve en fazla 1024 çıktı tokenı. Bu yerel sınırlar kesin parasal bütçe değildir. Ana çalışma bittiğinde veya durdurulduğunda açık çocuklar iptal edilir. Alt ajan hatası ana modele başarısız araç sonucu olarak iletilir; başarılı inceleme gibi gösterilmez.
+
+Alt ajan olayları ve terminal mesaj geçmişleri ana çalışmanın SQLite kaydında `agent_id` ve `parent_run_id` ile tutulur. Model kullanım bilgisi ana ve çocuk istekleri birlikte sayılarak kaydedilir. **İşlemler** sekmesinde görev, rol, durum, geçen süre ve sonuç gösterilir; kaydedilmiş kartlar geçmiş açılırken pasif olarak geri yüklenir.
+
+Bu sürüm dosya düzenleyen alt ajan, ayrı Git worktree veya otomatik birleştirme içermez. Kontrollü sağlayıcı testleri gerçek ajan döngüsü, araç yürütücüsü ve SQLite kaydını doğrular; dış sağlayıcı kanıtı ayrıca raporlanır.
+
+5 Ekim doğrulaması:
+
+- `test_subagents.py`, `test_coding_specialists.py`, `test_coding_bridge.py`, `test_coding_runtime.py`: **67 test geçti**. İzin daraltma, eşzamanlılık/toplam sınırı, zaman aşımı, ana görev iptali, ayrı geçmiş, SQLite olay/sonuç kaydı ve toplam model kullanımı doğrulandı.
+- `test_ui_coding_workspace.py`, `test_ui_coding_history.py`: gerçek macOS Tk pencerelerinde **11 test geçti**. Yeni seçenek, ayrı ilerleme kartı, ana sohbetin erken kapanmaması ve geçmiş kartının pasif geri yüklenmesi doğrulandı. Test ortamına mevcut Tcl/Tk kitaplık yolları verildi.
+- Gerçek EVREN `mimo-v2.6-pro` sağlayıcısıyla geçici `sample.py` üzerinde ana model iki `spawn_subagent` ve iki `wait_subagent` çağrısı yaptı. Araştırma ve inceleme alt ajanları ayrı gerçek `read_file` çağrılarıyla `return a - b` davranışını buldu; ana model sonuçları birleştirdi. İki çocuk da tamamlandı, örnek dosya değişmedi. İlk ana model denemesi zaman aşımına uğradı; sonraki uçtan uca deneme geçti.
+- Paketlenmiş masaüstü uygulaması bu kaynak değişikliğiyle yeniden oluşturulmadı.
+
+Release öncesi izole v0.2.17 checkout doğrulaması: `scripts/test_desktop.py` gerçek macOS grafik ortamında **512 başarılı, 1 atlanan** testle tamamlandı. Aynı klasörde devam eden bağlam sıkıştırma çalışması bu release snapshotına alınmadı.

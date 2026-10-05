@@ -1082,7 +1082,7 @@ class ProjectsView(CodingWorkspaceMixin, ctk.CTkFrame):
             ctk.CTkButton(header, text="Kapat" if activity.get("expanded") else "Aç", width=45, height=24,
                           command=toggle).grid(row=0, column=2, padx=3)
             args = activity.get("arguments", {})
-            detail = args.get("command") or args.get("path") or ""
+            detail = args.get("command") or args.get("path") or args.get("görev") or ""
             if detail:
                 ctk.CTkLabel(card, text=redact_secrets(str(detail))[:500], anchor="w", justify="left", wraplength=350).pack(fill="x", padx=8, pady=(0, 6))
             if activity.get("expanded"):

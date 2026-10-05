@@ -82,6 +82,8 @@ def restore_state_history(state, record):
         state["activities"].append({"tool": result.get("command", "Kayıtlı test"), "status": label,
             "output": output, "duration_ms": result.get("duration_ms"), "historical": True})
     for decision in record.decisions:
+        if decision.get("kind") == "subagent":
+            continue
         approved = decision.get("approved", decision.get("allowed"))
         state["activities"].append({"tool": "Kullanıcı kararı · " + str(decision.get("tool_name", decision.get("kind", "Karar"))),
             "status": "Onaylandı" if approved is True else "Reddedildi" if approved is False else "Kaydedildi",
@@ -91,6 +93,10 @@ def restore_state_history(state, record):
             state["activities"].append({"tool": "Kesinti kontrol noktası", "status": "Kesildi",
                 "output": "Önceki durum: " + str(checkpoint.get("previous_status", "bilinmiyor")),
                 "duration_ms": None, "historical": True})
+    from evren_agent.ui.subagent_activity import update_subagent_activity
+    for decision in record.decisions:
+        if decision.get("kind") == "subagent" and decision.get("agent_id"):
+            update_subagent_activity(state["activities"], decision, decision.get("result", ""), historical=True)
     state["activities"] = redact_sensitive(state["activities"])
     state["before"] = state["snapshot"] = None
     state["selected_change"] = state["changes"][0]["path"] if state["changes"] else None
