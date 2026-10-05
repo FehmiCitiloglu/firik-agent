@@ -105,3 +105,7 @@ Bu sürüm dosya düzenleyen alt ajan, ayrı Git worktree veya otomatik birleşt
 - Paketlenmiş masaüstü uygulaması bu kaynak değişikliğiyle yeniden oluşturulmadı.
 
 Release öncesi izole v0.2.17 checkout doğrulaması: `scripts/test_desktop.py` gerçek macOS grafik ortamında **512 başarılı, 1 atlanan** testle tamamlandı. Aynı klasörde devam eden bağlam sıkıştırma çalışması bu release snapshotına alınmadı.
+
+Uzak v0.2.17 Apple Silicon testinde ölçekli Markdown yanıtının sonuna kaydırma kontrolü başarısız oldu. v0.2.18 için düşünme seçicisi mevcut işlem satırına alındı; ek başlık satırı kaldırıldı. Markdown, dar pencere ve düşünme ayarı testlerinde 23 test geçti.
+
+v0.2.18 izole release checkout doğrulaması: tam macOS masaüstü testinde **512 başarılı, 1 atlanan**. Windows checkout için izlenen `nul` dosyası Git kaydından çıkarıldı ve yeniden eklenmemesi için yok sayıldı; orijinal çalışma dosyası korunur.
