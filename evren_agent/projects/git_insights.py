@@ -387,7 +387,7 @@ class GitInsightsMixin:
                     "text": "", "uncommitted": not full_hash.strip("0"),
                 }
             elif row is not None and line.startswith("\t"):
-                row["text"] = line[1:]
+                row["text"] = line[1:].removesuffix("\r")
                 timestamp = row.pop("_time", None)
                 tz = row.pop("_tz", "+0000")
                 if timestamp is not None:
@@ -569,7 +569,7 @@ class GitInsightsMixin:
                 continue
             key, _, value = entry.partition(" ")
             if key == "worktree":
-                row = {"path": value, "hash": "", "branch": "", "detached": False, "bare": False, "locked": False, "prunable": False}
+                row = {"path": str(Path(value)), "hash": "", "branch": "", "detached": False, "bare": False, "locked": False, "prunable": False}
             elif key == "HEAD":
                 row["hash"] = value
             elif key == "branch":

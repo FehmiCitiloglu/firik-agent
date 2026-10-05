@@ -440,9 +440,13 @@ class CodingToolFilter:
             fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
                          0o600, dir_fd=parent)
             try:
-                if path.exists():
-                    os.fchmod(fd, stat.S_IMODE(path.stat().st_mode))
                 with os.fdopen(fd, "wb") as handle:
+                    if path.exists():
+                        mode = stat.S_IMODE(path.stat().st_mode)
+                        if os.name == "posix":
+                            os.fchmod(handle.fileno(), mode)
+                        else:
+                            os.chmod(temporary, mode)
                     handle.write(content)
                     handle.flush()
                     os.fsync(handle.fileno())
