@@ -310,8 +310,7 @@ def test_stream_follows_bottom_but_preserves_reading_position(chat):
     assert canvas.yview()[1] < 0.8
     canvas.yview_moveto(1.0)
     emit(root, stream, AgentEventType.DONE, content="Tamamlandı.")
-    pump(root, 0.08)
-    assert canvas.yview()[1] > 0.99
+    wait_for_layout(root, lambda: canvas.yview()[1] > 0.99)
 
 
 def test_text_only_reply_has_no_activity_and_on_done_fallback_works(chat):

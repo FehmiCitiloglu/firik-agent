@@ -1,4 +1,4 @@
-## v0.2.19 değişiklikleri
+## v0.2.20 değişiklikleri
 
 - Kodlama Ajanı için araştırma ve inceleme alt ajanları eklendi. Seçenek proje bazında açılır; ana ajan bağımsız görevleri dağıtır, sonuçları bekler ve birleştirir. Alt ajanlar yalnızca dosya okuma ve inceleme araçlarını kullanabilir.
 - Alt ajanların görevleri, durumları, süreleri ve sonuçları İşlemler sekmesinde gösterilir. Ayrı mesaj geçmişleri ve sonuçları kalıcı oturum kaydında korunur; ana görev durdurulunca açık alt ajanlar da durur.
@@ -9,6 +9,8 @@
 - Dar pencerelerde sohbet araçlarının taşması ve kodlama fark görünümünün küçülmesi düzeltildi; düşünme ve alt ajan kontrollerinin yerleşimi düzenlendi.
 
 - Windows dosya güncellemelerindeki izin ve geçici dosya kilidi hatası giderildi. Git satır sonları ve çalışma ağacı yolları platforma uygun gösterilir; testlerin UTF-8 ve komut kabuğu uyumluluğu düzeltildi.
+
+- Python 3.10 için Git UTC tarih ayrıştırması düzeltildi. Yerel arayüz testleri sabit gecikme yerine gerçek pencere yerleşiminin tamamlanmasını bekler.
 
 ## v0.2.16 değişiklikleri
 

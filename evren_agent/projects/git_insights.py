@@ -254,7 +254,7 @@ class GitInsightsMixin:
                 "added": 0, "removed": 0, "last_date": commit["committed_date"],
             })
             contributor["commits"] += 1
-            activity_date = datetime.fromisoformat(commit["committed_date"]).astimezone(timezone.utc).date().isoformat()
+            activity_date = datetime.fromisoformat(commit["committed_date"].replace("Z", "+00:00")).astimezone(timezone.utc).date().isoformat()
             activity[activity_date] += 1
             merge_commits += int(len(commit["parents"]) > 1)
             for change in commit["files"]:
