@@ -38,3 +38,23 @@ def credential_store(monkeypatch):
     )
     monkeypatch.setattr(credentials, "_backend", lambda: backend)
     return backend
+
+
+@pytest.fixture
+def python_command():
+    """Use the actual local shell's quoting for subprocess integration checks."""
+    import ntpath
+    import shlex
+    import subprocess
+    import sys
+    from evren_agent.core.shell import default_shell
+
+    def command(*arguments):
+        argv = [sys.executable, *arguments]
+        shell = ntpath.basename(default_shell()).lower()
+        if shell in ("cmd", "cmd.exe"):
+            return subprocess.list2cmdline(argv)
+        if shell in ("powershell", "powershell.exe", "pwsh", "pwsh.exe"):
+            return "& " + " ".join("'" + arg.replace("'", "''") + "'" for arg in argv)
+        return shlex.join(argv)
+    return command

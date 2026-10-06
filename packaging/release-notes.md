@@ -1,11 +1,18 @@
-## v0.2.17 değişiklikleri
+## v0.2.21 değişiklikleri
 
 - Kodlama Ajanı için araştırma ve inceleme alt ajanları eklendi. Seçenek proje bazında açılır; ana ajan bağımsız görevleri dağıtır, sonuçları bekler ve birleştirir. Alt ajanlar yalnızca dosya okuma ve inceleme araçlarını kullanabilir.
 - Alt ajanların görevleri, durumları, süreleri ve sonuçları İşlemler sekmesinde gösterilir. Ayrı mesaj geçmişleri ve sonuçları kalıcı oturum kaydında korunur; ana görev durdurulunca açık alt ajanlar da durur.
 - Aynı anda iki, çalışma boyunca dört alt ajan sınırı uygulanır. Her alt ajan için süre, model turu ve çıktı sınırları vardır; ana ajanın izinleri aşılmaz.
 - Kodlama çalışma alanına Türkçe modlar, dosya gezgini, bağlam seçimi, görev planı, işlem onayları, değişiklik farkları ve kalıcı çalışma geçmişi eklendi. Dosya işlemleri gerçek izin kapısından ve dosya sürümü kontrolünden geçer.
 - Git çalışma alanı gerçek depo durumunu, farkları ve Git işlemlerinin önizlemelerini gösterir; değişiklik yapan işlemler onay akışına bağlanır.
+- Windows checkout işlemini engelleyen, yanlışlıkla izlenen `nul` dosyası release kaynaklarından çıkarıldı.
 - Dar pencerelerde sohbet araçlarının taşması ve kodlama fark görünümünün küçülmesi düzeltildi; düşünme ve alt ajan kontrollerinin yerleşimi düzenlendi.
+
+- Windows dosya güncellemelerindeki izin ve geçici dosya kilidi hatası giderildi. Git satır sonları ve çalışma ağacı yolları platforma uygun gösterilir; testlerin UTF-8 ve komut kabuğu uyumluluğu düzeltildi.
+
+- Python 3.10 için Git UTC tarih ayrıştırması düzeltildi. Yerel arayüz testleri sabit gecikme yerine gerçek pencere yerleşiminin tamamlanmasını bekler.
+
+- Sohbet tamamlanırken kaydırma takibi son metin çizilmeden önce korunur; Windows Python 3.10 dâhil yerel yerleşim farkları takip durumunu kaybettirmez. Düşünme kontrolü arayüz testleri Windows’ta ayrı Tk süreçlerinde çalışır.
 
 ## v0.2.16 değişiklikleri
 

@@ -36,11 +36,12 @@ def repo(tmp_path: Path) -> Path:
     git(root, "config", "user.email", "alice@example.test")
     git(root, "config", "commit.gpgsign", "false")
     git(root, "config", "tag.gpgsign", "false")
-    (root / "code.py").write_text("value = 1\nprint(value)\n", encoding="utf-8")
-    (root / "README.md").write_text("Hello\n", encoding="utf-8")
-    (root / ".gitignore").write_text("*.cache\n", encoding="utf-8")
+    git(root, "config", "core.autocrlf", "false")
+    (root / "code.py").write_text("value = 1\nprint(value)\n", encoding="utf-8", newline="\n")
+    (root / "README.md").write_text("Hello\n", encoding="utf-8", newline="\n")
+    (root / ".gitignore").write_text("*.cache\n", encoding="utf-8", newline="\n")
     commit(root, "Initial working version")
-    (root / "code.py").write_text("value = 2\nprint(value)\n", encoding="utf-8")
+    (root / "code.py").write_text("value = 2\nprint(value)\n", encoding="utf-8", newline="\n")
     commit(root, "Improve value")
     return root
 
@@ -85,28 +86,28 @@ def test_previews_do_not_mutate_and_require_confirmation(repo: Path):
 
 
 def test_stage_unstage_and_commit_only_selected_content(repo: Path):
-    (repo / "code.py").write_text("value = 3\nprint(value)\n", encoding="utf-8")
-    (repo / "README.md").write_text("Local change remains\n", encoding="utf-8")
+    (repo / "code.py").write_text("value = 3\nprint(value)\n", encoding="utf-8", newline="\n")
+    (repo / "README.md").write_text("Local change remains\n", encoding="utf-8", newline="\n")
     assert_success(run(repo, "stage", {"paths": ["code.py"]}, confirmed=True))
     assert git(repo, "diff", "--cached", "--name-only") == "code.py"
     assert_success(run(repo, "unstage", {"paths": "code.py"}, confirmed=True))
     assert git(repo, "diff", "--cached", "--name-only") == ""
-    assert "value = 3" in (repo / "code.py").read_text()
+    assert "value = 3" in (repo / "code.py").read_text(encoding="utf-8")
     empty = run(repo, "commit", {"message": "Empty is rejected"}, confirmed=True)
     assert not empty["ok"] and "hazırlanan" in empty["stderr"]
     assert_success(run(repo, "stage", {"paths": "code.py"}, confirmed=True))
     assert_success(run(repo, "commit", {"message": "One selected change\n\nExplanation"}, confirmed=True))
     assert git(repo, "show", "HEAD:README.md") == "Hello"
-    assert "Local change remains" in (repo / "README.md").read_text()
+    assert "Local change remains" in (repo / "README.md").read_text(encoding="utf-8")
     assert git(repo, "log", "-1", "--format=%s") == "One selected change"
 
 
 def test_unstage_in_a_repository_without_first_commit(tmp_path: Path):
     git(tmp_path, "init", "--initial-branch=main")
-    (tmp_path / "new.txt").write_text("content\n")
+    (tmp_path / "new.txt").write_text("content\n", encoding="utf-8", newline="\n")
     assert_success(run(tmp_path, "stage", {"paths": ["new.txt"]}, confirmed=True))
     assert_success(run(tmp_path, "unstage", {"paths": ["new.txt"]}, confirmed=True))
-    assert (tmp_path / "new.txt").read_text() == "content\n"
+    assert (tmp_path / "new.txt").read_text(encoding="utf-8") == "content\n"
     assert git(tmp_path, "ls-files") == ""
 
 
@@ -140,8 +141,8 @@ def test_unsafe_or_invalid_input_is_rejected(repo: Path, tmp_path: Path, tool: s
 
 def test_literal_pathspecs_and_shell_metacharacters_are_just_file_names(repo: Path):
     filename = "[draft];$(touch PWNED).txt" if os.name == "nt" else ":(glob)*;$(touch PWNED).txt"
-    (repo / filename).write_text("literal filename\n")
-    (repo / "another.txt").write_text("untouched\n")
+    (repo / filename).write_text("literal filename\n", encoding="utf-8", newline="\n")
+    (repo / "another.txt").write_text("untouched\n", encoding="utf-8", newline="\n")
     assert_success(run(repo, "stage", {"paths": [filename]}, confirmed=True))
     tracked = git(repo, "diff", "--cached", "--name-only", "-z")
     assert tracked == filename + "\x00"
@@ -210,9 +211,9 @@ def test_file_history_follows_renames(repo: Path):
 def test_blame_does_not_execute_repository_textconv_helper(repo: Path, tmp_path: Path):
     marker = tmp_path / "textconv-ran"
     helper = tmp_path / "textconv-helper"
-    helper.write_text(f"#!/bin/sh\nprintf invoked > {shlex.quote(str(marker))}\ncat \"$1\"\n")
+    helper.write_text(f"#!/bin/sh\nprintf invoked > {shlex.quote(str(marker))}\ncat \"$1\"\n", encoding="utf-8", newline="\n")
     helper.chmod(0o700)
-    (repo / ".gitattributes").write_text("*.py diff=special\n")
+    (repo / ".gitattributes").write_text("*.py diff=special\n", encoding="utf-8", newline="\n")
     commit(repo, "Configure a file attribute")
     git(repo, "config", "diff.special.textconv", shlex.quote(str(helper)))
     result = assert_success(run(repo, "blame_moved", {"path": "code.py"}))
@@ -221,7 +222,7 @@ def test_blame_does_not_execute_repository_textconv_helper(repo: Path, tmp_path:
 
 
 def test_diff_word_movement_whitespace_and_ignore(repo: Path):
-    (repo / "code.py").write_text("value = 3  \nprint(value)\n")
+    (repo / "code.py").write_text("value = 3  \nprint(value)\n", encoding="utf-8", newline="\n")
     assert "value = 3" in assert_success(run(repo, "diff", {"path": "code.py"}))["stdout"]
     assert "{+3+}" in assert_success(run(repo, "word_diff", {"path": "code.py"}))["stdout"]
     assert "\x1b[" in assert_success(run(repo, "moved_diff", {"path": "code.py"}))["stdout"]
@@ -230,7 +231,7 @@ def test_diff_word_movement_whitespace_and_ignore(repo: Path):
     assert "*.cache" in assert_success(run(repo, "check_ignore", {"path": "build.cache"}))["stdout"]
     no_match = run(repo, "check_ignore", {"path": "code.py"})
     assert no_match["ok"] and no_match["returncode"] == 1 and "eşleşmiyor" in no_match["stdout"]
-    (repo / "temporary.txt").write_text("keep this\n")
+    (repo / "temporary.txt").write_text("keep this\n", encoding="utf-8", newline="\n")
     preview = assert_success(run(repo, "clean_preview"))
     assert "temporary.txt" in preview["stdout"]
     assert (repo / "temporary.txt").exists()
@@ -254,8 +255,8 @@ def test_branch_tag_rescue_and_worktree(repo: Path):
 
 
 def test_stash_save_show_apply_and_pop(repo: Path):
-    (repo / "code.py").write_text("value = 99\nprint(value)\n")
-    (repo / "new.txt").write_text("new saved file\n")
+    (repo / "code.py").write_text("value = 99\nprint(value)\n", encoding="utf-8", newline="\n")
+    (repo / "new.txt").write_text("new saved file\n", encoding="utf-8", newline="\n")
     assert_success(run(repo, "stash_save", {"message": "Named work"}, confirmed=True))
     assert git(repo, "status", "--porcelain") == ""
     assert "Named work" in assert_success(run(repo, "stash_list"))["stdout"]
@@ -275,11 +276,11 @@ def test_stash_save_show_apply_and_pop(repo: Path):
 
 
 def test_confirmed_stash_preview_rejects_shifted_reflog_selector(repo: Path):
-    (repo / "code.py").write_text("value = 10\n")
+    (repo / "code.py").write_text("value = 10\n", encoding="utf-8", newline="\n")
     assert_success(run(repo, "stash_save", {"message": "First stash"}, confirmed=True))
     preview = Git.preview_tool(repo, "stash_pop")
     assert preview["ok"] and preview["targets"]["stash"]
-    (repo / "code.py").write_text("value = 20\n")
+    (repo / "code.py").write_text("value = 20\n", encoding="utf-8", newline="\n")
     assert_success(run(repo, "stash_save", {"message": "Newer stash"}, confirmed=True))
     result = Git.execute_tool(repo, "stash_pop", confirmed=True,
                               expected_command=preview["command"], expected_targets=preview["targets"])
@@ -289,43 +290,43 @@ def test_confirmed_stash_preview_rejects_shifted_reflog_selector(repo: Path):
 
 
 def test_restore_is_explicit_and_preserves_index(repo: Path):
-    (repo / "code.py").write_text("value = 10\n")
+    (repo / "code.py").write_text("value = 10\n", encoding="utf-8", newline="\n")
     git(repo, "add", "code.py")
-    (repo / "code.py").write_text("value = 20\n")
+    (repo / "code.py").write_text("value = 20\n", encoding="utf-8", newline="\n")
     refused = run(repo, "restore_file", {"path": "code.py"})
-    assert not refused["ok"] and (repo / "code.py").read_text() == "value = 20\n"
+    assert not refused["ok"] and (repo / "code.py").read_text(encoding="utf-8") == "value = 20\n"
     assert_success(run(repo, "restore_file", {"path": "code.py"}, confirmed=True))
-    assert (repo / "code.py").read_text() == "value = 2\nprint(value)\n"
+    assert (repo / "code.py").read_text(encoding="utf-8") == "value = 2\nprint(value)\n"
     assert git(repo, "show", ":code.py") == "value = 10"
 
 
 def test_confirmed_preview_is_rejected_if_head_changes(repo: Path):
     preview = Git.preview_tool(repo, "restore_file", {"path": "code.py"})
     assert preview["ok"]
-    (repo / "code.py").write_text("value = 50\n")
+    (repo / "code.py").write_text("value = 50\n", encoding="utf-8", newline="\n")
     commit(repo, "Change target after preview")
-    (repo / "code.py").write_text("unsaved content must remain\n")
+    (repo / "code.py").write_text("unsaved content must remain\n", encoding="utf-8", newline="\n")
     result = Git.execute_tool(repo, "restore_file", {"path": "code.py"}, confirmed=True,
                               expected_command=preview["command"])
     assert not result["ok"] and "komut değişti" in result["stderr"]
-    assert (repo / "code.py").read_text() == "unsaved content must remain\n"
+    assert (repo / "code.py").read_text(encoding="utf-8") == "unsaved content must remain\n"
 
 
 def test_revert_clean_requirement_and_success(repo: Path):
     tip = git(repo, "rev-parse", "HEAD")
-    (repo / "README.md").write_text("unsaved\n")
+    (repo / "README.md").write_text("unsaved\n", encoding="utf-8", newline="\n")
     refused = run(repo, "revert", {"ref": tip}, confirmed=True)
     assert not refused["ok"] and "temiz değil" in refused["stderr"]
     assert git(repo, "rev-parse", "HEAD") == tip
     assert_success(run(repo, "restore_file", {"path": "README.md"}, confirmed=True))
     assert_success(run(repo, "revert", {"ref": tip}, confirmed=True))
-    assert "value = 1" in (repo / "code.py").read_text()
+    assert "value = 1" in (repo / "code.py").read_text(encoding="utf-8")
     assert git(repo, "rev-list", "--count", "HEAD") == "3"
 
 
 def test_cherry_pick_conflicts_are_reported_and_abort_restores_start(repo: Path):
     git(repo, "switch", "-c", "other", "HEAD~1")
-    (repo / "code.py").write_text("value = 55\nprint(value)\n")
+    (repo / "code.py").write_text("value = 55\nprint(value)\n", encoding="utf-8", newline="\n")
     conflicting = commit(repo, "Other conflicting value")
     git(repo, "switch", "main")
     original = git(repo, "rev-parse", "HEAD")
@@ -343,7 +344,7 @@ def test_cherry_pick_conflicts_are_reported_and_abort_restores_start(repo: Path)
 
 def test_revert_conflict_can_be_aborted(repo: Path):
     git(repo, "switch", "-c", "other", "HEAD~1")
-    (repo / "code.py").write_text("value = 55\nprint(value)\n")
+    (repo / "code.py").write_text("value = 55\nprint(value)\n", encoding="utf-8", newline="\n")
     conflicting = commit(repo, "Other conflicting value")
     git(repo, "switch", "main")
     result = run(repo, "revert", {"ref": conflicting}, confirmed=True)
@@ -354,16 +355,16 @@ def test_revert_conflict_can_be_aborted(repo: Path):
 
 def test_cherry_pick_success(repo: Path):
     git(repo, "switch", "-c", "source")
-    (repo / "feature.txt").write_text("feature\n")
+    (repo / "feature.txt").write_text("feature\n", encoding="utf-8", newline="\n")
     source = commit(repo, "Useful feature")
     git(repo, "switch", "main")
     assert_success(run(repo, "cherry_pick", {"ref": source}, confirmed=True))
-    assert (repo / "feature.txt").read_text() == "feature\n"
+    assert (repo / "feature.txt").read_text(encoding="utf-8") == "feature\n"
 
 
 def test_merge_conflict_continue_and_abort(repo: Path):
     git(repo, "switch", "-c", "other", "HEAD~1")
-    (repo / "code.py").write_text("value = 55\nprint(value)\n")
+    (repo / "code.py").write_text("value = 55\nprint(value)\n", encoding="utf-8", newline="\n")
     commit(repo, "Other conflicting value")
     git(repo, "switch", "main")
     tip = git(repo, "rev-parse", "HEAD")
@@ -375,7 +376,7 @@ def test_merge_conflict_continue_and_abort(repo: Path):
     assert git(repo, "rev-parse", "HEAD") == tip
     result = run(repo, "merge", {"ref": "other"}, confirmed=True)
     assert not result["ok"] and result["conflicts"] == ["code.py"]
-    (repo / "code.py").write_text("value = 100\nprint(value)\n")
+    (repo / "code.py").write_text("value = 100\nprint(value)\n", encoding="utf-8", newline="\n")
     assert_success(run(repo, "stage", {"paths": ["code.py"]}, confirmed=True))
     assert_success(run(repo, "merge_continue", confirmed=True))
     assert len(git(repo, "rev-list", "--parents", "-n", "1", "HEAD").split()) == 3
@@ -384,7 +385,7 @@ def test_merge_conflict_continue_and_abort(repo: Path):
 
 def test_rebase_conflict_abort_skip_and_continue(repo: Path):
     git(repo, "switch", "-c", "topic", "HEAD~1")
-    (repo / "code.py").write_text("value = 55\nprint(value)\n")
+    (repo / "code.py").write_text("value = 55\nprint(value)\n", encoding="utf-8", newline="\n")
     topic_tip = commit(repo, "Topic conflicting value")
     result = run(repo, "rebase", {"ref": "main"}, confirmed=True)
     assert not result["ok"] and result["conflicts"] == ["code.py"]
@@ -393,7 +394,7 @@ def test_rebase_conflict_abort_skip_and_continue(repo: Path):
     assert git(repo, "symbolic-ref", "--short", "HEAD") == "topic"
     result = run(repo, "rebase", {"ref": "main"}, confirmed=True)
     assert not result["ok"] and result["conflicts"] == ["code.py"]
-    (repo / "code.py").write_text("value = 100\nprint(value)\n")
+    (repo / "code.py").write_text("value = 100\nprint(value)\n", encoding="utf-8", newline="\n")
     assert_success(run(repo, "stage", {"paths": ["code.py"]}, confirmed=True))
     assert_success(run(repo, "rebase_continue", confirmed=True))
     assert git(repo, "symbolic-ref", "--short", "HEAD") == "topic"
@@ -408,12 +409,12 @@ def test_rebase_conflict_abort_skip_and_continue(repo: Path):
 @pytest.mark.parametrize("operation", ["cherry_pick", "revert"])
 def test_commit_operations_can_continue_after_resolving_conflicts(repo: Path, operation: str):
     git(repo, "switch", "-c", "other", "HEAD~1")
-    (repo / "code.py").write_text("value = 55\nprint(value)\n")
+    (repo / "code.py").write_text("value = 55\nprint(value)\n", encoding="utf-8", newline="\n")
     conflicting = commit(repo, "Other conflicting value")
     git(repo, "switch", "main")
     result = run(repo, operation, {"ref": conflicting}, confirmed=True)
     assert not result["ok"] and result["conflicts"] == ["code.py"]
-    (repo / "code.py").write_text("value = 100\nprint(value)\n")
+    (repo / "code.py").write_text("value = 100\nprint(value)\n", encoding="utf-8", newline="\n")
     assert_success(run(repo, "stage", {"paths": ["code.py"]}, confirmed=True))
     assert_success(run(repo, operation + "_continue", confirmed=True))
     assert git(repo, "status", "--porcelain") == ""
@@ -425,7 +426,7 @@ def test_branch_delete_refuses_unmerged_and_current_branches(repo: Path):
     assert "merged" not in git(repo, "branch", "--format=%(refname:short)").splitlines()
     assert not run(repo, "branch_delete", {"branch": "main"}, confirmed=True)["ok"]
     git(repo, "switch", "-c", "unmerged")
-    (repo / "new-topic.txt").write_text("topic\n")
+    (repo / "new-topic.txt").write_text("topic\n", encoding="utf-8", newline="\n")
     commit(repo, "Unmerged work")
     git(repo, "switch", "main")
     result = run(repo, "branch_delete", {"branch": "unmerged"}, confirmed=True)
@@ -436,7 +437,7 @@ def test_branch_delete_refuses_unmerged_and_current_branches(repo: Path):
 def test_bisect_search_and_reset(repo: Path):
     good = git(repo, "rev-parse", "HEAD~1")
     for number in range(3, 6):
-        (repo / "code.py").write_text(f"value = {number}\nprint(value)\n")
+        (repo / "code.py").write_text(f"value = {number}\nprint(value)\n", encoding="utf-8", newline="\n")
         commit(repo, f"Value {number}")
     bad = git(repo, "rev-parse", "HEAD")
     assert_success(run(repo, "bisect_start", {"good": good, "bad": bad}, confirmed=True))
@@ -474,14 +475,14 @@ def test_remote_operations_use_local_remote_and_fast_forward_only(repo: Path, tm
     subprocess.run(["git", "clone", str(remote), str(peer)], check=True, capture_output=True, timeout=15)
     git(peer, "config", "user.name", "Peer")
     git(peer, "config", "user.email", "peer@example.test")
-    (peer / "remote.txt").write_text("remote content\n")
+    (peer / "remote.txt").write_text("remote content\n", encoding="utf-8", newline="\n")
     commit(peer, "Remote update")
     git(peer, "push", "origin", "main")
     assert_success(run(repo, "pull_ff", {"branch": "main"}, confirmed=True))
-    assert (repo / "remote.txt").read_text() == "remote content\n"
-    (repo / "local.txt").write_text("local content\n")
+    assert (repo / "remote.txt").read_text(encoding="utf-8") == "remote content\n"
+    (repo / "local.txt").write_text("local content\n", encoding="utf-8", newline="\n")
     local_tip = commit(repo, "Local divergence")
-    (peer / "another.txt").write_text("other content\n")
+    (peer / "another.txt").write_text("other content\n", encoding="utf-8", newline="\n")
     commit(peer, "Remote divergence")
     git(peer, "push", "origin", "main")
     refused = run(repo, "pull_ff", {"branch": "main"}, confirmed=True)
@@ -504,7 +505,7 @@ def test_remote_credentials_are_redacted_without_network_access(repo: Path):
     output = assert_success(run(repo, "remotes"))["stdout"]
     assert token not in output and "alice:" not in output
     assert "https://***@example.test/repository.git" in output
-    (repo / "README.md").write_text(f"Token in commit message fixture {token}\n")
+    (repo / "README.md").write_text(f"Token in commit message fixture {token}\n", encoding="utf-8", newline="\n")
     commit(repo, f"Token leak fixture {token}")
     shown = assert_success(run(repo, "commit_show"))["stdout"]
     assert token not in shown and "[REDACTED_TOKEN]" in shown

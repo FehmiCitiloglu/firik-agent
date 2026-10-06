@@ -4,8 +4,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shlex
-import sys
 from types import SimpleNamespace
 
 import pytest
@@ -27,7 +25,7 @@ def call(name, **arguments):
 def runtime(tmp_path):
     root = tmp_path / "project"
     root.mkdir()
-    (root / "main.py").write_text("def merhaba():\n    return 'eski'\n", encoding="utf-8")
+    (root / "main.py").write_text("def merhaba():\n    return 'eski'\n", encoding="utf-8", newline="\n")
     session = ChatSession(session_id="coding-a")
     control = CodingRunControl(session.session_id, "project-a", "task-a", mode="auto")
     tools = CodingToolFilter(root, control)
@@ -64,11 +62,11 @@ async def test_read_only_modes_block_mutations_even_when_called_directly(runtime
 async def test_isolated_registry_session_and_paths(runtime, tmp_path):
     root, session, control, tools = runtime
     outsider = tmp_path / "outside.txt"
-    outsider.write_text("dışarı", encoding="utf-8")
+    outsider.write_text("dışarı", encoding="utf-8", newline="\n")
     for path in (str(outsider), "../outside.txt"):
         assert (await execute(runtime, "read_file", path=path)).is_error
         assert (await execute(runtime, "write_file", path=path, content="ez", expected_hash=revision(outsider))).is_error
-    assert outsider.read_text() == "dışarı"
+    assert outsider.read_text(encoding="utf-8") == "dışarı"
     (root / "link").symlink_to(tmp_path, target_is_directory=True)
     (root / "inside-link.py").symlink_to(root / "main.py")
     for path in ("link/outside.txt", "inside-link.py"):
@@ -85,9 +83,9 @@ async def test_isolated_registry_session_and_paths(runtime, tmp_path):
 @pytest.mark.asyncio
 async def test_secret_file_content_ranges_and_logs_are_redacted(runtime):
     root, _, control, _ = runtime
-    (root / ".env.local").write_text("SECRET=unsafe", encoding="utf-8")
+    (root / ".env.local").write_text("SECRET=unsafe", encoding="utf-8", newline="\n")
     assert (await execute(runtime, "read_file", path=".env.local")).is_error
-    (root / "config.py").write_text("api_key = 'abcdefghijklmnop'\n-----BEGIN PRIVATE KEY-----\nSENSITIVEBASE64BODY\n-----END PRIVATE KEY-----\n", encoding="utf-8")
+    (root / "config.py").write_text("api_key = 'abcdefghijklmnop'\n-----BEGIN PRIVATE KEY-----\nSENSITIVEBASE64BODY\n-----END PRIVATE KEY-----\n", encoding="utf-8", newline="\n")
     result = await execute(runtime, "read_file", path="config.py", start_line=3, end_line=3)
     assert not result.is_error and "SENSITIVEBASE64BODY" not in result.content
     result = await execute(runtime, "search_project", query="api_key")
@@ -109,13 +107,13 @@ async def test_targeted_edits_revision_conflicts_and_safe_undo(runtime):
     old_hash = revision(path)
     result = await execute(runtime, "edit_file", path="main.py", expected_hash=old_hash,
                            old_text="'eski'", new_text="'yeni'")
-    assert not result.is_error and "yeni" in path.read_text()
+    assert not result.is_error and "yeni" in path.read_text(encoding="utf-8")
     change_id = json.loads(result.content)["change_id"]
     assert (await execute(runtime, "edit_file", path="main.py", expected_hash=old_hash,
                           old_text="'yeni'", new_text="'yanlış'")).is_error
-    path.write_text("# Kullanıcının eşzamanlı düzenlemesi\n", encoding="utf-8")
+    path.write_text("# Kullanıcının eşzamanlı düzenlemesi\n", encoding="utf-8", newline="\n")
     assert (await execute(runtime, "undo_change", change_id=change_id)).is_error
-    assert "Kullanıcının" in path.read_text()
+    assert "Kullanıcının" in path.read_text(encoding="utf-8")
     path.write_bytes(original.replace(b"eski", b"yeni"))
     assert not (await execute(runtime, "undo_change", change_id=change_id)).is_error
     assert path.read_bytes() == original
@@ -124,12 +122,28 @@ async def test_targeted_edits_revision_conflicts_and_safe_undo(runtime):
 
 
 @pytest.mark.asyncio
+async def test_permission_failure_closes_temporary_file_and_preserves_source(runtime, monkeypatch):
+    root, _, _, _ = runtime
+    source = root / "main.py"
+    original = source.read_bytes()
+    operation = "fchmod" if os.name == "posix" else "chmod"
+    def denied(*args):
+        raise PermissionError("simulated permission failure")
+    monkeypatch.setattr(os, operation, denied)
+    result = await execute(runtime, "edit_file", path="main.py", expected_hash=revision(source),
+                           old_text="'eski'", new_text="'yeni'")
+    assert result.is_error and "simulated permission failure" in result.content
+    assert source.read_bytes() == original
+    assert not list(root.glob(".evren-change-*.tmp"))
+
+
+@pytest.mark.asyncio
 async def test_single_file_patch_exact_context_and_creation(runtime):
     root, _, _, tools = runtime
     path = root / "main.py"
     patch = "--- a/main.py\n+++ b/main.py\n@@ -1,2 +1,2 @@\n def merhaba():\n-    return 'eski'\n+    return 'yeni'\n"
     result = await execute(runtime, "apply_patch", path="main.py", expected_hash=revision(path), patch=patch)
-    assert not result.is_error and "yeni" in path.read_text()
+    assert not result.is_error and "yeni" in path.read_text(encoding="utf-8")
     assert (await execute(runtime, "apply_patch", path="main.py", expected_hash=revision(path), patch=patch)).is_error
     assert (await execute(runtime, "apply_patch", path="main.py", expected_hash=revision(path),
                           patch=patch.replace("b/main.py", "b/another.py"))).is_error
@@ -192,12 +206,12 @@ def auto_approve(control, events=None):
 
 
 @pytest.mark.asyncio
-async def test_actual_commands_cwd_tests_exit_failure_and_verification_evidence(runtime):
+async def test_actual_commands_cwd_tests_exit_failure_and_verification_evidence(runtime, python_command):
     root, _, control, tools = runtime
     events = []
     auto_approve(control, events)
-    (root / "test_behavior.py").write_text("import unittest\nclass TestBehavior(unittest.TestCase):\n    def test_example(self):\n        self.assertEqual(2 + 2, 4)\n", encoding="utf-8")
-    command = f"{shlex.quote(sys.executable)} -m unittest test_behavior -v"
+    (root / "test_behavior.py").write_text("import unittest\nclass TestBehavior(unittest.TestCase):\n    def test_example(self):\n        self.assertEqual(2 + 2, 4)\n", encoding="utf-8", newline="\n")
+    command = python_command("-m", "unittest", "test_behavior", "-v")
     result = await execute(runtime, "run_tests", command=command)
     assert not result.is_error
     test = json.loads(result.content)
@@ -209,30 +223,35 @@ async def test_actual_commands_cwd_tests_exit_failure_and_verification_evidence(
     assert control.snapshot()["tests"][0]["passed"]
     with pytest.raises(ValueError, match="kanıt"):
         tools.record_verification("Uydurma", "passed", "fake")
-    failure = await execute(runtime, "run_tests", command=f"{shlex.quote(sys.executable)} -c 'raise SystemExit(3)'")
+    failure = await execute(runtime, "run_tests", command=python_command("-c", "raise SystemExit(3)"))
     assert failure.is_error and json.loads(failure.content)["exit_code"] == 3
     assert len([e for e in events if e.type == AgentEventType.APPROVAL_REQUIRED]) == 2
     assert all(e.session_id == "coding-a" and e.project_id == "project-a" and e.task_id == "task-a" for e in events)
 
 
 @pytest.mark.asyncio
-async def test_actual_process_cancellation_and_timeout_cleanup(runtime):
+async def test_actual_process_cancellation_and_timeout_cleanup(runtime, python_command):
     root, _, control, _ = runtime
     auto_approve(control)
     code = "import os,time,pathlib; pathlib.Path('pid').write_text(str(os.getpid())); time.sleep(30); pathlib.Path('finished').touch()"
-    command = f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}"
+    command = python_command("-c", code)
     future = asyncio.create_task(execute(runtime, "run_command", command=command))
     for _ in range(200):
         if (root / "pid").exists():
             break
         await asyncio.sleep(0.005)
     assert (root / "pid").exists()
-    pid = int((root / "pid").read_text())
+    pid = int((root / "pid").read_text(encoding="utf-8"))
     control.cancel()
     with pytest.raises(asyncio.CancelledError):
         await future
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
+    if os.name == "posix":
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
+    else:
+        import subprocess
+        listing = subprocess.check_output(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"], text=True)
+        assert f'"{pid}"' not in listing
     assert not (root / "finished").exists()
     control.cancel_event.clear()
     timeout = await execute(runtime, "run_tests", command=command, timeout=0.1)
@@ -419,10 +438,10 @@ def test_structured_tool_redaction_preserves_json_protocol():
 async def test_managed_worktree_root_allows_sources_but_protects_project_local_secret_dirs(tmp_path):
     root = tmp_path / ".codex" / "worktrees" / "managed" / "repo"
     root.mkdir(parents=True)
-    (root / "main.py").write_text("def merhaba():\n    return 'Türkçe'\n", encoding="utf-8")
+    (root / "main.py").write_text("def merhaba():\n    return 'Türkçe'\n", encoding="utf-8", newline="\n")
     secret_dir = root / ".aws"
     secret_dir.mkdir()
-    (secret_dir / "credentials").write_text("token=do-not-read-this-secret", encoding="utf-8")
+    (secret_dir / "credentials").write_text("token=do-not-read-this-secret", encoding="utf-8", newline="\n")
     session = ChatSession(session_id="managed")
     control = CodingRunControl(session.session_id, "managed-project", mode="ask")
     tools = CodingToolFilter(root, control)
@@ -440,7 +459,7 @@ async def test_managed_worktree_root_allows_sources_but_protects_project_local_s
 def test_sensitive_directory_cannot_become_runtime_project_root(tmp_path, protected_root):
     root = tmp_path / protected_root
     root.mkdir()
-    (root / "source.py").write_text("password='root-secret-value'", encoding="utf-8")
+    (root / "source.py").write_text("password='root-secret-value'", encoding="utf-8", newline="\n")
     control = CodingRunControl("restricted-root", "protected-project", mode="ask")
     with pytest.raises(ValueError, match="Hassas"):
         CodingToolFilter(root, control)

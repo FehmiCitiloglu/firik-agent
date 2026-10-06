@@ -103,3 +103,9 @@ Bu sürüm dosya düzenleyen alt ajan, ayrı Git worktree veya otomatik birleşt
 - `test_ui_coding_workspace.py`, `test_ui_coding_history.py`: gerçek macOS Tk pencerelerinde **11 test geçti**. Yeni seçenek, ayrı ilerleme kartı, ana sohbetin erken kapanmaması ve geçmiş kartının pasif geri yüklenmesi doğrulandı. Test ortamına mevcut Tcl/Tk kitaplık yolları verildi.
 - Gerçek EVREN `mimo-v2.6-pro` sağlayıcısıyla geçici `sample.py` üzerinde ana model iki `spawn_subagent` ve iki `wait_subagent` çağrısı yaptı. Araştırma ve inceleme alt ajanları ayrı gerçek `read_file` çağrılarıyla `return a - b` davranışını buldu; ana model sonuçları birleştirdi. İki çocuk da tamamlandı, örnek dosya değişmedi. İlk ana model denemesi zaman aşımına uğradı; sonraki uçtan uca deneme geçti.
 - Paketlenmiş masaüstü uygulaması bu kaynak değişikliğiyle yeniden oluşturulmadı.
+
+Release öncesi izole v0.2.17 checkout doğrulaması: `scripts/test_desktop.py` gerçek macOS grafik ortamında **512 başarılı, 1 atlanan** testle tamamlandı. Aynı klasörde devam eden bağlam sıkıştırma çalışması bu release snapshotına alınmadı.
+
+Uzak v0.2.17 Apple Silicon testinde ölçekli Markdown yanıtının sonuna kaydırma kontrolü başarısız oldu. v0.2.18 için düşünme seçicisi mevcut işlem satırına alındı; ek başlık satırı kaldırıldı. Markdown, dar pencere ve düşünme ayarı testlerinde 23 test geçti.
+
+v0.2.18 izole release checkout doğrulaması: tam macOS masaüstü testinde **512 başarılı, 1 atlanan**. Windows checkout için izlenen `nul` dosyası Git kaydından çıkarıldı ve yeniden eklenmemesi için yok sayıldı; orijinal çalışma dosyası korunur.

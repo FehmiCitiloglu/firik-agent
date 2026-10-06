@@ -282,8 +282,6 @@ class ChatView(ctk.CTkFrame):
         top_bar.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 6))
         model_bar = ctk.CTkFrame(top_bar, fg_color="transparent")
         model_bar.pack(fill="x")
-        effort_bar = ctk.CTkFrame(top_bar, fg_color="transparent")
-        effort_bar.pack(fill="x")
         actions_bar = ctk.CTkFrame(top_bar, fg_color="transparent")
         actions_bar.pack(fill="x")
 
@@ -300,7 +298,7 @@ class ChatView(ctk.CTkFrame):
         self.model_combo.set(self.service.default_model)
         self.model_combo.pack(side="left", padx=4, pady=10)
 
-        self.effort_selector = EffortSelector(effort_bar, self.service, self._on_effort_selected)
+        self.effort_selector = EffortSelector(actions_bar, self.service, self._on_effort_selected)
         self.effort_selector.pack(side="left", padx=6, pady=4)
         self._refresh_effort()
 
@@ -829,6 +827,7 @@ class ChatView(ctk.CTkFrame):
 
     def _on_send_pressed(self) -> None:
         if self.is_streaming:
+            following = self._capture_scroll_anchor() is not None
             # Durdur
             self.service.cancel_active_stream(self.session.session_id)
             if self.current_bot_bubble:
@@ -841,7 +840,7 @@ class ChatView(ctk.CTkFrame):
                 self._current_bot_record.update(content=content, pending=False)
             if self._current_activity:
                 self._current_activity.finish(cancelled=True)
-            self._finish_streaming()
+            self._finish_streaming(following=following)
             self._save_history()
             return
 
@@ -922,6 +921,7 @@ class ChatView(ctk.CTkFrame):
         def complete(full_text: str = "", error: Optional[str] = None) -> None:
             if self._stream_token is not stream_token:
                 return
+            following = self._capture_scroll_anchor() is not None
             full_text = full_text.strip()
             text_content = "".join(accumulated_chunks).strip()
             if error:
@@ -932,7 +932,7 @@ class ChatView(ctk.CTkFrame):
             bot_record.update(content=bot_bubble.raw_content, pending=False)
             if activity:
                 activity.finish(failed=error is not None)
-            self._finish_streaming()
+            self._finish_streaming(following=following)
             self._save_history()
 
         def on_event(evt: AgentEvent):
@@ -1012,8 +1012,9 @@ class ChatView(ctk.CTkFrame):
             self._scroll_job = None
         super().destroy()
 
-    def _finish_streaming(self) -> None:
-        following = self._capture_scroll_anchor() is not None
+    def _finish_streaming(self, *, following: Optional[bool] = None) -> None:
+        if following is None:
+            following = self._capture_scroll_anchor() is not None
         self.is_streaming = False
         if hasattr(self, "effort_selector"):
             self._refresh_effort()

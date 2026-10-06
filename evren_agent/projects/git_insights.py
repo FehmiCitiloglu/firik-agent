@@ -254,7 +254,7 @@ class GitInsightsMixin:
                 "added": 0, "removed": 0, "last_date": commit["committed_date"],
             })
             contributor["commits"] += 1
-            activity_date = datetime.fromisoformat(commit["committed_date"]).astimezone(timezone.utc).date().isoformat()
+            activity_date = datetime.fromisoformat(commit["committed_date"].replace("Z", "+00:00")).astimezone(timezone.utc).date().isoformat()
             activity[activity_date] += 1
             merge_commits += int(len(commit["parents"]) > 1)
             for change in commit["files"]:
@@ -387,7 +387,7 @@ class GitInsightsMixin:
                     "text": "", "uncommitted": not full_hash.strip("0"),
                 }
             elif row is not None and line.startswith("\t"):
-                row["text"] = line[1:]
+                row["text"] = line[1:].removesuffix("\r")
                 timestamp = row.pop("_time", None)
                 tz = row.pop("_tz", "+0000")
                 if timestamp is not None:
@@ -569,7 +569,7 @@ class GitInsightsMixin:
                 continue
             key, _, value = entry.partition(" ")
             if key == "worktree":
-                row = {"path": value, "hash": "", "branch": "", "detached": False, "bare": False, "locked": False, "prunable": False}
+                row = {"path": str(Path(value)), "hash": "", "branch": "", "detached": False, "bare": False, "locked": False, "prunable": False}
             elif key == "HEAD":
                 row["hash"] = value
             elif key == "branch":

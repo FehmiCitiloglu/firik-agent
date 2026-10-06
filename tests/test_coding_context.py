@@ -27,7 +27,7 @@ def builder(root: Path, budget=1500, **kwargs):
 
 
 def test_context_budget_normalizes_and_counts_policy_headers_and_role(tmp_path):
-    (tmp_path / "main.py").write_text("print('çay')")
+    (tmp_path / "main.py").write_text("print('çay')", encoding="utf-8", newline="\n")
     context = builder(tmp_path, budget=300, relevant_files={"main.py": "ç" * 20000},
                       instructions=[ProjectInstruction(id="i", project_id="p", title="Kural", content="x" * 20000)])
     prompt = context.assemble_system_prompt("rol" * 100)
@@ -73,10 +73,10 @@ def test_index_read_search_and_context_deny_external_symlinks_and_secrets(tmp_pa
     project = tmp_path / "project"
     project.mkdir()
     outside = tmp_path / "outside.py"
-    outside.write_text("class ExternalSecret: pass\n")
+    outside.write_text("class ExternalSecret: pass\n", encoding="utf-8", newline="\n")
     (project / "escape.py").symlink_to(outside)
-    (project / "source.py").write_text("class TürkçeSınıf: pass\n")
-    (project / ".env").write_text("API_KEY=SHOULD_NOT_ENTER_CONTEXT\n")
+    (project / "source.py").write_text("class TürkçeSınıf: pass\n", encoding="utf-8", newline="\n")
+    (project / ".env").write_text("API_KEY=SHOULD_NOT_ENTER_CONTEXT\n", encoding="utf-8", newline="\n")
     indexer = CodebaseIndexer(project)
     assert "escape.py" not in [path.name for path in indexer.scan_files()]
     assert indexer.index_file(project / "escape.py") is None
@@ -102,7 +102,7 @@ def test_secret_sanitizing_private_key_bearer_environment_and_diff_paths():
 
 def test_indexer_preserves_ast_and_hash_without_disclosing_credential_todos(tmp_path):
     path = tmp_path / "source.py"
-    path.write_text('class Login:\n    def call(self, password: str):\n        # TODO: API_KEY=sample-secret\n        return password\n')
+    path.write_text('class Login:\n    def call(self, password: str):\n        # TODO: API_KEY=sample-secret\n        return password\n', encoding="utf-8", newline="\n")
     item = CodebaseIndexer(tmp_path).index_file(path)
     assert "Login" in item["symbols"] and "call" in item["symbols"]
     assert "sample-secret" not in item["todos"][0]["text"]
@@ -112,7 +112,7 @@ def test_context_read_rejects_external_hardlink_under_an_innocent_source_name(tm
     project = tmp_path / "project"
     project.mkdir()
     outside = tmp_path / "private.txt"
-    outside.write_text("PRIVATE_CONTENT")
+    outside.write_text("PRIVATE_CONTENT", encoding="utf-8", newline="\n")
     os.link(outside, project / "source.py")
     with pytest.raises(ValueError, match="bağımsız"):
         read_project_text(project, "source.py")
@@ -124,10 +124,10 @@ def test_context_read_rejects_directory_symlink_swap_between_check_and_open(tmp_
     project = tmp_path / "project"
     source = project / "src"
     source.mkdir(parents=True)
-    (source / "source.py").write_text("TRUSTED")
+    (source / "source.py").write_text("TRUSTED", encoding="utf-8", newline="\n")
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "source.py").write_text("PRIVATE_CONTENT")
+    (outside / "source.py").write_text("PRIVATE_CONTENT", encoding="utf-8", newline="\n")
     original_open = os.open
     swapped = []
     def swapping_open(path, flags, mode=0o777, *, dir_fd=None):
@@ -145,11 +145,11 @@ def test_context_read_rejects_directory_symlink_swap_between_check_and_open(tmp_
 
 def test_explorer_is_lazy_and_shows_index_and_git_without_opening_source(tmp_path, monkeypatch):
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "main.py").write_text("print('çay')\n")
+    (tmp_path / "src" / "main.py").write_text("print('çay')\n", encoding="utf-8", newline="\n")
     (tmp_path / "node_modules").mkdir()
-    (tmp_path / ".hidden").write_text("hidden")
-    (tmp_path / ".env").write_text("secret")
-    (tmp_path / "readme.md").write_text("merhaba")
+    (tmp_path / ".hidden").write_text("hidden", encoding="utf-8", newline="\n")
+    (tmp_path / ".env").write_text("secret", encoding="utf-8", newline="\n")
+    (tmp_path / "readme.md").write_text("merhaba", encoding="utf-8", newline="\n")
     explorer = ProjectExplorer(tmp_path, indexed_data=[{"file_path": "src/main.py", "symbols": ["Türkçe"]}],
                                git_status={"src/main.py": "M"})
     monkeypatch.setattr(Path, "read_text", lambda *args, **kwargs: pytest.fail("Lazy children read a file"))
@@ -162,7 +162,7 @@ def test_explorer_is_lazy_and_shows_index_and_git_without_opening_source(tmp_pat
 
 
 def test_explorer_bounded_content_search_returns_real_lines_and_filters_secrets(tmp_path):
-    (tmp_path / "source.py").write_text('name = "merhaba"\nprint("Türkçe çay")\nAPI_KEY="secret-matches"\n')
+    (tmp_path / "source.py").write_text('name = "merhaba"\nprint("Türkçe çay")\nAPI_KEY="secret-matches"\n', encoding="utf-8", newline="\n")
     explorer = ProjectExplorer(tmp_path)
     results = explorer.search("Türkçe çay", content=True)
     assert results[0]["line"] == 2 and "Türkçe çay" in results[0]["preview"]
@@ -197,7 +197,7 @@ def test_skill_catalogue_does_not_load_instruction_bodies_and_only_selection_loa
 def test_prepare_coding_prompt_refreshes_task_rules_and_files_and_rejects_cross_project(tmp_path):
     root = tmp_path / "project"
     root.mkdir()
-    (root / "main.py").write_text("class AuthService: pass\n")
+    (root / "main.py").write_text("class AuthService: pass\n", encoding="utf-8", newline="\n")
     db = ProjectDatabase(tmp_path / "projects.db")
     db.create_project(Project(id="p", name="Proje", local_path=str(root)))
     db.create_project(Project(id="other", name="Başka", local_path=str(root)))
@@ -208,7 +208,7 @@ def test_prepare_coding_prompt_refreshes_task_rules_and_files_and_rejects_cross_
     first = coding.prepare_coding_prompt("p", "AuthService açıkla", task_id="t")
     assert "Gerçek test" in first["system_prompt"] and "AuthService" in first["system_prompt"]
     assert first["context_budget"]["context_window"] is None
-    (root / "main.py").write_text("class UpdatedAuthService: pass\n")
+    (root / "main.py").write_text("class UpdatedAuthService: pass\n", encoding="utf-8", newline="\n")
     db.save_instruction(ProjectInstruction(id="i", project_id="p", title="Güncel kural", content="Türkçe yeni kural"))
     second = coding.prepare_coding_prompt("p", "AuthService açıkla", task_id="t")
     assert "UpdatedAuthService" in second["system_prompt"] and "Güncel kural" in second["system_prompt"]
@@ -242,10 +242,10 @@ def test_managed_checkout_ancestors_are_not_project_local_sensitive_folders(tmp_
     project = tmp_path / container / "worktrees" / "managed" / "repo"
     project.mkdir(parents=True)
     source = project / "main.py"
-    source.write_text("class ManagedSource: pass\n")
+    source.write_text("class ManagedSource: pass\n", encoding="utf-8", newline="\n")
     for hidden in (".codex", ".agents", ".aws"):
         (project / hidden).mkdir()
-        (project / hidden / "config.txt").write_text("PRIVATE_CONTENT")
+        (project / hidden / "config.txt").write_text("PRIVATE_CONTENT", encoding="utf-8", newline="\n")
     assert not is_sensitive_file(source, project_root=project)
     assert read_project_text(project, "main.py") == "class ManagedSource: pass\n"
     indexer = CodebaseIndexer(project)
@@ -280,12 +280,12 @@ def test_selected_folder_loads_bounded_ranked_sources_and_reports_unavailable_pa
     source.mkdir(parents=True)
     (source / "empty").mkdir()
     for number in range(32):
-        (source / f"source_{number:02}.py").write_text(f"value_{number} = {number}\n")
+        (source / f"source_{number:02}.py").write_text(f"value_{number} = {number}\n", encoding="utf-8", newline="\n")
     desired = source / "zzz_relevant.py"
-    desired.write_text("class TargetFeature: pass\n")
-    (source / ".env").write_text("PRIVATE_CONTENT")
+    desired.write_text("class TargetFeature: pass\n", encoding="utf-8", newline="\n")
+    (source / ".env").write_text("PRIVATE_CONTENT", encoding="utf-8", newline="\n")
     outside = tmp_path / "outside.py"
-    outside.write_text("PRIVATE_CONTENT")
+    outside.write_text("PRIVATE_CONTENT", encoding="utf-8", newline="\n")
     (source / "external.py").symlink_to(outside)
     db = ProjectDatabase(tmp_path / "projects.db")
     db.create_project(Project(id="p", name="Managed", local_path=str(project)))

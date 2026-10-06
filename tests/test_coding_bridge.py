@@ -3,7 +3,6 @@ import asyncio
 from concurrent.futures import CancelledError
 import hashlib
 import json
-import shlex
 import sys
 import threading
 
@@ -62,7 +61,7 @@ def bridge(tmp_path, monkeypatch):
     for name in ("p1", "p2"):
         root = tmp_path / name
         root.mkdir()
-        (root / "main.py").write_text("value = 'eski'\n", encoding="utf-8")
+        (root / "main.py").write_text("value = 'eski'\n", encoding="utf-8", newline="\n")
         service.projects.db.create_project(Project(id=name, name=name, local_path=str(root)))
         service.projects.db.save_task(Task(id=f"t-{name}", project_id=name, title=f"Görev {name}"))
         roots[name] = root
@@ -108,7 +107,7 @@ def test_subagents_real_loop_read_only_history_and_usage(bridge):
     session, future = start(bridge, options={"subagents_enabled": True}, on_event=events.append, on_error=errors.append)
     future.result(timeout=8)
     assert not errors
-    assert (roots["p1"] / "main.py").read_text() == "value = 'eski'\n"
+    assert (roots["p1"] / "main.py").read_text(encoding="utf-8") == "value = 'eski'\n"
     children = [request for request in state["requests"] if "Araştırma uzmanısın" in request["messages"][0]["content"]]
     assert len(children) == 2
     for request in children:
@@ -191,10 +190,10 @@ def test_subagent_failure_is_returned_without_terminating_parent(bridge):
     assert record.decisions[-1]["status"] == "failed"
 
 
-def test_real_agent_approval_edit_diff_test_evidence_provider_and_sqlite_history(bridge):
+def test_real_agent_approval_edit_diff_test_evidence_provider_and_sqlite_history(bridge, python_command):
     service, state, roots = bridge
     path = roots["p1"] / "main.py"
-    command = shlex.join([sys.executable, "-c", "from pathlib import Path; assert 'yeni' in Path('main.py').read_text()"])
+    command = python_command("-c", "from pathlib import Path; assert 'yeni' in Path('main.py').read_text(encoding='utf-8')")
     plan = [{"id": "s1", "title": "Değeri güncelle", "acceptance_criteria": ["Yeni değer okunur"], "verification": command}]
     async def script(iteration, messages):
         if iteration == 1:
@@ -215,13 +214,13 @@ def test_real_agent_approval_edit_diff_test_evidence_provider_and_sqlite_history
         if event.type == AgentEventType.APPROVAL_REQUIRED:
             approvals.append(event.metadata["tool_name"])
             if event.metadata["tool_name"] == "edit_file":
-                assert "eski" in path.read_text()
+                assert "eski" in path.read_text(encoding="utf-8")
             assert service.coding_control(event.session_id, "approve", event.metadata["request_id"], True)
     session, future = start(bridge, mode="approved", on_event=receive, on_error=errors.append)
     future.result(timeout=8)
     assert not errors
     assert approvals == ["edit_file", "run_tests"]
-    assert "yeni" in path.read_text()
+    assert "yeni" in path.read_text(encoding="utf-8")
     record = service.coding_store.latest_run("p1")
     assert record.status == "completed" and record.provider == "local"
     assert record.tests_executed[0]["exit_code"] == 0 and record.tests_executed[0]["executed"] is True
@@ -240,7 +239,7 @@ def test_real_agent_approval_edit_diff_test_evidence_provider_and_sqlite_history
     undone, undo_errors = [], []
     service.undo_coding_async(session.session_id, "main.py", undone.append, undo_errors.append).result(timeout=4)
     assert not undo_errors and undone[0]["undone"]
-    assert "eski" in path.read_text()
+    assert "eski" in path.read_text(encoding="utf-8")
     saved_undo = service.coding_store.get_run(record.id)
     assert saved_undo.file_journal[0]["undone"] is True
     assert saved_undo.decisions[-1]["kind"] == "undo"
@@ -393,14 +392,14 @@ def test_resume_revalidates_actual_hash_and_keeps_concurrent_user_edit(bridge):
     previous = service.coding_store.create_run("p1", task_id="t-p1", session_id=session.session_id)
     service.coding_store.record_file_change(previous.id, {"path": "main.py", "after_hash": hashlib.sha256(source.read_bytes()).hexdigest()})
     service.coding_store.finish_run(previous.id, "interrupted")
-    source.write_text("# Kullanıcının yeni düzenlemesi\n", encoding="utf-8")
+    source.write_text("# Kullanıcının yeni düzenlemesi\n", encoding="utf-8", newline="\n")
     _, future = start(bridge, session=session)
     future.result(timeout=4)
     resumed = service.coding_store.latest_run("p1")
     checkpoint = next(c for c in resumed.checkpoints if c.get("kind") == "resume_revalidation")
     assert resumed.resumed_from == previous.id and checkpoint["files"][0]["matches"] is False
     assert "değişen dosyaları yeniden oku" in state["requests"][0]["messages"][0]["content"]
-    assert source.read_text() == "# Kullanıcının yeni düzenlemesi\n"
+    assert source.read_text(encoding="utf-8") == "# Kullanıcının yeni düzenlemesi\n"
 
 
 def test_project_legacy_denials_override_selected_tool_permissions(bridge):
@@ -421,7 +420,7 @@ def test_skill_metadata_is_prepared_off_ui_and_selected_body_is_loaded(bridge):
     service, state, roots = bridge
     folder = roots["p1"] / "skills" / "turkce"
     folder.mkdir(parents=True)
-    (folder / "SKILL.md").write_text("---\nname: turkce\ndescription: Türkçe metin denetimi\n---\nSeçili beceri talimatı", encoding="utf-8")
+    (folder / "SKILL.md").write_text("---\nname: turkce\ndescription: Türkçe metin denetimi\n---\nSeçili beceri talimatı", encoding="utf-8", newline="\n")
     result, finished = [], threading.Event()
     session = service.get_or_create_session()
     future = service.prepare_coding_async("p1", "İncele", lambda data: (result.append(data), finished.set()),

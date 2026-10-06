@@ -344,7 +344,7 @@ def test_cancel_and_clear_ignore_late_callbacks(chat):
     assert service.cancelled == 2
 
 
-def test_stream_follows_bottom_but_preserves_reading_position(chat):
+def test_stream_follows_bottom_but_preserves_reading_position(chat, monkeypatch):
     root, view, service = chat
     stream = send(view, service)
     emit(root, stream, AgentEventType.TEXT_DELTA, content="Satır  \n" * 100)
@@ -361,9 +361,16 @@ def test_stream_follows_bottom_but_preserves_reading_position(chat):
     assert abs(canvas.canvasy(0) - previous_top) <= 2
     assert canvas.yview()[1] < 0.8
     canvas.yview_moveto(1.0)
+    # Native rendering may publish the larger scroll region synchronously,
+    # before completion removes the live banner. Keep the pre-render intent.
+    original_update = view.current_bot_bubble.update_text
+    def immediate_layout(*args, **kwargs):
+        original_update(*args, **kwargs)
+        root.update_idletasks()
+        canvas.configure(scrollregion=canvas.bbox("all"))
+    monkeypatch.setattr(view.current_bot_bubble, "update_text", immediate_layout)
     emit(root, stream, AgentEventType.DONE, content="Tamamlandı.")
-    pump(root, 0.08)
-    assert canvas.yview()[1] > 0.99
+    wait_for_layout(root, lambda: canvas.yview()[1] > 0.99)
 
 
 def test_text_only_reply_has_no_activity_and_on_done_fallback_works(chat):
