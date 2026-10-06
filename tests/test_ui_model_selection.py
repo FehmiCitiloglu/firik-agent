@@ -5,10 +5,10 @@ import sys
 import customtkinter as ctk
 import pytest
 
-from evren_agent.config import load_config
-from evren_agent.ui.app import _ensure_tk_environment
-from evren_agent.ui.service import EvrenService
-from evren_agent.ui.views.chat_workspace import ChatWorkspace
+from firik_agent.config import load_config
+from firik_agent.ui.app import _ensure_tk_environment
+from firik_agent.ui.service import FirikService
+from firik_agent.ui.views.chat_workspace import ChatWorkspace
 from test_ui_chat import pump
 
 
@@ -19,8 +19,8 @@ def service_factory(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     monkeypatch.setenv("APPDATA", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.setattr("evren_agent.ui.service.add_desktop_defaults", lambda config: None)
-    return EvrenService
+    monkeypatch.setattr("firik_agent.ui.service.add_desktop_defaults", lambda config: None)
+    return FirikService
 
 
 def test_model_choice_is_saved_before_any_message_and_survives_restart(service_factory):
@@ -30,7 +30,7 @@ def test_model_choice_is_saved_before_any_message_and_survives_restart(service_f
     assert service.get_or_create_session().model == "mimo"
     assert old.model == "glm-5.3"
     assert not service.list_chat_history()
-    assert load_config(service.config_path)["providers"]["evren"]["default_model"] == "mimo"
+    assert load_config(service.config_path)["providers"]["firik"]["default_model"] == "mimo"
     restarted = service_factory()
     assert restarted.default_model == "mimo"
     assert restarted.get_or_create_session().model == "mimo"
@@ -46,11 +46,11 @@ def test_failed_or_empty_model_choice_keeps_previous_default(service_factory, mo
     def fail(*args):
         raise OSError("Disk full")
 
-    monkeypatch.setattr("evren_agent.ui.service.save_config", fail)
+    monkeypatch.setattr("firik_agent.ui.service.save_config", fail)
     with pytest.raises(OSError):
         service.set_default_model("mimo")
     assert service.default_model == "glm-5.3"
-    assert service.config["providers"]["evren"]["default_model"] == "glm-5.3"
+    assert service.config["providers"]["firik"]["default_model"] == "glm-5.3"
 
 
 def test_workspace_model_selection_persists_without_sending(service_factory, monkeypatch):

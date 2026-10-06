@@ -2,8 +2,8 @@ from __future__ import annotations
 import pytest
 from prompt_toolkit.document import Document
 
-from evren_agent.core.agent import Agent
-from evren_agent.cli import (
+from firik_agent.core.agent import Agent
+from firik_agent.cli import (
     COMMANDS_CATALOG,
     AgentCompleter,
     handle_slash_command,
@@ -80,7 +80,7 @@ async def test_agent_completer():
     # 6. Provider completions
     doc_prov = Document("/provider ")
     c_prov = [c.text for c in completer.get_completions(doc_prov, None)]
-    assert "evren" in c_prov
+    assert "firik" in c_prov
 
     # 7. Skill name completions for /skill on
     doc_skill_on = Document("/skill on ")

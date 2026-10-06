@@ -2,7 +2,7 @@
 import asyncio
 import threading
 
-from evren_agent.core.runtime import AsyncRuntime
+from firik_agent.core.runtime import AsyncRuntime
 
 
 def test_constructor_waits_for_loop_to_accept_first_task(monkeypatch):

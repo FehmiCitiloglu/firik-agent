@@ -3,11 +3,11 @@ import json
 
 import pytest
 
-from evren_agent.core.session import ChatSession
-from evren_agent.core.types import ToolCall, ToolCallFunction
-from evren_agent.projects.coding_runtime import CodingRunControl, CodingToolFilter
-from evren_agent.projects.subagents import SubagentToolFilter
-from evren_agent.ui.subagent_activity import update_subagent_activity
+from firik_agent.core.session import ChatSession
+from firik_agent.core.types import ToolCall, ToolCallFunction
+from firik_agent.projects.coding_runtime import CodingRunControl, CodingToolFilter
+from firik_agent.projects.subagents import SubagentToolFilter
+from firik_agent.ui.subagent_activity import update_subagent_activity
 
 
 def setup(tmp_path, factory=lambda: None):
@@ -88,7 +88,7 @@ async def test_worker_timeout_is_failed_and_releases_slot(tmp_path, monkeypatch)
     async def worker(assignment, tools):
         await asyncio.Event().wait()
     manager.coordinator.register("review", worker)
-    monkeypatch.setattr("evren_agent.projects.subagents.WORKER_TIMEOUT", 0.01)
+    monkeypatch.setattr("firik_agent.projects.subagents.WORKER_TIMEOUT", 0.01)
     spawned = await manager.spawn("review", "incele")
     result = await manager.wait(spawned["agent_id"])
     assert result["status"] == "failed" and not result["passed"]

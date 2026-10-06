@@ -14,9 +14,9 @@ from types import SimpleNamespace
 import customtkinter as ctk
 import pytest
 
-from evren_agent.projects.git_service import GitService
-from evren_agent.ui.app import _ensure_tk_environment
-from evren_agent.ui.views.git_view import GitView
+from firik_agent.projects.git_service import GitService
+from firik_agent.ui.app import _ensure_tk_environment
+from firik_agent.ui.views.git_view import GitView
 
 
 def git(path: Path, *args: str) -> str:

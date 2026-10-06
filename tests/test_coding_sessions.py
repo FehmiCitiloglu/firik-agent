@@ -6,10 +6,10 @@ import sqlite3
 
 import pytest
 
-from evren_agent.projects.coding_sessions import CodingSessionStore, REDACTED
-from evren_agent.projects.db import ProjectDatabase
-from evren_agent.projects.models import CodingSession, Project, Task
-from evren_agent.core.events import AgentEvent, AgentEventType
+from firik_agent.projects.coding_sessions import CodingSessionStore, REDACTED
+from firik_agent.projects.db import ProjectDatabase
+from firik_agent.projects.models import CodingSession, Project, Task
+from firik_agent.core.events import AgentEvent, AgentEventType
 
 
 @pytest.fixture
@@ -195,7 +195,7 @@ def test_credentials_are_redacted_before_sqlite_storage_and_export(store):
     known = "opaque-credential-detected-from-provider"
     store = CodingSessionStore(store.db, known_secrets=(known,))
     token = "sk-proj-12345678901234567890123456789"
-    run = store.create_run("p1", user_request=f"EVREN_API_KEY=leaked-secret\nBearer {token}\n{known}")
+    run = store.create_run("p1", user_request=f"FIRIK_API_KEY=leaked-secret\nBearer {token}\n{known}")
     store.record_message(run.id, "assistant", "password='another-password'", details={"api_key": "mapping-secret"})
     store.append_event(run.id, {"type": "tool_result", "result": {"access_token": "nested-secret", "token": "plain-token-secret", "OPENAI_API_KEY": "env-key-secret"}, "text": known})
     store.record_file_change(run.id, {"path": "config.py", "before": "PASSWORD=source-secret", "after": "safe", "before_hash": "h1", "after_hash": "h2"})

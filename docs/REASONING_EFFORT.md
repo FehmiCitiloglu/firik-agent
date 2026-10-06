@@ -1,7 +1,7 @@
 # Modele göre düşünme düzeyi
 
 Sohbet ve Kodlama Ajanı ekranlarında modelin yanında düşünme düzeyi seçilebilir.
-Destek ve seviyeler aktif EVREN sunucusunun `/v1/models` yanıtındaki
+Destek ve seviyeler aktif FIRIK sunucusunun `/v1/models` yanıtındaki
 `capabilities.reasoning_effort`, `reasoning_effort_values` ve
 `reasoning_effort_aliases` alanlarından alınır. Model adından destek tahmin edilmez.
 

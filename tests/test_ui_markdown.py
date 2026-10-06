@@ -4,9 +4,9 @@ import tkinter.font as tkfont
 import customtkinter as ctk
 import pytest
 
-from evren_agent.core.events import AgentEventType
-from evren_agent.ui.components.markdown_message import MarkdownMessage, _TextBlock
-from evren_agent.ui.theme import THEME_COLORS
+from firik_agent.core.events import AgentEventType
+from firik_agent.ui.components.markdown_message import MarkdownMessage, _TextBlock
+from firik_agent.ui.theme import THEME_COLORS
 from test_ui_chat import chat, emit, messages, pump, send, wait_for_layout
 
 
@@ -196,7 +196,7 @@ def test_stream_keeps_following_after_viewport_shrinks(chat):
 def test_links_require_click_and_html_images_remain_text(chat, monkeypatch):
     root, view, service = chat
     opened = []
-    monkeypatch.setattr("evren_agent.ui.components.markdown_message.webbrowser.open", opened.append)
+    monkeypatch.setattr("firik_agent.ui.components.markdown_message.webbrowser.open", opened.append)
     source = '[Belge](https://example.com/docs)\n\n<img src="https://example.com/image.png">\n\n![Örnek](https://example.com/image.png)\n\n[Dosya](file:///tmp/example)'
     stream = send(view, service)
     emit(root, stream, AgentEventType.DONE, content=source)

@@ -1,6 +1,6 @@
 # Otomatik bağlam sıkıştırma
 
-EVREN sohbet ve Kodlama Ajanı, her model isteğinden önce bağlam bütçesini kontrol eder. Varsayılan olarak kullanılabilir konuşma bütçesinin yaklaşık %75'ine ulaşıldığında eski mesajları seçili modelle özetler; yaklaşık %50'ye inmeyi hedefler. Komut girmeniz gerekmez. Arayüzde “Bağlam sıkıştırılıyor” durumu görünür, ardından aynı görev sürer.
+FIRIK sohbet ve Kodlama Ajanı, her model isteğinden önce bağlam bütçesini kontrol eder. Varsayılan olarak kullanılabilir konuşma bütçesinin yaklaşık %75'ine ulaşıldığında eski mesajları seçili modelle özetler; yaklaşık %50'ye inmeyi hedefler. Komut girmeniz gerekmez. Arayüzde “Bağlam sıkıştırılıyor” durumu görünür, ardından aynı görev sürer.
 
 Sistem talimatları ve araç şemaları bütçeden düşülür. Sağlayıcının doğrulanmış kapasitesi varsa yanıt ve güvenlik payı ayrılır. Kapasite bilinmiyorsa konuşma için 6.000 tahmini tokenlık yerel bütçe kullanılır; sistem ve araç şemaları ayrıca hesaba katılır. Bu değer modelin gerçek kapasitesi değildir. Tahmin UTF-8 boyutuna dayanır; sağlayıcının token sayacı değildir.
 

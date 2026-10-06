@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 Basic chat example using Firik Agent.
-Configures provider (direct EVREN or LLMTR gateway) and executes a prompt.
+Configures provider (direct FIRIK or LLMTR gateway) and executes a prompt.
 """
 import asyncio
 import os
-from evren_agent import Agent
+from firik_agent import Agent
 
 async def main():
     agent = Agent()
@@ -20,8 +20,8 @@ async def main():
     print(f"\nUser > {prompt}\n")
 
     if not active_provider.api_key:
-        print("[!] Note: No API key found in EVREN_API_KEY or LLMTR_API_KEY.")
-        print("[!] Please set EVREN_API_KEY in your .env or environment to query live models.")
+        print("[!] Note: No API key found in FIRIK_API_KEY or LLMTR_API_KEY.")
+        print("[!] Please set FIRIK_API_KEY in your .env or environment to query live models.")
         await agent.close()
         return
 

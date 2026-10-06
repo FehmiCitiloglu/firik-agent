@@ -50,11 +50,11 @@ def test_commands_without_activation_and_idempotent_path(home, monkeypatch, shel
         installer.install_commands(venv, bin_dir, False)
         installer.configure_path(bin_dir, False)
     for name in profiles:
-        assert (home / name).read_text().count("# EVREN CLI") == 1
+        assert (home / name).read_text().count("# FIRIK CLI") == 1
     assert profile.read_text().startswith("# existing settings\n")
     result = subprocess.run(
         ["/bin/sh", "-c", f'. {shlex.quote(str(profile))}; . {shlex.quote(str(profile))}; '
-         'evren "argument with spaces"; firik-agent --commands; printf "%s" "$PATH"'],
+         'firik "argument with spaces"; firik-agent --commands; printf "%s" "$PATH"'],
         cwd=home, env={"HOME": str(home), "PATH": "/usr/bin:/bin"},
         text=True, capture_output=True, check=True,
     )
@@ -71,7 +71,7 @@ def test_unrelated_command_is_preserved(tmp_path):
     with pytest.raises(RuntimeError, match="Cannot replace"):
         installer.install_commands(venv, bin_dir, False)
     assert existing.read_text() == "user command"
-    assert not (bin_dir / "evren").exists()
+    assert not (bin_dir / "firik").exists()
 
 
 def test_custom_shell_configuration_paths(home, monkeypatch):
@@ -84,7 +84,7 @@ def test_custom_shell_configuration_paths(home, monkeypatch):
     (home / ".bash_profile").write_text("# login settings\n")
     installer.configure_path(home / ".local/bin", False)
     assert "# login settings" in (home / ".bash_profile").read_text()
-    assert "# EVREN CLI" in (home / ".bash_profile").read_text()
+    assert "# FIRIK CLI" in (home / ".bash_profile").read_text()
     assert not (home / ".profile").exists()
 
 
@@ -93,14 +93,14 @@ def test_fish_path_configuration(home, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / "config"))
     for _ in range(2):
         refresh = installer.configure_path(home / ".local/bin", False)
-    contents = (home / "config/fish/conf.d/evren.fish").read_text()
-    assert contents.count("# EVREN CLI") == 1
+    contents = (home / "config/fish/conf.d/firik.fish").read_text()
+    assert contents.count("# FIRIK CLI") == 1
     assert refresh[0] in contents
     assert "export PATH" not in contents
 
 
 def test_windows_launchers_are_copied(tmp_path):
-    venv, bin_dir = tmp_path / ".venv", tmp_path / "EVREN/bin"
+    venv, bin_dir = tmp_path / ".venv", tmp_path / "FIRIK/bin"
     make_commands(venv, windows=True)
     for _ in range(2):
         installer.install_commands(venv, bin_dir, True)
@@ -117,7 +117,7 @@ def test_uv_explicitly_targets_project_venv(tmp_path, monkeypatch):
     monkeypatch.setattr(installer, "install_commands", lambda *args: None)
     monkeypatch.setattr(installer, "configure_path", lambda *args: [])
     monkeypatch.setenv("VIRTUAL_ENV", "/unrelated/environment")
-    (tmp_path / ".env.example").write_text("EVREN_API_KEY=placeholder\n")
+    (tmp_path / ".env.example").write_text("FIRIK_API_KEY=placeholder\n")
     installer.main()
     assert not (tmp_path / ".env").exists()
     python = tmp_path / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")

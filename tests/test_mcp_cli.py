@@ -4,20 +4,20 @@ from pathlib import Path
 import pytest
 import yaml
 
-from evren_agent.config import load_config
-from evren_agent.core.agent import Agent
-from evren_agent.cli import handle_slash_command
-from evren_agent.mcp.cli import mcp_add, mcp_list, mcp_remove, run_mcp
-from evren_agent.api.cli import run as api_run
+from firik_agent.config import load_config
+from firik_agent.core.agent import Agent
+from firik_agent.cli import handle_slash_command
+from firik_agent.mcp.cli import mcp_add, mcp_list, mcp_remove, run_mcp
+from firik_agent.api.cli import run as api_run
 
 
 @pytest.fixture
 def temp_config(tmp_path: Path) -> Path:
     config_file = tmp_path / "test_config.yaml"
     initial_data = {
-        "agent": {"name": "EvrenAgent"},
+        "agent": {"name": "FirikAgent"},
         "providers": {
-            "evren": {"base_url": "https://test.example.com", "default_model": "glm-5.3"}
+            "firik": {"base_url": "https://test.example.com", "default_model": "glm-5.3"}
         },
         "mcp_servers": {},
         "skills": {"directory": "skills", "active_skills": []},
@@ -116,8 +116,8 @@ async def test_mcp_cli_run_subcommands(temp_config: Path, mock_server_path: str)
 
 
 @pytest.mark.asyncio
-async def test_evren_cli_delegation(temp_config: Path):
-    # 'evren mcp list' delegation in evren_agent.api.cli
+async def test_firik_cli_delegation(temp_config: Path):
+    # 'firik mcp list' delegation in firik_agent.api.cli
     ret = await api_run(["mcp", "list", "-c", str(temp_config)])
     assert ret == 0
 

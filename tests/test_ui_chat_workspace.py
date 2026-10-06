@@ -2,9 +2,9 @@
 import customtkinter as ctk
 import pytest
 
-from evren_agent.core.events import AgentEventType
-from evren_agent.ui.app import _ensure_tk_environment
-from evren_agent.ui.views.chat_workspace import ChatWorkspace
+from firik_agent.core.events import AgentEventType
+from firik_agent.ui.app import _ensure_tk_environment
+from firik_agent.ui.views.chat_workspace import ChatWorkspace
 from test_ui_chat import ChatServiceStub, emit, pump, send
 
 

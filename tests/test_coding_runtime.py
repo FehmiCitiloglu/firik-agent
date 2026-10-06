@@ -8,12 +8,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from evren_agent.core.agent import Agent
-from evren_agent.core.events import AgentEventType
-from evren_agent.core.session import ChatSession
-from evren_agent.core.tools import ToolRegistry
-from evren_agent.core.types import Message, StreamChunk, ToolCall, ToolCallFunction, ToolDefinition
-from evren_agent.projects.coding_runtime import (CodingRunControl, CodingToolFilter,
+from firik_agent.core.agent import Agent
+from firik_agent.core.events import AgentEventType
+from firik_agent.core.session import ChatSession
+from firik_agent.core.tools import ToolRegistry
+from firik_agent.core.types import Message, StreamChunk, ToolCall, ToolCallFunction, ToolDefinition
+from firik_agent.projects.coding_runtime import (CodingRunControl, CodingToolFilter,
                                                 prepare_coding_messages, repair_tool_history, sanitize_message)
 
 
@@ -134,7 +134,7 @@ async def test_permission_failure_closes_temporary_file_and_preserves_source(run
                            old_text="'eski'", new_text="'yeni'")
     assert result.is_error and "simulated permission failure" in result.content
     assert source.read_bytes() == original
-    assert not list(root.glob(".evren-change-*.tmp"))
+    assert not list(root.glob(".firik-change-*.tmp"))
 
 
 @pytest.mark.asyncio
@@ -152,7 +152,7 @@ async def test_single_file_patch_exact_context_and_creation(runtime):
     change_id = json.loads(created.content)["change_id"]
     assert not (await execute(runtime, "undo_change", change_id=change_id)).is_error
     assert not (root / "yeni.py").exists()
-    assert not list(root.glob(".evren-change-*"))
+    assert not list(root.glob(".firik-change-*"))
 
 
 @pytest.mark.asyncio

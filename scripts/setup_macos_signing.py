@@ -28,8 +28,8 @@ def main():
     if sys.platform != "darwin" or os.environ.get("GITHUB_ACTIONS") != "true":
         raise SystemExit("Only run this script on a macOS GitHub Actions runner")
     temporary = Path(os.environ["RUNNER_TEMP"])
-    keychain = temporary / "evren-signing.keychain-db"
-    certificate = temporary / "evren-signing.p12"
+    keychain = temporary / "firik-signing.keychain-db"
+    certificate = temporary / "firik-signing.p12"
     password = secrets.token_urlsafe(32)
     original_keychains = re.findall(r'"([^\"]+)"', run("security", "list-keychains", "-d", "user"))
     try:
@@ -51,12 +51,12 @@ def main():
         identity, name = matches[0]
         if not name.endswith(f"({os.environ['APPLE_TEAM_ID']})"):
             raise RuntimeError("APPLE_TEAM_ID does not match the Developer ID Application certificate")
-        run("xcrun", "notarytool", "store-credentials", "evren-notary",
+        run("xcrun", "notarytool", "store-credentials", "firik-notary",
             "--apple-id", os.environ["APPLE_ID"], "--team-id", os.environ["APPLE_TEAM_ID"],
             "--password", os.environ["APPLE_APP_SPECIFIC_PASSWORD"], "--keychain", keychain)
         with Path(os.environ["GITHUB_ENV"]).open("a") as environment:
-            environment.write(f"EVREN_CODESIGN_IDENTITY={identity}\n")
-            environment.write(f"EVREN_NOTARY_KEYCHAIN={keychain}\n")
+            environment.write(f"FIRIK_CODESIGN_IDENTITY={identity}\n")
+            environment.write(f"FIRIK_NOTARY_KEYCHAIN={keychain}\n")
         print("Developer ID certificate and validated notarization credentials are ready")
     except Exception:
         if keychain.exists():

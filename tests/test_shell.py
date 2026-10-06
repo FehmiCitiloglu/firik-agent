@@ -13,10 +13,10 @@ from unittest.mock import AsyncMock
 import pytest
 from rich.console import Console
 
-from evren_agent import cli
-from evren_agent.core.agent import Agent
-from evren_agent.core.shell import OUTPUT_LIMIT, run_shell, shell_args
-from evren_agent.core.types import ToolCall, ToolCallFunction
+from firik_agent import cli
+from firik_agent.core.agent import Agent
+from firik_agent.core.shell import OUTPUT_LIMIT, run_shell, shell_args
+from firik_agent.core.types import ToolCall, ToolCallFunction
 
 
 def python_command(code):
@@ -57,7 +57,7 @@ async def test_invalid_timeouts(timeout):
 @pytest.mark.asyncio
 async def test_blank_and_missing_shell():
     assert "cannot be empty" in await run_shell("  ")
-    assert "Shell not found" in await run_shell("echo unused", shell="evren-nonexistent-shell")
+    assert "Shell not found" in await run_shell("echo unused", shell="firik-nonexistent-shell")
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell syntax")
@@ -68,7 +68,7 @@ async def test_shell_quoting_pipes_and_explicit_interpreter():
 
 
 def test_windows_shell_arguments(monkeypatch):
-    monkeypatch.setattr("evren_agent.core.shell.shutil.which", lambda name: name)
+    monkeypatch.setattr("firik_agent.core.shell.shutil.which", lambda name: name)
     assert shell_args('echo "hello world"', 'cmd') == ['cmd', '/d', '/s', '/c', 'echo "hello world"']
     assert shell_args('Write-Output "hello world"', 'pwsh') == ['pwsh', '-NoProfile', '-NonInteractive', '-Command', 'Write-Output "hello world"']
 

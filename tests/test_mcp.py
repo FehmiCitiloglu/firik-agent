@@ -2,10 +2,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 import pytest
-from evren_agent.core.tools import ToolRegistry
-from evren_agent.core.types import ToolCall, ToolCallFunction
-from evren_agent.mcp.client import MCPClient
-from evren_agent.mcp.manager import MCPManager
+from firik_agent.core.tools import ToolRegistry
+from firik_agent.core.types import ToolCall, ToolCallFunction
+from firik_agent.mcp.client import MCPClient
+from firik_agent.mcp.manager import MCPManager
 
 
 @pytest.mark.asyncio
@@ -56,12 +56,12 @@ async def test_mcp_manager_integration():
         id="call_1",
         function=ToolCallFunction(
             name="mcp_local_mock_text_transformer",
-            arguments='{"text": "evren", "operation": "uppercase"}',
+            arguments='{"text": "firik", "operation": "uppercase"}',
         ),
     )
     result = await tools.execute(tc)
     assert result.is_error is False
-    assert result.content == "EVREN"
+    assert result.content == "FIRIK"
 
     # 3. List servers
     servers = manager.list_servers()

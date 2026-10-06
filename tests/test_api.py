@@ -8,10 +8,10 @@ import json
 import httpx
 import pytest
 
-from evren_agent.api import EvrenAPI, EvrenAPIError
-from evren_agent.api.cli import build_parser, payload_for, run
-from evren_agent.api.client import api_schema
-from evren_agent.providers.evren import EvrenProvider
+from firik_agent.api import FirikAPI, FirikAPIError
+from firik_agent.api.cli import build_parser, payload_for, run
+from firik_agent.api.client import api_schema
+from firik_agent.providers.firik import FirikProvider
 
 ID = "11111111-1111-4111-8111-111111111111"
 KEY = "test-secret-key"
@@ -26,7 +26,7 @@ CASES = [
     (["terms", "status"], "GET", "/v1/terms/status", None),
     (["terms", "text"], "GET", "/v1/terms/text", None),
     (["terms", "accept", "3"], "POST", "/v1/terms/accept", {"version": 3}),
-    (["chat", "--prompt", "Merhaba", "--evren-tools"], "POST", "/v1/chat/completions", {"model": "test-model", "messages": [{"role": "user", "content": "Merhaba"}], "evren_tools": True}),
+    (["chat", "--prompt", "Merhaba", "--firik-tools"], "POST", "/v1/chat/completions", {"model": "test-model", "messages": [{"role": "user", "content": "Merhaba"}], "evren_tools": True}),
     (["completions", "--prompt", "Bir", "--max-tokens", "12"], "POST", "/v1/completions", {"model": "test-model", "prompt": "Bir", "max_tokens": 12}),
     (["responses", "--prompt", "Merhaba", "--max-tokens", "12"], "POST", "/v1/responses", {"model": "test-model", "input": "Merhaba", "max_output_tokens": 12}),
     (["embeddings", "--model", "embed", "--input", "a", "--input", "b"], "POST", "/v1/embeddings", {"model": "embed", "input": ["a", "b"]}),
@@ -62,12 +62,12 @@ async def test_cli_contract(argv, method, path, body, capsys):
             assert not request.content
         if path.endswith("/abort"):
             return httpx.Response(204)
-        return httpx.Response(200, json={"ok": True, "evren": {"extension": 123}})
+        return httpx.Response(200, json={"ok": True, "firik": {"extension": 123}})
     code = await run(argv, api_key=KEY, default_model="test-model", transport=httpx.MockTransport(handler))
     captured = capsys.readouterr()
     assert code == 0, captured.err
     assert len(calls) == 1
-    assert json.loads(captured.out) == (None if path.endswith("/abort") else {"ok": True, "evren": {"extension": 123}})
+    assert json.loads(captured.out) == (None if path.endswith("/abort") else {"ok": True, "firik": {"extension": 123}})
 
 
 @pytest.mark.asyncio
@@ -158,7 +158,7 @@ async def test_errors_metadata_redaction_no_retry(status, capsys):
     calls = []
     def handler(request):
         calls.append(request)
-        return httpx.Response(status, json={"error": {"message": KEY, "evren": {"remaining": 0}}}, headers={"X-Request-Id": ID, "Retry-After": "60", "X-Evren-Credits-Remaining": "0"})
+        return httpx.Response(status, json={"error": {"message": KEY, "firik": {"remaining": 0}}}, headers={"X-Request-Id": ID, "Retry-After": "60", "X-Evren-Credits-Remaining": "0"})
     assert await run(["chat", "--prompt", "hi", "--metadata"], api_key=KEY, transport=httpx.MockTransport(handler)) == 1
     output = capsys.readouterr()
     assert not output.out
@@ -204,7 +204,7 @@ async def test_media_upload_sequence_and_storage_auth(tmp_path, multipart):
             expected = {"parts": [{"part_number": n, "etag": '"etag-value"'} for n in (1, 2, 3)]} if multipart else {}
             assert json.loads(request.content) == expected
         return httpx.Response(200, json={"media_id": ID, "state": "READY"})
-    async with EvrenAPI(KEY, transport=httpx.MockTransport(handler)) as api:
+    async with FirikAPI(KEY, transport=httpx.MockTransport(handler)) as api:
         result = await api.upload_media(path, finalize=True)
     assert result["state"] == "READY"
     assert b"".join(uploaded) == b"abcdefghij"
@@ -226,7 +226,7 @@ async def test_media_failure_aborts(tmp_path, failure):
                 raise asyncio.CancelledError()
             return httpx.Response(503 if failure == "storage" else 200)
         return httpx.Response(204)
-    async with EvrenAPI(KEY, transport=httpx.MockTransport(handler)) as api:
+    async with FirikAPI(KEY, transport=httpx.MockTransport(handler)) as api:
         with pytest.raises((RuntimeError, ValueError, asyncio.CancelledError)) as error:
             await api.upload_media(path)
     assert "secret=private" not in str(error.value)
@@ -237,7 +237,7 @@ async def test_media_failure_aborts(tmp_path, failure):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["https://evil.test/v1/models", "//evil.test/v1/models", "/internal/chat/completions", "/v1/models?secret=1", "/v1/media/../../models"])
 async def test_raw_request_rejects_untrusted_and_internal_paths(path):
-    async with EvrenAPI(KEY, transport=httpx.MockTransport(lambda _: pytest.fail("network must not be called"))) as api:
+    async with FirikAPI(KEY, transport=httpx.MockTransport(lambda _: pytest.fail("network must not be called"))) as api:
         with pytest.raises(ValueError):
             await api.request("GET", path)
 
@@ -246,7 +246,7 @@ async def test_raw_request_rejects_untrusted_and_internal_paths(path):
 async def test_missing_key_and_offline_docs(capsys):
     transport = httpx.MockTransport(lambda _: pytest.fail("network must not be called"))
     assert await run(["models"], api_key="", transport=transport) == 1
-    assert "EVREN_API_KEY" in capsys.readouterr().err
+    assert "FIRIK_API_KEY" in capsys.readouterr().err
     assert await run(["api-docs"], api_key="", transport=transport) == 0
     assert len(json.loads(capsys.readouterr().out)["operations"]) == 20
 
@@ -271,7 +271,7 @@ def test_invalid_generation_inputs(argv):
 
 @pytest.mark.asyncio
 async def test_terms_never_accepted_implicitly(monkeypatch):
-    provider = EvrenProvider(api_key=KEY)
+    provider = FirikProvider(api_key=KEY)
     async def status():
         return {"accepted": False, "current_version": 2}
     async def accept(_):
@@ -294,7 +294,7 @@ async def test_finalize_failure_reports_recoverable_id(tmp_path):
         if request.url.path.endswith("/finalize"):
             return httpx.Response(409, json={"error": {"message": "not ready"}})
         return httpx.Response(200, json={"media_id": ID, "state": "UPLOADED"})
-    async with EvrenAPI(KEY, transport=httpx.MockTransport(handler)) as api:
+    async with FirikAPI(KEY, transport=httpx.MockTransport(handler)) as api:
         with pytest.raises(RuntimeError, match=ID):
             await api.upload_media(path, finalize=True)
     assert not any(path.endswith("/abort") for path in calls)
@@ -309,9 +309,9 @@ async def test_missing_config_fails_before_network(tmp_path, capsys):
 
 @pytest.mark.asyncio
 async def test_api_help_does_not_exit_repl(capsys):
-    from evren_agent.cli import handle_slash_command
-    from evren_agent.core.agent import Agent
-    agent = Agent(config={"providers": {}, "agent": {"default_provider": "evren"}})
+    from firik_agent.cli import handle_slash_command
+    from firik_agent.core.agent import Agent
+    agent = Agent(config={"providers": {}, "agent": {"default_provider": "firik"}})
     assert await handle_slash_command(agent, "/api --help") is True
     assert "transcribe" in capsys.readouterr().out
     assert not agent._is_initialized

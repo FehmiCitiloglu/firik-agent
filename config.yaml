@@ -1,21 +1,21 @@
 agent:
-  name: EvrenAgent
-  system_prompt: 'You are EvrenAgent, an autonomous, extensible AI assistant equipped
+  name: FirikAgent
+  system_prompt: 'You are FirikAgent, an autonomous, extensible AI assistant equipped
     with dynamic Model Context Protocol (MCP) servers, modular Skills, and lifecycle
     Plugins. You can inspect your tools, call external servers, add new skills, install
     plugins, and switch model providers seamlessly. Always be helpful, precise, and
     thoughtful.
 
     '
-  default_provider: evren
+  default_provider: firik
   max_iterations: null
   temperature: 0.7
   stream: true
 providers:
-  evren:
-    type: evren
+  firik:
+    type: firik
     base_url: https://evren-llmapi.ssyz.org.tr/v1
-    api_key_env: EVREN_API_KEY
+    api_key_env: FIRIK_API_KEY
     default_model: mimo-v2.6-pro
     models:
     - id: glm-5.3
@@ -42,25 +42,25 @@ providers:
       name: Auto Smart Routing
       supports_tools: true
   llmtr:
-    type: evren_gateway
+    type: firik_gateway
     base_url: https://llmtr.com/v1
     api_key_env: LLMTR_API_KEY
     default_model: evren/glm-5.3-fp8
     models:
     - id: evren/glm-5.3-fp8
-      name: Evren GLM 5.3 FP8 (via LLMTR)
+      name: Firik GLM 5.3 FP8 (via LLMTR)
       context_window: 512000
     - id: evren/deepseek-v4-flash-tr
-      name: Evren DeepSeek V4 Flash TR (via LLMTR)
+      name: Firik DeepSeek V4 Flash TR (via LLMTR)
       context_window: 1000000
     - id: evren/gemma-4-31b
-      name: Evren Gemma 4 31B (via LLMTR)
+      name: Firik Gemma 4 31B (via LLMTR)
       context_window: 256000
     - id: evren/qwen3.8-flash-next
-      name: Evren Qwen 3.8 Flash Next (via LLMTR)
+      name: Firik Qwen 3.8 Flash Next (via LLMTR)
       context_window: 256000
     - id: evren/qwen3-vl-30b
-      name: Evren Qwen 3 VL 30B (via LLMTR)
+      name: Firik Qwen 3 VL 30B (via LLMTR)
       context_window: 256000
   openai:
     type: openai

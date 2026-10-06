@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from evren_agent.projects.git_service import GitService
+from firik_agent.projects.git_service import GitService
 
 
 def git(root: Path, *args: str, env: dict[str, str] | None = None) -> str:

@@ -27,7 +27,7 @@ def linux():
     (stage / "usr/bin/firik-agent").chmod(0o755)
     desktop = (ROOT / "firik-agent.desktop").read_text().replace("Exec=firik-gui", "Exec=firik-agent")
     (apps / "firik-agent.desktop").write_text(desktop)
-    shutil.copy2(ROOT / "evren_agent/ui/assets/icon.png", icons / "firik-agent.png")
+    shutil.copy2(ROOT / "firik_agent/ui/assets/icon.png", icons / "firik-agent.png")
     with tarfile.open(OUT / f"firik-agent-{VERSION}-linux-x86_64.tar.gz", "w:gz") as archive:
         archive.add(stage / "usr", arcname="usr")
     control = stage / "DEBIAN"
@@ -37,11 +37,11 @@ Version: {VERSION}
 Section: utils
 Priority: optional
 Architecture: amd64
-Maintainer: EVREN <noreply@ssyz.org.tr>
+Maintainer: FIRIK <noreply@ssyz.org.tr>
 Depends: libc6 (>= 2.35), libx11-6, libxext6, libxft2, libxrender1, libfontconfig1
 Recommends: gnome-keyring
 Description: Firik Agent desktop client
- Chat, OCR, transcription and reranking with EVREN APIs.
+ Chat, OCR, transcription and reranking with FIRIK APIs.
 """)
     run("dpkg-deb", "--root-owner-group", "--build", stage, OUT / f"firik-agent_{VERSION}_amd64.deb")
     # rpmbuild uses the same payload, with explicit runtime dependencies.
@@ -58,7 +58,7 @@ BuildArch: x86_64
 AutoReqProv: no
 Requires: glibc >= 2.35, libX11, libXext, libXft, libXrender, fontconfig
 %description
-Chat, OCR, transcription and reranking with EVREN APIs.
+Chat, OCR, transcription and reranking with FIRIK APIs.
 %install
 mkdir -p %{{buildroot}}/usr
 cp -a "{stage}/usr/." %{{buildroot}}/usr/

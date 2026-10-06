@@ -2,21 +2,21 @@ from __future__ import annotations
 import json
 import httpx
 import pytest
-from evren_agent.core.agent import Agent
-from evren_agent.core.events import AgentEventType
-from evren_agent.core.session import ChatSession
-from evren_agent.core.types import Message
-from evren_agent.providers.evren import EvrenProvider, DEFAULT_EVREN_DIRECT_URL, DEFAULT_LLMTR_GATEWAY_URL
-from evren_agent.providers.registry import ProviderRegistry
+from firik_agent.core.agent import Agent
+from firik_agent.core.events import AgentEventType
+from firik_agent.core.session import ChatSession
+from firik_agent.core.types import Message
+from firik_agent.providers.firik import FirikProvider, DEFAULT_FIRIK_DIRECT_URL, DEFAULT_LLMTR_GATEWAY_URL
+from firik_agent.providers.registry import ProviderRegistry
 
 
-def test_evren_direct_provider_init():
-    prov = EvrenProvider(
+def test_firik_direct_provider_init():
+    prov = FirikProvider(
         api_key="test_key_123",
-        base_url=DEFAULT_EVREN_DIRECT_URL,
+        base_url=DEFAULT_FIRIK_DIRECT_URL,
         default_model="glm-5.3",
     )
-    assert prov.name == "evren"
+    assert prov.name == "firik"
     assert prov.is_gateway is False
     assert prov.current_model == "glm-5.3"
     headers = prov._get_headers()
@@ -24,8 +24,8 @@ def test_evren_direct_provider_init():
     assert headers["X-API-Key"] == "test_key_123"
 
 
-def test_evren_gateway_provider_init():
-    prov = EvrenProvider(
+def test_firik_gateway_provider_init():
+    prov = FirikProvider(
         api_key="llmtr_key_456",
         base_url=DEFAULT_LLMTR_GATEWAY_URL,
     )
@@ -36,11 +36,11 @@ def test_evren_gateway_provider_init():
     assert "X-API-Key" not in headers
 
 
-def test_evren_payload_formatting():
-    prov = EvrenProvider(api_key="key", default_model="glm-5.3")
+def test_firik_payload_formatting():
+    prov = FirikProvider(api_key="key", default_model="glm-5.3")
     messages = [
         Message(role="system", content="You are a helpful assistant."),
-        Message(role="user", content="Hello Evren!"),
+        Message(role="user", content="Hello Firik!"),
     ]
     tools = [
         {
@@ -58,8 +58,8 @@ def test_evren_payload_formatting():
 
 
 @pytest.mark.asyncio
-async def test_evren_known_models():
-    prov = EvrenProvider(api_key="key", base_url=DEFAULT_EVREN_DIRECT_URL)
+async def test_firik_known_models():
+    prov = FirikProvider(api_key="key", base_url=DEFAULT_FIRIK_DIRECT_URL)
     models = await prov.list_models()
     model_ids = [m.id for m in models]
     assert "glm-5.3" in model_ids
@@ -68,13 +68,13 @@ async def test_evren_known_models():
 
 def test_provider_registry():
     registry = ProviderRegistry()
-    prov1 = EvrenProvider(name="evren", default_model="glm-5.3")
-    prov2 = EvrenProvider(name="llmtr", base_url=DEFAULT_LLMTR_GATEWAY_URL)
+    prov1 = FirikProvider(name="firik", default_model="glm-5.3")
+    prov2 = FirikProvider(name="llmtr", base_url=DEFAULT_LLMTR_GATEWAY_URL)
 
-    registry.register("evren", prov1)
+    registry.register("firik", prov1)
     registry.register("llmtr", prov2)
 
-    assert registry.active_name == "evren"
+    assert registry.active_name == "firik"
     assert registry.get_active() == prov1
 
     registry.set_active("llmtr")
@@ -107,7 +107,7 @@ async def test_nested_usage_frames_do_not_restart_model_or_repeat_tools(monkeypa
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: native_client(
         transport=httpx.MockTransport(respond), **kwargs))
     agent = Agent(config={"plugins": {"autoload_builtins": False}, "mcp_servers": {}})
-    agent.providers.register("usage-check", EvrenProvider(api_key="local-test", base_url="http://local-test/v1"), set_active=True)
+    agent.providers.register("usage-check", FirikProvider(api_key="local-test", base_url="http://local-test/v1"), set_active=True)
     await agent.initialize()
     agent.tools._handlers["calculate"] = lambda expression: (executions.append(expression) or "84")
     try:

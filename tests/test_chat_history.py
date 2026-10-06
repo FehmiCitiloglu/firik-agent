@@ -3,9 +3,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import threading
 
-from evren_agent.core.chat_history import ChatHistoryStore
-from evren_agent.core.session import ChatSession
-from evren_agent.core.types import Message, ToolCall, ToolCallFunction
+from firik_agent.core.chat_history import ChatHistoryStore
+from firik_agent.core.session import ChatSession
+from firik_agent.core.types import Message, ToolCall, ToolCallFunction
 
 
 def tool_call(call_id="call-1"):
@@ -136,10 +136,10 @@ def test_empty_chat_is_not_saved_and_newest_is_listed_first(tmp_path):
 
 
 def test_service_reopens_disk_session_after_restart(tmp_path, monkeypatch):
-    from evren_agent.ui.service import EvrenService
+    from firik_agent.ui.service import FirikService
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-    first = EvrenService()
+    first = FirikService()
     try:
         session = first.get_or_create_session()
         session.messages = [Message(role="user", content="Kalıcı soru"), Message(role="assistant", content="Kalıcı yanıt")]
@@ -148,7 +148,7 @@ def test_service_reopens_disk_session_after_restart(tmp_path, monkeypatch):
     finally:
         first.projects.scheduler.stop()
         first.shutdown()
-    second = EvrenService()
+    second = FirikService()
     try:
         restored = second.get_or_create_session(session.session_id)
         assert restored.messages == session.messages

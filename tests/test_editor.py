@@ -1,6 +1,6 @@
 import pytest
 
-from evren_agent.ui import editor
+from firik_agent.ui import editor
 
 
 @pytest.mark.parametrize("name,command", [("VS Code", "code"), ("Cursor", "cursor"), ("Zed", "zed")])

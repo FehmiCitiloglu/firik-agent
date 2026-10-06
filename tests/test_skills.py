@@ -2,8 +2,8 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 import pytest
-from evren_agent.skills.manager import SkillManager
-from evren_agent.skills.skill import Skill
+from firik_agent.skills.manager import SkillManager
+from firik_agent.skills.skill import Skill
 
 
 def test_skill_save_and_load(tmp_path):
@@ -52,7 +52,7 @@ def test_skill_manager_workflow(tmp_path):
 
 
 def test_builtin_computer_use_skill():
-    builtin_dir = Path(__file__).parent.parent / "evren_agent" / "builtin_skills"
+    builtin_dir = Path(__file__).parent.parent / "firik_agent" / "builtin_skills"
     manager = SkillManager()
     count = manager.discover_skills(additional_dirs=[builtin_dir])
     assert count > 0
@@ -76,7 +76,7 @@ def test_builtin_computer_use_skill():
 
 @pytest.mark.asyncio
 async def test_agent_default_active_skills():
-    from evren_agent.core.agent import Agent
+    from firik_agent.core.agent import Agent
 
     agent = Agent()
     await agent.initialize()
@@ -94,20 +94,20 @@ def test_skill_manager_when_cwd_is_root(monkeypatch, tmp_path):
     monkeypatch.chdir("/")
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     manager = SkillManager()
-    expected = (tmp_path / ".evren" / "skills").resolve()
+    expected = (tmp_path / ".firik" / "skills").resolve()
     assert manager.skills_dir == expected
     assert manager.skills_dir.exists()
 
 
 @pytest.mark.asyncio
 async def test_agent_initialization_when_cwd_is_root(monkeypatch, tmp_path):
-    from evren_agent.core.agent import Agent
+    from firik_agent.core.agent import Agent
 
     monkeypatch.chdir("/")
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     agent = Agent()
     await agent.initialize()
-    assert agent.skills.skills_dir == (tmp_path / ".evren" / "skills").resolve()
-    assert agent.plugins.plugins_dir == (tmp_path / ".evren" / "plugins").resolve()
+    assert agent.skills.skills_dir == (tmp_path / ".firik" / "skills").resolve()
+    assert agent.plugins.plugins_dir == (tmp_path / ".firik" / "plugins").resolve()
     await agent.close()
 

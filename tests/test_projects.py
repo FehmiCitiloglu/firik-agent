@@ -1,15 +1,15 @@
-"""Unit and integration tests for Evren Agent Projects Workspace."""
+"""Unit and integration tests for Firik Agent Projects Workspace."""
 import tempfile
 from pathlib import Path
 import pytest
 
-from evren_agent.projects.analyzer import detect_tech_stack, generate_project_template_data
-from evren_agent.projects.context_builder import ProjectContextBuilder
-from evren_agent.projects.db import ProjectDatabase
-from evren_agent.projects.events import ProjectEventBus, ProjectEventType
-from evren_agent.projects.git_service import GitService
-from evren_agent.projects.indexer import CodebaseIndexer, is_sensitive_file, sanitize_secrets
-from evren_agent.projects.models import (
+from firik_agent.projects.analyzer import detect_tech_stack, generate_project_template_data
+from firik_agent.projects.context_builder import ProjectContextBuilder
+from firik_agent.projects.db import ProjectDatabase
+from firik_agent.projects.events import ProjectEventBus, ProjectEventType
+from firik_agent.projects.git_service import GitService
+from firik_agent.projects.indexer import CodebaseIndexer, is_sensitive_file, sanitize_secrets
+from firik_agent.projects.models import (
     Feature,
     FeatureStatus,
     Priority,
@@ -20,8 +20,8 @@ from evren_agent.projects.models import (
     Task,
     TaskStatus,
 )
-from evren_agent.projects.pm_service import AIProjectManager
-from evren_agent.projects.service import ProjectService
+from firik_agent.projects.pm_service import AIProjectManager
+from firik_agent.projects.service import ProjectService
 
 
 @pytest.fixture

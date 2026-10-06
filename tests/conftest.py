@@ -4,7 +4,7 @@ import gc
 
 import pytest
 
-from evren_agent import credentials
+from firik_agent import credentials
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +47,7 @@ def python_command():
     import shlex
     import subprocess
     import sys
-    from evren_agent.core.shell import default_shell
+    from firik_agent.core.shell import default_shell
 
     def command(*arguments):
         argv = [sys.executable, *arguments]

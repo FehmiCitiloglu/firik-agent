@@ -8,5 +8,5 @@ if [ -f ".venv/bin/firik-gui" ]; then
 elif command -v firik-gui >/dev/null 2>&1; then
     exec firik-gui
 else
-    exec python3 -m evren_agent.ui
+    exec python3 -m firik_agent.ui
 fi

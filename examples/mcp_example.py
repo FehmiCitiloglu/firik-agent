@@ -6,7 +6,7 @@ Connects the standalone Mock MCP server via stdio and queries tools.
 import asyncio
 from pathlib import Path
 import sys
-from evren_agent import Agent
+from firik_agent import Agent
 
 async def main():
     agent = Agent()
@@ -26,7 +26,7 @@ async def main():
 
     # Inspect the tools directly
     print("\n[*] Invoking MCP tool directly through agent registry...")
-    from evren_agent.core.types import ToolCall, ToolCallFunction
+    from firik_agent.core.types import ToolCall, ToolCallFunction
     tc = ToolCall(
         id="call_test_1",
         function=ToolCallFunction(

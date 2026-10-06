@@ -6,8 +6,8 @@ Demonstrates:
 2. Dynamically writing, loading, and executing a Plugin with lifecycle hooks and custom tools.
 """
 import asyncio
-from evren_agent import Agent
-from evren_agent.core.types import ToolCall, ToolCallFunction
+from firik_agent import Agent
+from firik_agent.core.types import ToolCall, ToolCallFunction
 
 async def main():
     agent = Agent()
@@ -30,8 +30,8 @@ async def main():
 
     print("\n=== 2. DYNAMIC PLUGIN DEMO ===")
     plugin_code = """
-from evren_agent.plugins.base import BasePlugin
-from evren_agent.core.types import ToolDefinition
+from firik_agent.plugins.base import BasePlugin
+from firik_agent.core.types import ToolDefinition
 
 class UnitConverterPlugin(BasePlugin):
     name = "unit_converter"

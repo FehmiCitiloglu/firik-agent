@@ -5,18 +5,18 @@ import os
 
 import pytest
 
-from evren_agent.projects.context_builder import CONTEXT_POLICY, ProjectContextBuilder, approx_tokens
-from evren_agent.projects.coding_service import ProjectCodingService
-from evren_agent.projects.db import ProjectDatabase
-from evren_agent.projects.explorer import ProjectExplorer
-from evren_agent.projects.indexer import CodebaseIndexer, is_sensitive_file, read_project_text, safe_project_path, sanitize_git_diff, sanitize_secrets
-from evren_agent.projects.model_capabilities import context_budget, model_capabilities
-from evren_agent.projects.models import (
+from firik_agent.projects.context_builder import CONTEXT_POLICY, ProjectContextBuilder, approx_tokens
+from firik_agent.projects.coding_service import ProjectCodingService
+from firik_agent.projects.db import ProjectDatabase
+from firik_agent.projects.explorer import ProjectExplorer
+from firik_agent.projects.indexer import CodebaseIndexer, is_sensitive_file, read_project_text, safe_project_path, sanitize_git_diff, sanitize_secrets
+from firik_agent.projects.model_capabilities import context_budget, model_capabilities
+from firik_agent.projects.models import (
     ArchitectureDecision, CodingSession, Project, ProjectInstruction, ProjectMemory,
     ProjectSettings, Task,
 )
-from evren_agent.projects.skill_selection import select_skill_instructions, skill_catalogue
-from evren_agent.projects.workspace import capture_workspace
+from firik_agent.projects.skill_selection import select_skill_instructions, skill_catalogue
+from firik_agent.projects.workspace import capture_workspace
 
 
 def builder(root: Path, budget=1500, **kwargs):

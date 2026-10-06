@@ -4,18 +4,18 @@ from pathlib import Path
 
 import pytest
 
-from evren_agent.core.events import AgentEvent, AgentEventType
-from evren_agent.projects.workspace import capture_workspace, compare_workspaces
-from evren_agent.ui.app import EvrenApp
-from evren_agent.ui.service import EvrenService
+from firik_agent.core.events import AgentEvent, AgentEventType
+from firik_agent.projects.workspace import capture_workspace, compare_workspaces
+from firik_agent.ui.app import FirikApp
+from firik_agent.ui.service import FirikService
 
 
 @pytest.fixture
 def workspace(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-    monkeypatch.setattr(EvrenApp, "_check_initial_status", lambda self: None)
-    monkeypatch.setattr(EvrenService, "fetch_models_async", lambda self, on_success, **kwargs: on_success([self.default_model]))
+    monkeypatch.setattr(FirikApp, "_check_initial_status", lambda self: None)
+    monkeypatch.setattr(FirikService, "fetch_models_async", lambda self, on_success, **kwargs: on_success([self.default_model]))
     def inspect(self, root, on_success, on_error, before=None):
         snapshot = capture_workspace(root)
         if before:
@@ -23,12 +23,12 @@ def workspace(tmp_path, monkeypatch):
         on_success(snapshot)
     def prepare(self, project_id, prompt, on_success, on_error, **options):
         on_success(self.projects.coding.prepare_coding_prompt(project_id, prompt, **options))
-    monkeypatch.setattr(EvrenService, "inspect_workspace_async", inspect)
-    monkeypatch.setattr(EvrenService, "prepare_coding_async", prepare)
+    monkeypatch.setattr(FirikService, "inspect_workspace_async", inspect)
+    monkeypatch.setattr(FirikService, "prepare_coding_async", prepare)
     root = tmp_path / "source"
     root.mkdir()
     (root / "main.py").write_text("print('Türkçe')\n")
-    app = EvrenApp()
+    app = FirikApp()
     app.show_view("projects")
     view = app.views["projects"]
     project = view.project_service.create_project("Türkçe proje", str(root))

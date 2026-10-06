@@ -1,9 +1,9 @@
 from __future__ import annotations
 import pytest
-from evren_agent.core.tools import ToolRegistry
-from evren_agent.core.types import Message, ToolCall, ToolCallFunction
-from evren_agent.plugins.base import BasePlugin
-from evren_agent.plugins.manager import PluginManager
+from firik_agent.core.tools import ToolRegistry
+from firik_agent.core.types import Message, ToolCall, ToolCallFunction
+from firik_agent.plugins.base import BasePlugin
+from firik_agent.plugins.manager import PluginManager
 
 
 class SamplePlugin(BasePlugin):
@@ -50,8 +50,8 @@ async def test_plugin_lifecycle_and_tools(tmp_path):
 
     # 3. Dynamic plugin from code
     dyn_code = """
-from evren_agent.plugins.base import BasePlugin
-from evren_agent.core.types import ToolDefinition
+from firik_agent.plugins.base import BasePlugin
+from firik_agent.core.types import ToolDefinition
 
 class DynamicEchoPlugin(BasePlugin):
     name = "dynamic_echo"
@@ -74,8 +74,8 @@ class DynamicEchoPlugin(BasePlugin):
         id="call_echo",
         function=ToolCallFunction(
             name="echo_text",
-            arguments='{"val": "EvrenAgent Rocks"}',
+            arguments='{"val": "FirikAgent Rocks"}',
         ),
     )
     res_echo = await registry.execute(tc_echo)
-    assert res_echo.content == "ECHO: EvrenAgent Rocks"
+    assert res_echo.content == "ECHO: FirikAgent Rocks"

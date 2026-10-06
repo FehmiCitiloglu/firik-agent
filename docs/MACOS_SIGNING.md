@@ -10,7 +10,7 @@ private keys cannot sign a build.
 Store notarization credentials interactively in Keychain (never in Git or chat):
 
 ```sh
-xcrun notarytool store-credentials evren-notary
+xcrun notarytool store-credentials firik-notary
 ```
 
 The prompts request the Apple ID, Developer Team ID, and an **app-specific
@@ -24,7 +24,7 @@ With the project's Python environment and PyInstaller installed:
 ```sh
 .venv/bin/python scripts/sign_macos.py \
   --identity 'Developer ID Application: YOUR NAME (TEAM_ID)' \
-  --profile evren-notary
+  --profile firik-notary
 ```
 
 The script signs all bundled code using PyInstaller, enables hardened runtime,

@@ -1,12 +1,12 @@
 # Firik Agent
 
-Masaüstü uygulaması: `firik-gui`; agent: `firik-agent`; doğrudan API istemcisi: `firik`. EVREN API sağlayıcısı desteklenmeye devam eder. Eski `evren`, `evren-agent` ve `evren-gui` komutları ile `evren_agent` Python paketi uyumluluk için korunur; mevcut kullanıcı verileri aynı konumdan okunur.
+Masaüstü uygulaması: `firik-gui`; agent: `firik-agent`; doğrudan API istemcisi: `firik`. Python paketi: `firik_agent`.
 
-EVREN'in **LLM Çıkarım API'sini terminalden kullanmak** için CLI ve Python istemcisi. Sohbetin yanında görsel anlama, OCR, ses çözümleme, embeddings, rerank, medya yükleme, kota/kredi ve istek durumu sorgularını destekler. Önceki agent, MCP, skill ve plugin özellikleri `firik-agent` komutuyla kullanılmaya devam eder.
+FIRIK'in **LLM Çıkarım API'sini terminalden kullanmak** için CLI ve Python istemcisi. Sohbetin yanında görsel anlama, OCR, ses çözümleme, embeddings, rerank, medya yükleme, kota/kredi ve istek durumu sorgularını destekler. Önceki agent, MCP, skill ve plugin özellikleri `firik-agent` komutuyla kullanılmaya devam eder.
 
 **Kapsam:** 22 Eylül 2026 tarihinde okunan [resmî OpenAPI şemasındaki](https://evren-llmapi.ssyz.org.tr/openapi.json) **20 genel işlemin tamamı**. `internal` servis uçları kapsam dışıdır. [Uç nokta ve kapsam tablosu](docs/API.md).
 
-EVREN portalında **Platform**, **LLM Çıkarım** ve **Model Çıkarımı** farklı anahtar türleridir. Anahtar listesinde “Tümü” bir filtre, “Modeller: Tümü” ise LLM model yetkisidir. Bu istemci `evren_llm_...` biçimindeki **LLM Çıkarım** anahtarını kullanır. Veri seti/etiketleme, GPU rezervasyonu, eğitim işleri, organizasyon veya platform anahtarı yönetimi için doğrulanmış genel API sözleşmesi bulunamadığından bu işlemler eklenmemiştir. Portalın bütün MLOps özelliklerinin bu anahtarla kullanılabildiği varsayılmaz.
+FIRIK portalında **Platform**, **LLM Çıkarım** ve **Model Çıkarımı** farklı anahtar türleridir. Anahtar listesinde “Tümü” bir filtre, “Modeller: Tümü” ise LLM model yetkisidir. Bu istemci `firik_llm_...` biçimindeki **LLM Çıkarım** anahtarını kullanır. Veri seti/etiketleme, GPU rezervasyonu, eğitim işleri, organizasyon veya platform anahtarı yönetimi için doğrulanmış genel API sözleşmesi bulunamadığından bu işlemler eklenmemiştir. Portalın bütün MLOps özelliklerinin bu anahtarla kullanılabildiği varsayılmaz.
 
 ## Kurulum
 
@@ -25,15 +25,15 @@ make install
 # Windows (PowerShell):
 .\install.ps1
 
-# Tüm Sistemler (Evrensel Python):
+# Tüm Sistemler (Firiksel Python):
 python install.py
 ```
 
 Kurulum betiği `uv` (varsa) veya Python'un yerleşik `venv` + `pip` modülünü kullanarak sanal ortamı kurar ve bağımlılıkları yükler. `.env` oluşturmaz; mevcut dosyanıza dokunmaz.
 
-**Venv'i aktive etmeniz gerekmez.** Kurulum, `evren` ve `firik-agent` komutlarını macOS/Linux'ta `~/.local/bin`, Windows'ta `%LOCALAPPDATA%\EVREN\bin` üzerinden erişilebilir yapar ve kullanıcı PATH ayarını kaydeder. macOS/Linux'ta kullanılan kabuğun zsh, bash veya fish başlangıç dosyası güncellenir. Diğer kabuklarda `~/.profile` güncellenir; kabuğunuz bu dosyayı okumuyorsa PATH'i kendi başlangıç dosyanıza ekleyin.
+**Venv'i aktive etmeniz gerekmez.** Kurulum, `firik` ve `firik-agent` komutlarını macOS/Linux'ta `~/.local/bin`, Windows'ta `%LOCALAPPDATA%\FIRIK\bin` üzerinden erişilebilir yapar ve kullanıcı PATH ayarını kaydeder. macOS/Linux'ta kullanılan kabuğun zsh, bash veya fish başlangıç dosyası güncellenir. Diğer kabuklarda `~/.profile` güncellenir; kabuğunuz bu dosyayı okumuyorsa PATH'i kendi başlangıç dosyanıza ekleyin.
 
-İlk kurulumdan sonra **yeni bir terminal açın** veya kurulumun sonunda gösterilen PATH komutunu mevcut terminalde bir kez çalıştırın. Kurulum betiği, kendisini başlatan terminalin ortamını doğrudan değiştiremez. Sonrasında `evren --help` ve `firik-agent --commands` herhangi bir klasörden çalışır; bağımlılıklar projenin `.venv` ortamında kalır. Proje klasörünü veya `.venv` dizinini silmeyin; projeyi taşırsanız `.venv` ortamını yeniden oluşturup kurulumu tekrar çalıştırın. `config.yaml` gibi göreli dosya yolları komutu çalıştırdığınız klasöre göre değerlendirilir.
+İlk kurulumdan sonra **yeni bir terminal açın** veya kurulumun sonunda gösterilen PATH komutunu mevcut terminalde bir kez çalıştırın. Kurulum betiği, kendisini başlatan terminalin ortamını doğrudan değiştiremez. Sonrasında `firik --help` ve `firik-agent --commands` herhangi bir klasörden çalışır; bağımlılıklar projenin `.venv` ortamında kalır. Proje klasörünü veya `.venv` dizinini silmeyin; projeyi taşırsanız `.venv` ortamını yeniden oluşturup kurulumu tekrar çalıştırın. `config.yaml` gibi göreli dosya yolları komutu çalıştırdığınız klasöre göre değerlendirilir.
 
 `install.sh` ve `install.ps1` aynı `install.py` kurulumunu çalıştırır; üç giriş noktası da aktivasyonsuz kullanımı ayarlar. Windows'ta `install.ps1` mevcut PowerShell oturumunun PATH'ini de yeniler; bu oturumda yeni terminal açmadan komutları kullanabilirsiniz.
 
@@ -58,36 +58,36 @@ uv pip install -e '.[dev]'
 ```
 </details>
 
-Kurulumdan sonra `evren`, `firik-agent` veya anahtar gerektiren ilk komutu çalıştırın. Anahtar bulunamazsa terminalde **LLM Çıkarım** API anahtarınız gizli girişle sorulur. Anahtar proje dosyalarına yazılmaz; [keyring](https://keyring.readthedocs.io/en/latest/) aracılığıyla macOS Keychain, Windows Credential Locker veya Linux Secret Service/KWallet kasasında saklanır. Sonraki açılışlarda, farklı bir klasörden çalıştırsanız da otomatik okunur.
+Kurulumdan sonra `firik`, `firik-agent` veya anahtar gerektiren ilk komutu çalıştırın. Anahtar bulunamazsa terminalde **LLM Çıkarım** API anahtarınız gizli girişle sorulur. Anahtar proje dosyalarına yazılmaz; [keyring](https://keyring.readthedocs.io/en/latest/) aracılığıyla macOS Keychain, Windows Credential Locker veya Linux Secret Service/KWallet kasasında saklanır. Sonraki açılışlarda, farklı bir klasörden çalıştırsanız da otomatik okunur.
 
 ```bash
-evren                              # İlk kurulum, ardından komut yardımı
-evren login                        # Kaydedilmiş EVREN anahtarını değiştir
-evren login --provider llmtr        # İsteğe bağlı diğer sağlayıcı
-evren login --provider openai
+firik                              # İlk kurulum, ardından komut yardımı
+firik login                        # Kaydedilmiş FIRIK anahtarını değiştir
+firik login --provider llmtr        # İsteğe bağlı diğer sağlayıcı
+firik login --provider openai
 ```
 
-Anahtarlar sağlayıcı, API adresi ve `api_key_env` adına göre ayrı saklanır. Özel bir adres için `evren login --base-url https://evren.ssyz.org.tr/v1` veya `--config DOSYA` kullanın. `login` anahtarı kaydeder; geçerliliğini API'de sorgulamaz. `evren models` ile bağlantıyı kontrol edebilirsiniz.
+Anahtarlar sağlayıcı, API adresi ve `api_key_env` adına göre ayrı saklanır. Özel bir adres için `firik login --base-url https://evren.ssyz.org.tr/v1` veya `--config DOSYA` kullanın. `login` anahtarı kaydeder; geçerliliğini API'de sorgulamaz. `firik models` ile bağlantıyı kontrol edebilirsiniz.
 
 Mevcut ortam değişkenleri ve `.env` dosyaları geriye dönük uyumluluk için desteklenir ve kasadaki anahtardan önce gelir. Yeni kaydı kullanmak için eski ortam/`.env` değerini kaldırın. Şablon anahtarlar gerçek anahtar sayılmaz. `--help`, `--commands`, `api-docs`, `health` ve MCP yönetimi anahtar istemez. Terminal dışı çalıştırmalarda (pipe/CI) giriş beklenmez; kayıtlı anahtar veya ortam değişkeni yoksa açıklayıcı hata döner.
 
-İşletim sistemi kasası kullanılamıyorsa otomatik kurulumda girilen anahtar yalnızca o çalıştırma boyunca bellekte tutulur ve bu durum bildirilir. `evren login` kalıcı kaydı tamamlayamazsa hata verir. Linux'ta etkin Secret Service/KWallet gerekir; dosyaya düz metin kaydetme alternatifi kullanılmaz.
+İşletim sistemi kasası kullanılamıyorsa otomatik kurulumda girilen anahtar yalnızca o çalıştırma boyunca bellekte tutulur ve bu durum bildirilir. `firik login` kalıcı kaydı tamamlayamazsa hata verir. Linux'ta etkin Secret Service/KWallet gerekir; dosyaya düz metin kaydetme alternatifi kullanılmaz.
 
-Kimlik doğrulama ve anahtar oluşturma [EVREN portalında](https://evren.ssyz.org.tr/api-keys) yapılır. CLI e-Devlet şifresi istemez. Anahtar komut satırı argümanı olarak alınmaz.
+Kimlik doğrulama ve anahtar oluşturma [Sağlayıcı portalında](https://evren.ssyz.org.tr/api-keys) yapılır. CLI e-Devlet şifresi istemez. Anahtar komut satırı argümanı olarak alınmaz.
 
 ## İlk kullanım
 
 ```bash
-evren --help
-evren health
-evren health --ready
-evren terms status
-evren terms text --text
+firik --help
+firik health
+firik health --ready
+firik terms status
+firik terms text --text
 # Yalnızca okuduğunuz ve kabul etmek istediğiniz sürümü belirtin:
-evren terms accept 1
-evren models
-evren quota
-evren chat -p 'Merhaba!' --text
+firik terms accept 1
+firik models
+firik quota
+firik chat -p 'Merhaba!' --text
 ```
 
 Şartlar otomatik kabul edilmez. `accept 1` yalnızca örnektir; güncel sürümü `terms text` ve `terms status` ile okuyun. Anahtarınız şartları zaten kabul etmişse tekrar kabul etmeniz gerekmez.
@@ -96,7 +96,7 @@ Yeni komutlar şu biçimlerde de çalışır:
 
 ```bash
 firik-agent api models
-python -m evren_agent.api.cli models
+python -m firik_agent.api.cli models
 # Agent REPL içinde:
 # /api models
 # /api quota
@@ -123,25 +123,25 @@ python -m evren_agent.api.cli models
 | `health [--ready]` | Anahtarsız servis durumu |
 | `request METHOD PATH` | Belgelenmiş uçlara tam JSON gönderme |
 | `api-docs` | Çevrimdışı endpoint listesi, `--schema` ile OpenAPI sözleşmesi |
-| `gui` | Çapraz platform masaüstü grafiksel kullanıcı arayüzünü (`evren`) başlatır |
+| `gui` | Çapraz platform masaüstü grafiksel kullanıcı arayüzünü (`firik`) başlatır |
 
 Her komutta `--help` bulunur. API komutları agent, plugin veya MCP sunucusu başlatmaz; LLMTR'ye otomatik yönlendirme yapmaz.
 
 Agent sohbetlerinde (`firik-agent`, masaüstü sohbet ve Coding Agent) model, ilk yanıtından önce yerel çalışma ortamını sistem bağlamında alır: işletim sistemi/sürümü, mimari, komut aracının gerçekten kullandığı kabuk, çalışma dizini, Python çalışma zamanı, saat dilimi içeren yerel saat ve PATH üzerinde bulunan temel araçlar. Bu bilgiler her model isteğinde yenilenir; `get_environment_info` aracıyla da sorgulanabilir. Örneğin macOS/zsh ortamında komutların zsh sözdizimine göre yazılması yönlendirilir. Ortam değişkenlerinin tamamı veya API anahtarları bu bağlama eklenmez. Terminal penceresinin kabuğu ile komut aracının varsayılan kabuğu farklı olabilir; model komut aracının kabuğunu esas alır.
 
-## Masaüstü Uygulaması (`evren`)
+## Masaüstü Uygulaması (`firik`)
 
-EVREN LLM API'sini grafiksel kullanıcı arayüzü ile kullanmak için çapraz platform (macOS, Windows, Linux) ve tamamen Türkçe tasarlanmış modern masaüstü uygulamasıdır. Pencere başlığı ve uygulama adı **`firik-agent`** olarak tanımlanmıştır.
+FIRIK LLM API'sini grafiksel kullanıcı arayüzü ile kullanmak için çapraz platform (macOS, Windows, Linux) ve tamamen Türkçe tasarlanmış modern masaüstü uygulamasıdır. Pencere başlığı ve uygulama adı **`firik-agent`** olarak tanımlanmıştır.
 
 ### Başlatma Seçenekleri:
 
 ```bash
 # Terminalden:
-evren gui
+firik gui
 # veya
 firik-gui
 # veya
-python -m evren_agent.ui
+python -m firik_agent.ui
 ```
 
 Grafik ortamda çift tıklayarak çalıştırmak için:
@@ -151,7 +151,7 @@ Grafik ortamda çift tıklayarak çalıştırmak için:
 
 ### Temel Özellikler:
 - 💬 **Sohbet:** Gerçek zamanlı akışlı yanıtlar, görsel yükleme, model parametreleri, sağda kullanıcı / solda asistan mesajları, katlanabilir işlem ayrıntıları, otomatik kaydedilen sohbet geçmişi ve dışa aktarma (Markdown/JSON).
-- 👁️ **Görsel & OCR:** Belgeleri, faturaları ve fotoğrafları önizleme, EVREN OCR modelleriyle metin çıkarma, panoya kopyalama ve `.txt` olarak kaydetme.
+- 👁️ **Görsel & OCR:** Belgeleri, faturaları ve fotoğrafları önizleme, FIRIK OCR modelleriyle metin çıkarma, panoya kopyalama ve `.txt` olarak kaydetme.
 - 🎙️ **Ses Çözümleme:** MP3, WAV, M4A, OGG ve FLAC ses kayıtlarını metne ve zaman damgalı SRT altyazılara dönüştürme.
 - 🔍 **Yeniden Sıralama (Rerank):** Arama sorguları ve belge listelerini semantik alaka puanlarına göre sıralama.
 - 📊 **Kota ve Durum:** Canlı bakiye ve token kotası sorgulama, sunucu sağlık/hazırlık (`/healthz`, `/readyz`) kontrolleri ve resmi Kullanım Şartları (Terms) metnini okuyup onaylama.
@@ -162,7 +162,7 @@ Sohbet ekranındaki aranabilir **Sohbetler** listesinden eski bir konuşmayı a�
 
 Model yanıtları Markdown olarak gösterilir: başlıklar, kalın/italik metin, listeler, alıntılar, bağlantılar, tablolar ve kod blokları biçimlendirilir. Metin seçilebilir; kod bloklarındaki **Kodu kopyala** düğmesi yalnızca kodu kopyalar. Geniş kod ve tablolar yatay kaydırılır. Mesaj kopyalama, dışa aktarma ve sohbet geçmişi orijinal Markdown metnini korur.
 
-Kullanıcı mesajı gönderildiğinde bir kez, model yanıtı tamamlandığında (veya durdurulduğunda) yeniden kayıt yapılır. Akış sırasında kelime başına veya zamanlayıcıyla kayıt yapılmaz. Uygulama normal şekilde kapatılırken yarım kalan yanıtlar da korunur; eski araç çağrıları tekrar çalıştırılmaz. Mesajlar, ekli görseller, işlem ayrıntıları ve model ayarları yerel `chats.db` dosyasında tutulur: kaynak koddan çalıştırıldığında `~/.evren/`, paketlenmiş uygulamada kullanıcıya ait `evren/config.yaml` dosyasının bulunduğu dizin.
+Kullanıcı mesajı gönderildiğinde bir kez, model yanıtı tamamlandığında (veya durdurulduğunda) yeniden kayıt yapılır. Akış sırasında kelime başına veya zamanlayıcıyla kayıt yapılmaz. Uygulama normal şekilde kapatılırken yarım kalan yanıtlar da korunur; eski araç çağrıları tekrar çalıştırılmaz. Mesajlar, ekli görseller, işlem ayrıntıları ve model ayarları yerel `chats.db` dosyasında tutulur: kaynak koddan çalıştırıldığında `~/.firik/`, paketlenmiş uygulamada kullanıcıya ait `firik/config.yaml` dosyasının bulunduğu dizin.
 
 **Computer-use MCP** varsayılan olarak eklenir ve yeni sohbetlerde seçilir. Yerleşik sunucu uygulama içinde çalışır; harici Python veya MCP sunucusu kurulumu gerekmez. MCP yöneticisinden kapatılabilir veya kaldırılabilir; bu tercih sonraki açılışlarda korunur. **MCP** düğmesiyle yalnızca ilgili sohbetten de çıkarılabilir. Ekran, klavye ve fare işlemleri mevcut işletim sistemi izinlerini kullanır.
 
@@ -180,7 +180,7 @@ Kodlama ajanının yerleşik `git_inspect`, `git_tools` ve `git_prepare` araçla
 
 ### Masaüstü MCP Yöneticisi (Desktop MCP Manager)
 
-EVREN Masaüstü uygulaması, sol menüdeki **🔌 MCP** sekmesi üzerinden tam teşekküllü bir MCP sunucu yönetim merkezi sunar:
+FIRIK Masaüstü uygulaması, sol menüdeki **🔌 MCP** sekmesi üzerinden tam teşekküllü bir MCP sunucu yönetim merkezi sunar:
 
 1. **Sunucu Ekleme & Düzenleme:**
    - **Yerel (stdio):** `npx`, `uvx`, `python`, `node` gibi komutlar, argümanlar, çalışma dizini (`cwd`) ve ortam değişkenleri tanımlanabilir.
@@ -204,27 +204,27 @@ EVREN Masaüstü uygulaması, sol menüdeki **🔌 MCP** sekmesi üzerinden tam 
 ## Sohbet, görsel anlama ve akış
 
 ```bash
-evren chat -m glm-5.3 -p 'Türkiye hakkında üç cümle yaz.' --text
-evren chat -p 'Kısa bir öykü yaz.' --stream --text
-evren chat -m qwen3-vl-30b --image ./foto.png -p 'Görseli açıkla.' --text
-evren chat --system 'Kısa cevap ver.' --prompt @soru.txt --max-tokens 512
-cat soru.txt | evren chat --prompt - --text
+firik chat -m glm-5.3 -p 'Türkiye hakkında üç cümle yaz.' --text
+firik chat -p 'Kısa bir öykü yaz.' --stream --text
+firik chat -m qwen3-vl-30b --image ./foto.png -p 'Görseli açıkla.' --text
+firik chat --system 'Kısa cevap ver.' --prompt @soru.txt --max-tokens 512
+cat soru.txt | firik chat --prompt - --text
 
-evren completions --prompt 'Bir zamanlar' --max-tokens 128
-evren responses --prompt 'Bu konuyu açıkla' --stream
+firik completions --prompt 'Bir zamanlar' --max-tokens 128
+firik responses --prompt 'Bu konuyu açıkla' --stream
 # Sunucu tarafında canlı veri araçlarına açık katılım:
-evren chat -p 'Güncel bilgiyi kontrol et.' --evren-tools
+firik chat -p 'Güncel bilgiyi kontrol et.' --firik-tools
 ```
 
-`--image` tekrar edilebilir. `--image-url` uzak veya data URL girdileri içindir. Modellerin modaliteleri ve erişim durumu değişebilir; `evren models` yanıtını esas alın. `--evren-tools` sunucunun özelliğidir; model/gateway desteğini sunucu doğrular.
+`--image` tekrar edilebilir. `--image-url` uzak veya data URL girdileri içindir. Modellerin modaliteleri ve erişim durumu değişebilir; `firik models` yanıtını esas alın. `--firik-tools` sunucunun özelliğidir; model/gateway desteğini sunucu doğrular.
 
 ## Embeddings ve rerank
 
 ```bash
-evren embeddings -m qwen3-embedding-8b --input 'Birinci metin' --input @belge.txt -o vectors.json
-evren rerank -m qwen3-reranker-8b --query 'yapay zekâ' \
+firik embeddings -m qwen3-embedding-8b --input 'Birinci metin' --input @belge.txt -o vectors.json
+firik rerank -m qwen3-reranker-8b --query 'yapay zekâ' \
   --document 'Makine öğrenmesi üzerine bir belge' --document 'Bahçecilik rehberi'
-evren rerank -m qwen3-reranker-8b --query 'arama metni' --documents @belgeler.json
+firik rerank -m qwen3-reranker-8b --query 'arama metni' --documents @belgeler.json
 ```
 
 `belgeler.json` bir metin dizisidir: `["Belge 1", "Belge 2"]`. Bu komutlarda `--model` veya JSON gövdesinde `model` gereklidir. Yukarıdaki modeller 22 Eylül 2026 canlı katalog kontrolünde görüldü; örnekler hesabınızın gelecekteki erişimini garanti etmez.
@@ -232,11 +232,11 @@ evren rerank -m qwen3-reranker-8b --query 'arama metni' --documents @belgeler.js
 ## OCR ve ses
 
 ```bash
-evren ocr --file ./taranan.png --model dots-ocr --text -o metin.txt
-evren ocr --file ./taranan.jpg --model deepseek-ocr-2
-evren transcribe ./kayit.wav --language tr --response-format text -o kayit.txt
-evren transcribe ./kayit.wav --response-format srt -o altyazi.srt
-evren transcribe ./kayit.wav --response-format diarized_json -o konusmacilar.json
+firik ocr --file ./taranan.png --model dots-ocr --text -o metin.txt
+firik ocr --file ./taranan.jpg --model deepseek-ocr-2
+firik transcribe ./kayit.wav --language tr --response-format text -o kayit.txt
+firik transcribe ./kayit.wav --response-format srt -o altyazi.srt
+firik transcribe ./kayit.wav --response-format diarized_json -o konusmacilar.json
 ```
 
 OCR görsel girdisini resmî `image` data URL alanına dönüştürür; PDF ayrıştırıcısı değildir. Ses dosyaları `multipart/form-data` gönderilir. Desteklenen ses çıktı seçenekleri: `json`, `text`, `srt`, `verbose_json`, `diarized_json`. Metin ve SRT çıktıları JSON tırnakları eklenmeden yazılır.
@@ -244,38 +244,38 @@ OCR görsel girdisini resmî `image` data URL alanına dönüştürür; PDF ayr�
 ## Medya
 
 ```bash
-evren media upload ./video.mp4
+firik media upload ./video.mp4
 # Yükleme + complete + finalize:
-evren media upload ./video.mp4 --finalize
+firik media upload ./video.mp4 --finalize
 # Yukarıdaki yanıttaki media_id değerini kullanın:
-evren media status MEDIA_UUID
-evren media finalize MEDIA_UUID
-evren media abort MEDIA_UUID
+firik media status MEDIA_UUID
+firik media finalize MEDIA_UUID
+firik media abort MEDIA_UUID
 
 # Yüklemeyi başka bir araçla yapmak için:
-evren media initiate --content-type video/mp4 --size-bytes 123456
+firik media initiate --content-type video/mp4 --size-bytes 123456
 # İmzalı URL'lere PUT yaptıktan sonra:
-evren media complete MEDIA_UUID
+firik media complete MEDIA_UUID
 # Çok parçalı yüklemede her PUT yanıtının ETag değerini kullanın:
-evren media complete MEDIA_UUID --parts @parts.json
+firik media complete MEDIA_UUID --parts @parts.json
 ```
 
 `parts.json`: `[{"part_number":1,"etag":"\"storage-etag\""}]`.
 
-`upload` sunucunun verdiği tek/çok parçalı planı izler; dosyayı belleğe bütünüyle almaz ve storage adresine EVREN anahtarı göndermez. Tamamlama öncesi hata veya iptalde `abort` dener. Finalize başarısızsa tamamlanmış medyayı otomatik silmez; durumunu kontrol edip finalize komutunu tekrar kullanabilirsiniz. `initiate` çıktısındaki imzalı URL'ler geçici yükleme yetkisi taşır.
+`upload` sunucunun verdiği tek/çok parçalı planı izler; dosyayı belleğe bütünüyle almaz ve storage adresine FIRIK anahtarı göndermez. Tamamlama öncesi hata veya iptalde `abort` dener. Finalize başarısızsa tamamlanmış medyayı otomatik silmez; durumunu kontrol edip finalize komutunu tekrar kullanabilirsiniz. `initiate` çıktısındaki imzalı URL'ler geçici yükleme yetkisi taşır.
 
 ## Tam API parametreleri ve otomasyon
 
 `--body` inline JSON, `@dosya.json` veya stdin için `-` kabul eder. `--set ALAN=JSON` parametresi tekrar edilebilir; `tools`, `tool_choice`, `response_format`, `reasoning_effort`, `stop`, `seed`, `top_k` gibi ek alanlar korunur. CLI seçenekleri JSON gövdesindeki ilgili alanları geçersiz kılar; `messages` ile `--prompt/--image` çakışması hata verir.
 
 ```bash
-evren chat --body @conversation.json --set 'reasoning_effort="high"'
-evren responses --body @request.json -o response.json
-evren request POST /v1/chat/completions --body @conversation.json
-evren request GET /v1/quota --metadata
-evren request-status REQUEST_UUID
-evren api-docs --schema -o evren-openapi.json
-evren api-docs --path /v1/media
+firik chat --body @conversation.json --set 'reasoning_effort="high"'
+firik responses --body @request.json -o response.json
+firik request POST /v1/chat/completions --body @conversation.json
+firik request GET /v1/quota --metadata
+firik request-status REQUEST_UUID
+firik api-docs --schema -o firik-openapi.json
+firik api-docs --path /v1/media
 ```
 
 `request` yalnızca kaydedilmiş genel uçlara erişir; `internal` servis yollarını veya başka siteleri kabul etmez. Yeni uç noktalar için şemanın ve kapsam testinin güncellenmesi gerekir. Ses için dosya seçeneği olan `transcribe` komutunu kullanın.
@@ -285,21 +285,21 @@ Varsayılan stdout çıktısı JSON'dur. `--text` metin çıktısını seçer. A
 - `--metadata`: istek kimliği, `X-Evren-*`, hız/kota ve `Retry-After` başlıklarını stderr'e yazar.
 - `--output DOSYA`: başarılı yanıtı atomik olarak yazar; hata olursa eski dosyayı korur.
 - `--timeout SANİYE`: varsayılan 180; POST işlemleri otomatik tekrar edilmez.
-- `--config DOSYA`: `providers.evren` içindeki adres, model ve `api_key_env` ayarlarını okur.
-- `--base-url URL`: doğrudan API adresini değiştirir. `EVREN_BASE_URL` de desteklenir. Öncelik CLI → ortam → config → varsayılan.
+- `--config DOSYA`: `providers.firik` içindeki adres, model ve `api_key_env` ayarlarını okur.
+- `--base-url URL`: doğrudan API adresini değiştirir. `FIRIK_BASE_URL` de desteklenir. Öncelik CLI → ortam → config → varsayılan.
 - Çıkış kodları: başarı `0`, istek/girdi hatası `1`, argüman hatası `2`, Ctrl-C `130`.
 
-HTTP 401/402/403/429/503 hataları sunucunun açıklamasıyla gösterilir. İstek kimliği ve hata içindeki `evren` alanları korunur. Kullanım/kota hatalarında `evren quota`, şart hatalarında `evren terms status` kullanın. CLI yeni anahtar üretmez veya şart kabulünü sessizce değiştirmez.
+HTTP 401/402/403/429/503 hataları sunucunun açıklamasıyla gösterilir. İstek kimliği ve hata içindeki `firik` alanları korunur. Kullanım/kota hatalarında `firik quota`, şart hatalarında `firik terms status` kullanın. CLI yeni anahtar üretmez veya şart kabulünü sessizce değiştirmez.
 
 ## Python istemcisi
 
 ```python
 import asyncio
 import os
-from evren_agent.api import EvrenAPI
+from firik_agent.api import FirikAPI
 
 async def main():
-    async with EvrenAPI(os.environ["EVREN_API_KEY"]) as api:
+    async with FirikAPI(os.environ["FIRIK_API_KEY"]) as api:
         print(await api.models())
         print(await api.quota())
         result = await api.embeddings("qwen3-embedding-8b", ["Merhaba", "Dünya"])
@@ -330,7 +330,7 @@ firik-agent mcp list
 firik-agent mcp list --test
 firik-agent mcp remove git    # veya: firik-agent mcp rm git
 
-# (Aynı komutlar 'evren mcp add ...' olarak da çalışır)
+# (Aynı komutlar 'firik mcp add ...' olarak da çalışır)
 ```
 
 İnteraktif agent ve testler:
@@ -361,7 +361,7 @@ etkiler: modele iletilen sonuçlar değişmez ve ayrıntılarda eski 200 karakte
 önizleme sınırı yoktur. Etkileşimli terminal bulunmadığında `/details` ayrıntıları
 düz metin olarak yazdırır; fare desteği terminale bağlıdır.
 
-[Detaylı MCP, skill, plugin, computer-use ve agent kullanım kılavuzu](docs/AGENT.md). Bilgisayar denetimi sistem izinleri ve yetenek teşhisi için `firik-agent computer-use doctor` komutunu çalıştırabilirsiniz. Agent REPL'inde `/api ...` için doğrudan `evren` sağlayıcısını seçin. Birim/kontrat testleri sahte HTTP transport kullanır; gerçek anahtara veya ücretli API çağrılarına ihtiyaç duymaz.
+[Detaylı MCP, skill, plugin, computer-use ve agent kullanım kılavuzu](docs/AGENT.md). Bilgisayar denetimi sistem izinleri ve yetenek teşhisi için `firik-agent computer-use doctor` komutunu çalıştırabilirsiniz. Agent REPL'inde `/api ...` için doğrudan `firik` sağlayıcısını seçin. Birim/kontrat testleri sahte HTTP transport kullanır; gerçek anahtara veya ücretli API çağrılarına ihtiyaç duymaz.
 
 
 ## Masaüstü uygulamasını indirme
@@ -381,7 +381,7 @@ Windows kurucusu kullanıcı hesabına yükler; macOS'ta DMG içinden uygulamay�
 
 Windows paketleri henüz geliştirici sertifikasıyla imzalanmadığından SmartScreen onay isteyebilir. Yeni macOS release akışı Developer ID imzası ve Apple noter onayı gerektirir; daha önce yayımlanan imzasız paketler Gatekeeper onayı isteyebilir. Dosya bütünlüğü `SHA256SUMS.txt` ile kontrol edilebilir. [macOS imzalama ve GitHub Actions secret kurulumu](docs/MACOS_SIGNING.md).
 
-Paketli uygulamanın ayarları Windows'ta `%APPDATA%/evren`, macOS'ta `~/Library/Application Support/evren`, Linux'ta `$XDG_CONFIG_HOME/evren` (varsayılan `~/.config/evren`) altında saklanır.
+Paketli uygulamanın ayarları Windows'ta `%APPDATA%/firik`, macOS'ta `~/Library/Application Support/firik`, Linux'ta `$XDG_CONFIG_HOME/firik` (varsayılan `~/.config/firik`) altında saklanır.
 
 ### Yeni sürüm yayınlama
 

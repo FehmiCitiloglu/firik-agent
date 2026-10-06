@@ -8,14 +8,14 @@ import threading
 
 import pytest
 
-from evren_agent.core.events import AgentEventType
-from evren_agent.core.types import Message, ModelInfo, StreamChunk, ToolCall, ToolCallFunction, ToolDefinition
-from evren_agent.mcp.models import MCPServerConfig, ToolPolicy, ToolPolicyMode
-from evren_agent.projects.coding_sessions import CodingSessionStore
-from evren_agent.projects.db import ProjectDatabase
-from evren_agent.projects.models import Project, Task
-from evren_agent.providers.registry import ProviderRegistry
-from evren_agent.ui.service import EvrenService
+from firik_agent.core.events import AgentEventType
+from firik_agent.core.types import Message, ModelInfo, StreamChunk, ToolCall, ToolCallFunction, ToolDefinition
+from firik_agent.mcp.models import MCPServerConfig, ToolPolicy, ToolPolicyMode
+from firik_agent.projects.coding_sessions import CodingSessionStore
+from firik_agent.projects.db import ProjectDatabase
+from firik_agent.projects.models import Project, Task
+from firik_agent.providers.registry import ProviderRegistry
+from firik_agent.ui.service import FirikService
 
 
 def tool(name, **arguments):
@@ -51,12 +51,12 @@ def bridge(tmp_path, monkeypatch):
     state["script"] = simple
     def providers(config):
         registry = ProviderRegistry()
-        for name in ("evren", "local"):
+        for name in ("firik", "local"):
             registry.register(name, ScriptedProvider(state, name))
-        registry.set_active("evren")
+        registry.set_active("firik")
         return registry
     monkeypatch.setattr(ProviderRegistry, "from_config", providers)
-    service = EvrenService()
+    service = FirikService()
     roots = {}
     for name in ("p1", "p2"):
         root = tmp_path / name
@@ -377,7 +377,7 @@ def test_prompt_prior_history_json_tool_arguments_and_export_are_redacted_before
     session.system_prompt = "password=system-secret"
     session.messages = [Message(role="assistant", tool_calls=[tool("example", api_key="json-secret")]),
                         Message(role="tool", tool_call_id="call_example", content="API_KEY=history-secret")]
-    _, future = start(bridge, session=session, prompt="EVREN_API_KEY=prompt-secret")
+    _, future = start(bridge, session=session, prompt="FIRIK_API_KEY=prompt-secret")
     future.result(timeout=4)
     request = json.dumps(state["requests"], ensure_ascii=False)
     export = service.coding_store.export_json(service.coding_store.latest_run("p1").id)
@@ -447,7 +447,7 @@ def test_prepare_capabilities_use_only_explicit_selected_provider_model_config(b
     settings.coding_preferences["provider"] = "local"
     service.projects.db.save_settings(settings)
     service.config["providers"] = {
-        "evren": {"models": [{"id": "selected-model", "source": "provider", "context_window": 1000000, "supports_tools": True}]},
+        "firik": {"models": [{"id": "selected-model", "source": "provider", "context_window": 1000000, "supports_tools": True}]},
         "local": {"models": [{"id": "different-model", "source": "provider", "context_window": 2000000},
                               {"id": "selected-model", **metadata}]},
     }
@@ -469,7 +469,7 @@ def test_prepare_missing_selected_model_keeps_capabilities_unknown(bridge, confi
     service, state, roots = bridge
     session = service.get_or_create_session()
     session.model = "unlisted-model"
-    service.config["providers"]["evren"]["models"] = configured
+    service.config["providers"]["firik"]["models"] = configured
     values = []
     service.prepare_coding_async("p1", "İncele", values.append, values.append,
         session_id=session.session_id, available_skills=[]).result(timeout=4)

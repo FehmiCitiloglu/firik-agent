@@ -6,11 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from evren_agent.core.agent import Agent
-from evren_agent.core.chat_history import ChatHistoryStore
-from evren_agent.core.compaction import CompactionState, ContextCompactor, digest, estimate_tokens, safe_boundaries
-from evren_agent.core.session import ChatSession
-from evren_agent.core.types import Message, StreamChunk, ToolCall, ToolCallFunction
+from firik_agent.core.agent import Agent
+from firik_agent.core.chat_history import ChatHistoryStore
+from firik_agent.core.compaction import CompactionState, ContextCompactor, digest, estimate_tokens, safe_boundaries
+from firik_agent.core.session import ChatSession
+from firik_agent.core.types import Message, StreamChunk, ToolCall, ToolCallFunction
 
 
 class SummaryProvider:
@@ -161,7 +161,7 @@ def test_verified_capacity_output_reserve_and_unknown_budget():
 
 @pytest.mark.asyncio
 async def test_coding_compaction_keeps_authoritative_state_and_permissions():
-    from evren_agent.projects.coding_runtime import CodingRunControl
+    from firik_agent.projects.coding_runtime import CodingRunControl
     agent = Agent(config={"agent": {"context_compaction": {"fallback_input_tokens": 3000, "summary_max_tokens": 256}},
                           "providers": {}, "plugins": {}, "skills": {}})
     agent._is_initialized = True

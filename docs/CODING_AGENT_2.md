@@ -1,4 +1,4 @@
-# Evren Kodlama Ajanı 2.0
+# Firik Kodlama Ajanı 2.0
 
 Bu kayıt, mevcut CustomTkinter masaüstü uygulamasını koruyarak yapılan geliştirmeyi ve doğrulanması gereken sınırları açıklar. Kodlama çalışma alanının dili Türkçedir; API adları, olay türleri ve veri tabanı değerleri geriye dönük uyumluluk için korunur.
 
@@ -101,7 +101,7 @@ Bu sürüm dosya düzenleyen alt ajan, ayrı Git worktree veya otomatik birleşt
 
 - `test_subagents.py`, `test_coding_specialists.py`, `test_coding_bridge.py`, `test_coding_runtime.py`: **67 test geçti**. İzin daraltma, eşzamanlılık/toplam sınırı, zaman aşımı, ana görev iptali, ayrı geçmiş, SQLite olay/sonuç kaydı ve toplam model kullanımı doğrulandı.
 - `test_ui_coding_workspace.py`, `test_ui_coding_history.py`: gerçek macOS Tk pencerelerinde **11 test geçti**. Yeni seçenek, ayrı ilerleme kartı, ana sohbetin erken kapanmaması ve geçmiş kartının pasif geri yüklenmesi doğrulandı. Test ortamına mevcut Tcl/Tk kitaplık yolları verildi.
-- Gerçek EVREN `mimo-v2.6-pro` sağlayıcısıyla geçici `sample.py` üzerinde ana model iki `spawn_subagent` ve iki `wait_subagent` çağrısı yaptı. Araştırma ve inceleme alt ajanları ayrı gerçek `read_file` çağrılarıyla `return a - b` davranışını buldu; ana model sonuçları birleştirdi. İki çocuk da tamamlandı, örnek dosya değişmedi. İlk ana model denemesi zaman aşımına uğradı; sonraki uçtan uca deneme geçti.
+- Gerçek FIRIK `mimo-v2.6-pro` sağlayıcısıyla geçici `sample.py` üzerinde ana model iki `spawn_subagent` ve iki `wait_subagent` çağrısı yaptı. Araştırma ve inceleme alt ajanları ayrı gerçek `read_file` çağrılarıyla `return a - b` davranışını buldu; ana model sonuçları birleştirdi. İki çocuk da tamamlandı, örnek dosya değişmedi. İlk ana model denemesi zaman aşımına uğradı; sonraki uçtan uca deneme geçti.
 - Paketlenmiş masaüstü uygulaması bu kaynak değişikliğiyle yeniden oluşturulmadı.
 
 Release öncesi izole v0.2.17 checkout doğrulaması: `scripts/test_desktop.py` gerçek macOS grafik ortamında **512 başarılı, 1 atlanan** testle tamamlandı. Aynı klasörde devam eden bağlam sıkıştırma çalışması bu release snapshotına alınmadı.

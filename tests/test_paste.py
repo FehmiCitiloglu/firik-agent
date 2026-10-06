@@ -11,7 +11,7 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.layout.processors import TransformationInput
 from prompt_toolkit.output import DummyOutput
 
-from evren_agent.paste import (
+from firik_agent.paste import (
     create_paste_badge,
     delete_badge_on_backspace,
     delete_badge_on_delete,
@@ -19,8 +19,8 @@ from evren_agent.paste import (
     PasteBadgeProcessor,
     PASTE_BADGE_PATTERN,
 )
-from evren_agent import cli
-from evren_agent.core.agent import Agent
+from firik_agent import cli
+from firik_agent.core.agent import Agent
 
 
 def test_create_paste_badge_short_text():

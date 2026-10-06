@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from evren_agent.projects.git_operations import GitOperationsMixin
+from firik_agent.projects.git_operations import GitOperationsMixin
 
 
 Git = GitOperationsMixin

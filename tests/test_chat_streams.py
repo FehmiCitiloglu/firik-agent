@@ -6,10 +6,10 @@ import threading
 
 import pytest
 
-from evren_agent.core.events import AgentEvent, AgentEventType
-from evren_agent.core.tools import ToolRegistry
-from evren_agent.core.types import Message, ToolCall, ToolCallFunction, ToolDefinition
-from evren_agent.ui.service import EvrenService
+from firik_agent.core.events import AgentEvent, AgentEventType
+from firik_agent.core.tools import ToolRegistry
+from firik_agent.core.types import Message, ToolCall, ToolCallFunction, ToolDefinition
+from firik_agent.ui.service import FirikService
 
 
 class GatedAgent:
@@ -45,7 +45,7 @@ class GatedAgent:
 def service(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: tmp_path))
-    value = EvrenService()
+    value = FirikService()
     try:
         yield value
     finally:
@@ -142,8 +142,8 @@ def test_default_computer_use_is_selected_and_removal_is_persisted(service):
     assert finished.wait(3)
     assert not errors
     assert "computer-use" not in session.active_mcp_servers
-    from evren_agent.config import load_config
-    from evren_agent.mcp.defaults import add_desktop_defaults
+    from firik_agent.config import load_config
+    from firik_agent.mcp.defaults import add_desktop_defaults
     saved = load_config(service.config_path)
     add_desktop_defaults(saved)
     assert "computer-use" not in saved["mcp_servers"]

@@ -7,11 +7,11 @@ from pathlib import Path
 import customtkinter as ctk
 import pytest
 
-from evren_agent.core.events import AgentEvent, AgentEventType
-from evren_agent.core.chat_history import ChatHistoryStore
-from evren_agent.core.session import ChatSession
-from evren_agent.ui.app import _ensure_tk_environment
-from evren_agent.ui.views.chat_view import ChatMessageBubble, ChatView
+from firik_agent.core.events import AgentEvent, AgentEventType
+from firik_agent.core.chat_history import ChatHistoryStore
+from firik_agent.core.session import ChatSession
+from firik_agent.ui.app import _ensure_tk_environment
+from firik_agent.ui.views.chat_view import ChatMessageBubble, ChatView
 
 
 class ChatServiceStub:
@@ -520,7 +520,7 @@ def test_new_chat_preserves_history_and_reopened_chat_can_continue(chat):
     assert [message.content for message in view.session.messages] == ["İlk sohbet", "İlk yanıt"]
     assert len(service.streams) == 2  # Restoring never invokes the agent or tools.
     bot = messages(view)[1]
-    from evren_agent.ui.components.tool_card import ToolActivityGroup
+    from firik_agent.ui.components.tool_card import ToolActivityGroup
     group = next(child for child in bot.winfo_children() if isinstance(child, ToolActivityGroup))
     assert not group.is_expanded
     assert group.tools[0].output_content == "/workspace"
@@ -554,7 +554,7 @@ def test_restart_recovers_partial_reply_and_folded_activity(chat):
         assert "Yanıt kesildi" in reopened.messages[1]["content"]
         assert not reopened.is_streaming
         assert not reopened_service.streams
-        from evren_agent.ui.components.tool_card import ToolActivityGroup
+        from firik_agent.ui.components.tool_card import ToolActivityGroup
         bot = messages(reopened)[1]
         group = next(child for child in bot.winfo_children() if isinstance(child, ToolActivityGroup))
         assert not group.is_expanded

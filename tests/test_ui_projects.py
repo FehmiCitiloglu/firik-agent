@@ -1,16 +1,16 @@
-"""UI tests for Evren Agent Projects Workspace View."""
+"""UI tests for Firik Agent Projects Workspace View."""
 import tempfile
 from pathlib import Path
 import pytest
 
-from evren_agent.ui.app import EvrenApp
-from evren_agent.ui.service import EvrenService
-from evren_agent.ui.views.projects_view import ProjectsView
+from firik_agent.ui.app import FirikApp
+from firik_agent.ui.service import FirikService
+from firik_agent.ui.views.projects_view import ProjectsView
 
 
 @pytest.fixture(autouse=True)
 def synchronous_workspace_inspection(monkeypatch):
-    from evren_agent.projects.workspace import capture_workspace, compare_workspaces
+    from firik_agent.projects.workspace import capture_workspace, compare_workspaces
 
     def inspect(self, path, on_success, on_error, before=None):
         try:
@@ -22,7 +22,7 @@ def synchronous_workspace_inspection(monkeypatch):
         else:
             on_success(snapshot)
 
-    monkeypatch.setattr(EvrenService, "inspect_workspace_async", inspect)
+    monkeypatch.setattr(FirikService, "inspect_workspace_async", inspect)
     def prepare(self, project_id, prompt, on_success, on_error, **options):
         try:
             data = self.projects.coding.prepare_coding_prompt(project_id, prompt, **options)
@@ -30,7 +30,7 @@ def synchronous_workspace_inspection(monkeypatch):
             on_error(str(error))
         else:
             on_success(data)
-    monkeypatch.setattr(EvrenService, "prepare_coding_async", prepare)
+    monkeypatch.setattr(FirikService, "prepare_coding_async", prepare)
 
 
 def test_projects_view_full_lifecycle(monkeypatch):
@@ -38,9 +38,9 @@ def test_projects_view_full_lifecycle(monkeypatch):
     monkeypatch.setattr("tkinter.messagebox.showinfo", lambda *a, **k: None)
     monkeypatch.setattr("tkinter.messagebox.showwarning", lambda *a, **k: None)
     monkeypatch.setattr("tkinter.messagebox.showerror", lambda *a, **k: None)
-    monkeypatch.setattr(EvrenApp, "_check_initial_status", lambda self: None)
+    monkeypatch.setattr(FirikApp, "_check_initial_status", lambda self: None)
     monkeypatch.setattr(
-        EvrenService, "fetch_models_async",
+        FirikService, "fetch_models_async",
         lambda self, on_success, **kwargs: on_success([self.default_model]),
     )
 
@@ -53,7 +53,7 @@ def test_projects_view_full_lifecycle(monkeypatch):
 
         app = None
         try:
-            app = EvrenApp()
+            app = FirikApp()
             streams = []
             monkeypatch.setattr(app.service, "chat_agent_stream_async", lambda **kwargs: streams.append(kwargs))
             # 1. Switch to projects view
@@ -100,7 +100,7 @@ def test_projects_view_full_lifecycle(monkeypatch):
             assert "GÖREV BAŞLATILDI" in pv.coding_chat_box.get("1.0", "end")
 
             assert len(streams) == 1
-            from evren_agent.core.events import AgentEvent, AgentEventType
+            from firik_agent.core.events import AgentEvent, AgentEventType
             call = streams[-1]
             call["on_event"](AgentEvent(session_id=call["session_id"], type=AgentEventType.TEXT_DELTA, content="Plan hazır."))
             call["on_event"](AgentEvent(session_id=call["session_id"], type=AgentEventType.DONE, content="Plan hazır."))
@@ -168,18 +168,18 @@ def test_projects_view_full_lifecycle(monkeypatch):
 
 
 def test_coding_model_selection_persists_and_applies_to_existing_session(tmp_path, monkeypatch):
-    from evren_agent.core.types import Message
-    from evren_agent.projects.db import ProjectDatabase
+    from firik_agent.core.types import Message
+    from firik_agent.projects.db import ProjectDatabase
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-    monkeypatch.setattr(EvrenApp, "_check_initial_status", lambda self: None)
+    monkeypatch.setattr(FirikApp, "_check_initial_status", lambda self: None)
     model_callbacks = []
     monkeypatch.setattr(
-        EvrenService, "fetch_models_async",
+        FirikService, "fetch_models_async",
         lambda self, on_success, **kwargs: model_callbacks.append(on_success),
     )
-    app = EvrenApp()
+    app = FirikApp()
     streams = []
     monkeypatch.setattr(app.service, "chat_agent_stream_async", lambda **kwargs: streams.append(kwargs))
     try:
@@ -251,13 +251,13 @@ def test_coding_model_selection_persists_and_applies_to_existing_session(tmp_pat
 
 def test_coding_changes_activity_preview_and_editor(tmp_path, monkeypatch):
     import customtkinter as ctk
-    from evren_agent.core.events import AgentEvent, AgentEventType
-    import evren_agent.ui.views.projects_view as projects_view
+    from firik_agent.core.events import AgentEvent, AgentEventType
+    import firik_agent.ui.views.projects_view as projects_view
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-    monkeypatch.setattr(EvrenApp, "_check_initial_status", lambda self: None)
-    monkeypatch.setattr(EvrenService, "fetch_models_async", lambda self, on_success, **kwargs: on_success([self.default_model]))
+    monkeypatch.setattr(FirikApp, "_check_initial_status", lambda self: None)
+    monkeypatch.setattr(FirikService, "fetch_models_async", lambda self, on_success, **kwargs: on_success([self.default_model]))
     opened = []
     monkeypatch.setattr(projects_view, "open_in_editor", lambda *args: opened.append(args))
     root = tmp_path / "code"
@@ -267,7 +267,7 @@ def test_coding_changes_activity_preview_and_editor(tmp_path, monkeypatch):
     (root / "prior_edit.py").write_text("preexisting = True\n")
     (root / "src").mkdir()
     (root / "src" / "nested.py").write_text("nested = True\n")
-    app = EvrenApp()
+    app = FirikApp()
     streams = []
     monkeypatch.setattr(app.service, "chat_agent_stream_async", lambda **kwargs: streams.append(kwargs))
     try:

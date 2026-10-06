@@ -5,15 +5,15 @@ import shlex
 import subprocess
 import sys
 
-from evren_agent.core.agent import Agent
-from evren_agent.core.types import (
+from firik_agent.core.agent import Agent
+from firik_agent.core.types import (
     Message,
     ModelInfo,
     StreamChunk,
     ToolCall,
     ToolCallFunction,
 )
-from evren_agent.providers.base import BaseProvider
+from firik_agent.providers.base import BaseProvider
 
 
 class MockAgentProvider(BaseProvider):
@@ -125,10 +125,10 @@ async def test_agent_meta_tools():
     assert "test_meta_skill" in [s["name"] for s in agent.list_skills()]
 
     # 2. Test file read/write meta-tools
-    w_res = agent.write_file("test_scratch.txt", "Hello Evren Agent!")
+    w_res = agent.write_file("test_scratch.txt", "Hello Firik Agent!")
     assert "Successfully wrote" in w_res
     r_res = agent.read_file("test_scratch.txt")
-    assert r_res == "Hello Evren Agent!"
+    assert r_res == "Hello Firik Agent!"
 
     # 3. Test run_command meta-tool
     args = [sys.executable, "-c", "print('Hello from shell')"]

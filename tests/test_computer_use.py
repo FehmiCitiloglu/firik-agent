@@ -5,9 +5,9 @@ import json
 import pytest
 from unittest.mock import MagicMock
 
-from evren_agent.computer_use.backends.mock import MockComputerBackend
-from evren_agent.computer_use.coordinates import CoordinateManager
-from evren_agent.computer_use.models import (
+from firik_agent.computer_use.backends.mock import MockComputerBackend
+from firik_agent.computer_use.coordinates import CoordinateManager
+from firik_agent.computer_use.models import (
     ActionBlockedError,
     ClickType,
     ComputerUseError,
@@ -22,18 +22,18 @@ from evren_agent.computer_use.models import (
     UserCancelledError,
     WindowInfo,
 )
-from evren_agent.computer_use.mcp_server import ComputerUseMCPServer
-from evren_agent.computer_use.screenshots import ScreenshotProcessor
-from evren_agent.computer_use.security import ComputerUseConfig, SecurityManager
-from evren_agent.computer_use.service import ComputerUseService
-from evren_agent.computer_use.tools import (
+from firik_agent.computer_use.mcp_server import ComputerUseMCPServer
+from firik_agent.computer_use.screenshots import ScreenshotProcessor
+from firik_agent.computer_use.security import ComputerUseConfig, SecurityManager
+from firik_agent.computer_use.service import ComputerUseService
+from firik_agent.computer_use.tools import (
     register_computer_use_tools,
     unregister_computer_use_tools,
 )
-from evren_agent.core.tools import ToolRegistry
-from evren_agent.core.types import ContentPart, Message, ModelInfo, ToolCall, ToolCallFunction, ToolResult
-from evren_agent.providers.evren import EvrenProvider
-from evren_agent.providers.openai_provider import OpenAIProvider
+from firik_agent.core.tools import ToolRegistry
+from firik_agent.core.types import ContentPart, Message, ModelInfo, ToolCall, ToolCallFunction, ToolResult
+from firik_agent.providers.firik import FirikProvider
+from firik_agent.providers.openai_provider import OpenAIProvider
 
 
 # ============================================================================
@@ -320,7 +320,7 @@ def test_mcp_server_protocol():
     init_req = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
     resp = server.handle_request(init_req)
     assert resp["id"] == 1
-    assert resp["result"]["serverInfo"]["name"] == "evren-computer-use"
+    assert resp["result"]["serverInfo"]["name"] == "firik-computer-use"
 
     # 2. Tools list
     list_req = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
@@ -371,9 +371,9 @@ def test_mcp_server_protocol():
 # ============================================================================
 
 def test_multimodal_provider_formatting():
-    # 1. EvrenProvider with vision model (qwen3-vl-30b)
-    evren_prov = EvrenProvider(api_key="test_key")
-    evren_prov.set_model("qwen3-vl-30b")
+    # 1. FirikProvider with vision model (qwen3-vl-30b)
+    firik_prov = FirikProvider(api_key="test_key")
+    firik_prov.set_model("qwen3-vl-30b")
 
     img_part = ContentPart(type="image", data="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", mime_type="image/png")
     tool_msg = Message(
@@ -384,7 +384,7 @@ def test_multimodal_provider_formatting():
         parts=[img_part],
     )
 
-    payload = evren_prov._prepare_payload([tool_msg])
+    payload = firik_prov._prepare_payload([tool_msg])
     msg_dict = payload["messages"][0]
     # Vision model receives array of {type: text/image_url}
     assert isinstance(msg_dict["content"], list)
@@ -392,9 +392,9 @@ def test_multimodal_provider_formatting():
     assert msg_dict["content"][1]["type"] == "image_url"
     assert "data:image/png;base64," in msg_dict["content"][1]["image_url"]["url"]
 
-    # 2. EvrenProvider with non-vision model (glm-5.3)
-    evren_prov.set_model("glm-5.3")
-    payload_non_vision = evren_prov._prepare_payload([tool_msg])
+    # 2. FirikProvider with non-vision model (glm-5.3)
+    firik_prov.set_model("glm-5.3")
+    payload_non_vision = firik_prov._prepare_payload([tool_msg])
     # Non-vision model receives clean text string, NOT a base64 dump
     assert isinstance(payload_non_vision["messages"][0]["content"], str)
     assert payload_non_vision["messages"][0]["content"] == "[Screenshot: 800x600]"

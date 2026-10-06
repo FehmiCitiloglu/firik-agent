@@ -2,9 +2,9 @@ import asyncio
 
 import pytest
 
-from evren_agent.computer_use.mcp_server import ComputerUseMCPServer
-from evren_agent.mcp.client import MCPClient
-from evren_agent.mcp.defaults import add_desktop_defaults
+from firik_agent.computer_use.mcp_server import ComputerUseMCPServer
+from firik_agent.mcp.client import MCPClient
+from firik_agent.mcp.defaults import add_desktop_defaults
 
 
 def test_desktop_defaults_preserve_custom_settings_and_opt_out():
@@ -23,7 +23,7 @@ def test_desktop_defaults_preserve_custom_settings_and_opt_out():
 @pytest.mark.asyncio
 async def test_builtin_server_handshake_tools_and_error_result_without_subprocess(monkeypatch):
     server = ComputerUseMCPServer(use_mock=True)
-    monkeypatch.setattr("evren_agent.computer_use.mcp_server.ComputerUseMCPServer", lambda: server)
+    monkeypatch.setattr("firik_agent.computer_use.mcp_server.ComputerUseMCPServer", lambda: server)
     client = MCPClient("computer-use", command="builtin:computer-use")
     try:
         await client.connect()
@@ -49,7 +49,7 @@ async def test_builtin_calls_run_off_runtime_thread_and_serialize(monkeypatch):
     import threading
     import time
     server = ComputerUseMCPServer(use_mock=True)
-    monkeypatch.setattr("evren_agent.computer_use.mcp_server.ComputerUseMCPServer", lambda: server)
+    monkeypatch.setattr("firik_agent.computer_use.mcp_server.ComputerUseMCPServer", lambda: server)
     client = MCPClient("computer-use", command="builtin:computer-use")
     await client.connect()
     threads = []

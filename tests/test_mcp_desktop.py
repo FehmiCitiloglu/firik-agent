@@ -8,21 +8,21 @@ from typing import Any, Dict, List, Optional
 import pytest
 import yaml
 
-from evren_agent.config import load_config
-from evren_agent.core.agent import Agent
-from evren_agent.core.events import AgentEvent, AgentEventType
-from evren_agent.core.session import ChatSession, SessionToolFilter
-from evren_agent.core.tools import ToolRegistry
-from evren_agent.core.types import (
+from firik_agent.config import load_config
+from firik_agent.core.agent import Agent
+from firik_agent.core.events import AgentEvent, AgentEventType
+from firik_agent.core.session import ChatSession, SessionToolFilter
+from firik_agent.core.tools import ToolRegistry
+from firik_agent.core.types import (
     Message,
     ModelInfo,
     StreamChunk,
     ToolCall,
     ToolCallFunction,
 )
-from evren_agent.mcp.client import MCPClient
-from evren_agent.mcp.connection import MCPConnection, MCPConnectionManager
-from evren_agent.mcp.models import (
+from firik_agent.mcp.client import MCPClient
+from firik_agent.mcp.connection import MCPConnection, MCPConnectionManager
+from firik_agent.mcp.models import (
     MCPServerConfig,
     MCPStatus,
     MCPTestResult,
@@ -38,8 +38,8 @@ from evren_agent.mcp.models import (
     resolve_server_env,
     store_mcp_secret,
 )
-from evren_agent.providers.base import BaseProvider
-from evren_agent.ui.service import EvrenService
+from firik_agent.providers.base import BaseProvider
+from firik_agent.ui.service import FirikService
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ def temp_config_file(tmp_path: Path) -> Path:
     data = {
         "agent": {"name": "TestAgent"},
         "providers": {
-            "evren": {"base_url": "https://test.local/v1", "default_model": "glm-5.3"}
+            "firik": {"base_url": "https://test.local/v1", "default_model": "glm-5.3"}
         },
         "mcp_servers": {},
     }
@@ -290,7 +290,7 @@ class MockStreamProvider(BaseProvider):
                         type="function",
                         function=ToolCallFunction(
                             name="mcp_mock_text_transformer",
-                            arguments='{"text": "evren", "operation": "uppercase"}',
+                            arguments='{"text": "firik", "operation": "uppercase"}',
                         ),
                     )
                 ],
@@ -320,7 +320,7 @@ class MockStreamProvider(BaseProvider):
                         type="function",
                         function=ToolCallFunction(
                             name="mcp_mock_text_transformer",
-                            arguments='{"text": "evren", "operation": "uppercase"}',
+                            arguments='{"text": "firik", "operation": "uppercase"}',
                         ),
                     )
                 ],
@@ -357,7 +357,7 @@ async def test_agent_run_stream_with_mcp_and_events(mock_server_path: str):
 
     events: List[AgentEvent] = []
     async for evt in agent.run_stream(
-        prompt="Transform evren to uppercase",
+        prompt="Transform firik to uppercase",
         session=session,
         session_tool_filter=s_filter,
     ):
@@ -375,7 +375,7 @@ async def test_agent_run_stream_with_mcp_and_events(mock_server_path: str):
     # Verify tool execution result
     tool_results = [e for e in events if e.type == AgentEventType.TOOL_CALL_RESULT]
     assert len(tool_results) == 1
-    assert tool_results[0].content == "EVREN"
+    assert tool_results[0].content == "FIRIK"
     assert tool_results[0].duration_ms is not None
     started = next(e for e in events if e.type == AgentEventType.TOOL_CALL_STARTED)
     assert started.metadata["tool_call_id"] == tool_results[0].metadata["tool_call_id"]
@@ -415,13 +415,13 @@ async def test_disabled_mcp_tool_execution_blocked(mock_server_path: str):
     await agent.close()
 
 
-# --- 6. EvrenService MCP API & UI Callbacks ---
+# --- 6. FirikService MCP API & UI Callbacks ---
 
 def test_service_mcp_integration(temp_config_file: Path, mock_server_path: str, monkeypatch):
     monkeypatch.chdir(temp_config_file.parent)
     # Keep service databases in the test sandbox, away from the user's data.
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: temp_config_file.parent))
-    service = EvrenService()
+    service = FirikService()
 
     # Add server via service
     cfg = MCPServerConfig(
@@ -433,7 +433,7 @@ def test_service_mcp_integration(temp_config_file: Path, mock_server_path: str, 
 
     done_event = asyncio.Event()
 
-    from evren_agent.config import add_mcp_server_to_config
+    from firik_agent.config import add_mcp_server_to_config
     add_mcp_server_to_config("svc_mock", cfg.to_dict())
     service.runtime.run_sync(service.mcp_manager.add_server(cfg, connect_now=True))
     servers = service.get_mcp_servers()

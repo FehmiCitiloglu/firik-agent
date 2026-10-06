@@ -11,9 +11,9 @@ from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.mouse_events import MouseEventType
 from rich.console import Console
 
-from evren_agent.activity import ActivityLog, ActivityView
-from evren_agent import cli
-from evren_agent.core.agent import Agent
+from firik_agent.activity import ActivityLog, ActivityView
+from firik_agent import cli
+from firik_agent.core.agent import Agent
 
 
 def visible(view):

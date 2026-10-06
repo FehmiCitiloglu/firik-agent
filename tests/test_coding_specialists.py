@@ -5,10 +5,10 @@ import json
 
 import pytest
 
-from evren_agent.core.session import ChatSession
-from evren_agent.core.types import ToolCall, ToolCallFunction
-from evren_agent.projects.coding_runtime import CodingRunControl, CodingToolFilter
-from evren_agent.projects.specialists import (
+from firik_agent.core.session import ChatSession
+from firik_agent.core.types import ToolCall, ToolCallFunction
+from firik_agent.projects.coding_runtime import CodingRunControl, CodingToolFilter
+from firik_agent.projects.specialists import (
     FileLeaseConflict, FileLeaseManager, SpecialistCoordinator, SpecialistRole,
     WorkspaceBinding, intersect_permissions,
 )

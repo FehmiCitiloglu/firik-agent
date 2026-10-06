@@ -6,8 +6,8 @@ from test_ui_coding_workspace import workspace
 
 def test_chat_ui_model_switch_and_reload(service_factory, monkeypatch):
     import customtkinter as ctk
-    from evren_agent.ui.app import _ensure_tk_environment
-    from evren_agent.ui.views.chat_workspace import ChatWorkspace
+    from firik_agent.ui.app import _ensure_tk_environment
+    from firik_agent.ui.views.chat_workspace import ChatWorkspace
     from test_ui_chat import pump
     _ensure_tk_environment()
     root = ctk.CTk()

@@ -44,11 +44,11 @@ jobs:
         if: always()
         shell: bash
         run: |
-          signing_keychain="$RUNNER_TEMP/evren-signing.keychain-db"
+          signing_keychain="$RUNNER_TEMP/firik-signing.keychain-db"
           if [[ -f "$signing_keychain" ]]; then
             security delete-keychain "$signing_keychain"
           fi
-          rm -f "$RUNNER_TEMP/evren-signing.p12"
+          rm -f "$RUNNER_TEMP/firik-signing.p12"
 
   build-desktop:
     if: inputs.signing_check_only != true
@@ -112,7 +112,7 @@ jobs:
         run: python scripts/smoke_desktop.py
       - name: Notarize macOS application and create signed installers
         if: runner.os == 'macOS'
-        run: python scripts/sign_macos.py --skip-build --identity "$EVREN_CODESIGN_IDENTITY" --profile evren-notary
+        run: python scripts/sign_macos.py --skip-build --identity "$FIRIK_CODESIGN_IDENTITY" --profile firik-notary
       - name: Create native installers
         if: runner.os != 'macOS'
         run: python scripts/package_desktop.py ${{ matrix.arch }}
@@ -132,11 +132,11 @@ jobs:
         if: always() && runner.os == 'macOS'
         shell: bash
         run: |
-          signing_keychain="$RUNNER_TEMP/evren-signing.keychain-db"
+          signing_keychain="$RUNNER_TEMP/firik-signing.keychain-db"
           if [[ -f "$signing_keychain" ]]; then
             security delete-keychain "$signing_keychain"
           fi
-          rm -f "$RUNNER_TEMP/evren-signing.p12"
+          rm -f "$RUNNER_TEMP/firik-signing.p12"
 
   build-python:
     if: inputs.signing_check_only != true

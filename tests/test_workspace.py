@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from evren_agent.projects.workspace import WorkspaceSnapshot, capture_workspace, compare_workspaces, workspace_path
+from firik_agent.projects.workspace import WorkspaceSnapshot, capture_workspace, compare_workspaces, workspace_path
 
 
 def test_run_changes_include_added_modified_deleted_without_preexisting_edits(tmp_path):
@@ -84,7 +84,7 @@ def test_missing_workspace_reports_error(tmp_path):
 def test_inspection_runs_on_worker_and_dispatches_gui_callback(tmp_path, missing):
     import threading
     from types import SimpleNamespace
-    from evren_agent.ui.service import EvrenService
+    from firik_agent.ui.service import FirikService
 
     (tmp_path / "main.py").write_bytes(b"pass\n")
     before = capture_workspace(tmp_path)
@@ -98,7 +98,7 @@ def test_inspection_runs_on_worker_and_dispatches_gui_callback(tmp_path, missing
         ready.set()
 
     success, error = lambda _: None, lambda _: None
-    EvrenService.inspect_workspace_async(SimpleNamespace(_dispatch=dispatch), tmp_path / "missing" if missing else tmp_path, success, error, before=before)
+    FirikService.inspect_workspace_async(SimpleNamespace(_dispatch=dispatch), tmp_path / "missing" if missing else tmp_path, success, error, before=before)
     assert ready.wait(5)
     callback, result, thread = dispatched[0]
     assert thread != gui_thread

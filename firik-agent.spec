@@ -38,30 +38,30 @@ datas += cert_datas
 binaries += cert_binaries
 hiddenimports += cert_hidden
 
-# evren_agent paket verileri (openapi.json, builtin_skills, assets)
-evren_datas, evren_binaries, evren_hidden = collect_all("evren_agent")
-datas += evren_datas
-binaries += evren_binaries
-hiddenimports += evren_hidden
+# firik_agent paket verileri (openapi.json, builtin_skills, assets)
+firik_datas, firik_binaries, firik_hidden = collect_all("firik_agent")
+datas += firik_datas
+binaries += firik_binaries
+hiddenimports += firik_hidden
 
 # Varsa assets dosyalarını garantiye al
-assets_dir = Path("evren_agent/ui/assets")
+assets_dir = Path("firik_agent/ui/assets")
 if assets_dir.exists():
-    datas.append((str(assets_dir), "evren_agent/ui/assets"))
+    datas.append((str(assets_dir), "firik_agent/ui/assets"))
 
 is_mac = sys.platform == "darwin"
 is_win = sys.platform == "win32"
 
 icon_file = None
-if is_mac and Path("evren_agent/ui/assets/icon.png").exists():
-    icon_file = "evren_agent/ui/assets/icon.png"
-elif is_win and Path("evren_agent/ui/assets/icon.ico").exists():
-    icon_file = "evren_agent/ui/assets/icon.ico"
-elif Path("evren_agent/ui/assets/icon.png").exists():
-    icon_file = "evren_agent/ui/assets/icon.png"
+if is_mac and Path("firik_agent/ui/assets/icon.png").exists():
+    icon_file = "firik_agent/ui/assets/icon.png"
+elif is_win and Path("firik_agent/ui/assets/icon.ico").exists():
+    icon_file = "firik_agent/ui/assets/icon.ico"
+elif Path("firik_agent/ui/assets/icon.png").exists():
+    icon_file = "firik_agent/ui/assets/icon.png"
 
 a = Analysis(
-    ["evren_agent/ui/__main__.py"],
+    ["firik_agent/ui/__main__.py"],
     pathex=["."],
     binaries=binaries,
     datas=datas,
@@ -94,7 +94,7 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
-    codesign_identity=os.environ.get("EVREN_CODESIGN_IDENTITY") if is_mac else None,
+    codesign_identity=os.environ.get("FIRIK_CODESIGN_IDENTITY") if is_mac else None,
     entitlements_file=None,
     icon=icon_file,
 )

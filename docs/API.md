@@ -1,4 +1,4 @@
-# EVREN API kapsamı
+# FIRIK API kapsamı
 
 Kaynaklar (22 Eylül 2026):
 
@@ -7,7 +7,7 @@ Kaynaklar (22 Eylül 2026):
 - [Resmî kullanım kılavuzu](https://evren.ssyz.org.tr/guide)
 - [API anahtarları](https://evren.ssyz.org.tr/api-keys)
 
-OpenAPI'nin genel uçları ve gerekli şemaları `evren_agent/api/openapi.json` içinde kayıtlıdır. Kaynak ve indirme tarihi dosyada bulunur. Katalogdaki OCR örneği `{"model":"dots-ocr","image":"data:image/png;base64,..."}` kullanır; OpenAPI, OCR istek gövdesini ayrıntılı tanımlamadığından bu alan resmî portal örneğinden alınmıştır.
+OpenAPI'nin genel uçları ve gerekli şemaları `firik_agent/api/openapi.json` içinde kayıtlıdır. Kaynak ve indirme tarihi dosyada bulunur. Katalogdaki OCR örneği `{"model":"dots-ocr","image":"data:image/png;base64,..."}` kullanır; OpenAPI, OCR istek gövdesini ayrıntılı tanımlamadığından bu alan resmî portal örneğinden alınmıştır.
 
 ## Kapsam tablosu
 

@@ -12,11 +12,11 @@ import sys
 from pathlib import Path
 
 MIN_PYTHON = (3, 10)
-COMMANDS = ("firik", "firik-agent", "firik-gui", "evren", "evren-agent", "evren-gui")
+COMMANDS = ("firik", "firik-agent", "firik-gui")
 
 
 def install_commands(venv_dir: Path, bin_dir: Path, is_windows: bool):
-    """Expose only EVREN commands; their launchers retain the venv interpreter."""
+    """Expose only Firik commands; their launchers retain the venv interpreter."""
     scripts_dir = venv_dir / ("Scripts" if is_windows else "bin")
     suffix = ".exe" if is_windows else ""
     pairs = [(scripts_dir / (name + suffix), bin_dir / (name + suffix)) for name in COMMANDS]
@@ -42,7 +42,7 @@ def add_shell_path(path: Path, line: str):
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a") as stream:
-        stream.write(f"\n# EVREN CLI (no virtual environment activation required)\n{line}\n")
+        stream.write(f"\n# FIRIK CLI (no virtual environment activation required)\n{line}\n")
 
 
 def configure_path(bin_dir: Path, is_windows: bool) -> list[str]:
@@ -84,7 +84,7 @@ def configure_path(bin_dir: Path, is_windows: bool) -> list[str]:
         config = Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config")
         fish_path = str(bin_dir).replace("\\", "\\\\").replace("'", "\\'")
         line = f"contains -- '{fish_path}' $PATH; or set -gx PATH '{fish_path}' $PATH"
-        profiles = [config / "fish" / "conf.d" / "evren.fish"]
+        profiles = [config / "fish" / "conf.d" / "firik.fish"]
     else:
         profiles = [home / ".profile"]
         log(f"  PATH saved in ~/.profile; configure {shell}'s startup file if it does not read this file.", "yellow")
@@ -138,7 +138,7 @@ def main():
     # Virtual environment paths
     if is_windows:
         venv_python = venv_dir / "Scripts" / "python.exe"
-        bin_dir = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "EVREN" / "bin"
+        bin_dir = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "FIRIK" / "bin"
     else:
         venv_python = venv_dir / "bin" / "python"
         bin_dir = Path.home() / ".local" / "bin"
@@ -168,7 +168,7 @@ def main():
         subprocess.run([str(venv_python), "-m", "pip", "install", "-e", ".[dev]"], check=True)
     log("✔ Package firik-agent and dependencies installed successfully", "green")
 
-    log("\n[3/3] Making EVREN commands available without activation...", "cyan")
+    log("\n[3/3] Making Firik commands available without activation...", "cyan")
     install_commands(venv_dir, bin_dir, is_windows)
     refresh_commands = configure_path(bin_dir, is_windows)
     log(f"✔ Commands installed in {bin_dir}", "green")
@@ -184,12 +184,12 @@ def main():
     for command in refresh_commands:
         log(f"     {command}", "bold")
 
-    log("\n  2. Run evren or firik-agent. First launch asks for your API key.", "yellow")
+    log("\n  2. Run firik or firik-agent. First launch asks for your API key.", "yellow")
     log("     The key is stored in your OS credential store; no .env needed.", "dim")
-    log("     evren login            (Save or replace your API key)", "bold")
+    log("     firik login            (Save or replace your API key)", "bold")
 
     log("\n  3. Test & Run:", "yellow")
-    log("     evren --help           (Direct EVREN API CLI)", "bold")
+    log("     firik --help           (Direct FIRIK API CLI)", "bold")
     log("     firik-agent            (Interactive Agent REPL)", "bold")
     log("     firik-agent --commands (List all available commands)\n", "bold")
 

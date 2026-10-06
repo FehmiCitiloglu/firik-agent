@@ -5,8 +5,8 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from evren_agent.core.types import Message, ToolDefinition
-from evren_agent.plugins.base import BasePlugin
+from firik_agent.core.types import Message, ToolDefinition
+from firik_agent.plugins.base import BasePlugin
 
 try:
     import tiktoken
@@ -23,7 +23,7 @@ CONTEXT_WINDOWS = {
     "claude-3-opus": 200000,
     "gemini-1.5-pro": 2000000,
     "llama-3.1-70b": 131072,
-    "evren-large": 32768,
+    "firik-large": 32768,
 }
 
 DEFAULT_CONTEXT_WINDOW = 8192

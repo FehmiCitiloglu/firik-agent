@@ -6,10 +6,10 @@ import subprocess
 
 import pytest
 
-from evren_agent.core.agent import Agent
-from evren_agent.core.session import ChatSession, SessionToolFilter
-from evren_agent.core.types import ToolCall, ToolCallFunction
-from evren_agent.projects.git_service import GitService
+from firik_agent.core.agent import Agent
+from firik_agent.core.session import ChatSession, SessionToolFilter
+from firik_agent.core.types import ToolCall, ToolCallFunction
+from firik_agent.projects.git_service import GitService
 
 
 def git(root, *args):
@@ -121,7 +121,7 @@ def test_inherited_git_environment_cannot_redirect_repository(repo, monkeypatch,
 @pytest.mark.asyncio
 async def test_git_query_does_not_block_agent_event_loop(repo, monkeypatch):
     import threading
-    from evren_agent.projects.git_tools import GitAgentTools
+    from firik_agent.projects.git_tools import GitAgentTools
     entered, release = threading.Event(), threading.Event()
     def query(*args, **kwargs):
         entered.set()

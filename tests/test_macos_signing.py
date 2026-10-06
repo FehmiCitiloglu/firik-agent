@@ -39,7 +39,7 @@ def test_setup_preserves_search_list_and_isolates_notary_credentials(monkeypatch
     values = configure(monkeypatch, tmp_path)
     calls = []
     fingerprint = "A" * 40
-    keychain = tmp_path / "evren-signing.keychain-db"
+    keychain = tmp_path / "firik-signing.keychain-db"
 
     def run(*args):
         calls.append(args)
@@ -58,13 +58,13 @@ def test_setup_preserves_search_list_and_isolates_notary_credentials(monkeypatch
 
     monkeypatch.setattr(setup, "run", run)
     setup.main()
-    assert not (tmp_path / "evren-signing.p12").exists()
+    assert not (tmp_path / "firik-signing.p12").exists()
     assert ("security", "list-keychains", "-d", "user", "-s", keychain, "/old/login.keychain-db") in calls
     notary_call = next(call for call in calls if call[:2] == ("xcrun", "notarytool"))
     assert notary_call[-2:] == ("--keychain", keychain)
     environment = (tmp_path / "github-env").read_text()
-    assert f"EVREN_CODESIGN_IDENTITY={fingerprint}\n" in environment
-    assert f"EVREN_NOTARY_KEYCHAIN={keychain}\n" in environment
+    assert f"FIRIK_CODESIGN_IDENTITY={fingerprint}\n" in environment
+    assert f"FIRIK_NOTARY_KEYCHAIN={keychain}\n" in environment
     output = capsys.readouterr().out
     for name in ("MACOS_CERTIFICATE_PASSWORD", "APPLE_APP_SPECIFIC_PASSWORD"):
         assert values[name] not in environment + output
@@ -80,9 +80,9 @@ def test_failed_command_does_not_disclose_password(monkeypatch):
 
 
 def test_temporary_notary_keychain_is_used_for_all_requests(monkeypatch):
-    monkeypatch.setenv("EVREN_NOTARY_KEYCHAIN", "/tmp/test-signing.keychain-db")
+    monkeypatch.setenv("FIRIK_NOTARY_KEYCHAIN", "/tmp/test-signing.keychain-db")
     assert signing.notary_credentials("test-profile") == [
         "--keychain-profile", "test-profile", "--keychain", "/tmp/test-signing.keychain-db",
     ]
-    monkeypatch.delenv("EVREN_NOTARY_KEYCHAIN")
+    monkeypatch.delenv("FIRIK_NOTARY_KEYCHAIN")
     assert signing.notary_credentials("test-profile") == ["--keychain-profile", "test-profile"]

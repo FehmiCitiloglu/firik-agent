@@ -21,7 +21,7 @@ LOGS = ROOT / "build/notarization"
 
 def notary_credentials(profile):
     args = ["--keychain-profile", profile]
-    if keychain := os.environ.get("EVREN_NOTARY_KEYCHAIN"):
+    if keychain := os.environ.get("FIRIK_NOTARY_KEYCHAIN"):
         args.extend(["--keychain", keychain])
     return args
 
@@ -69,7 +69,7 @@ def main():
     run("xcrun", "notarytool", "history", *notary_credentials(args.profile), capture=True)
     LOGS.mkdir(parents=True, exist_ok=True)
     if not args.skip_build:
-        env = dict(os.environ, EVREN_CODESIGN_IDENTITY=identity,
+        env = dict(os.environ, FIRIK_CODESIGN_IDENTITY=identity,
                    PYINSTALLER_STRICT_BUNDLE_CODESIGN_ERROR="1")
         run(sys.executable, "-m", "PyInstaller", "firik-agent.spec", "--clean", "--noconfirm", env=env)
     run("codesign", "--verify", "--deep", "--strict", "--verbose=2", APP)

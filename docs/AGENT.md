@@ -1,16 +1,16 @@
 # Firik Agent — önceki agent modu kılavuzu
 
-Doğrudan EVREN API komutları için [ana kılavuza](../README.md) bakın. Bu dosya agent/MCP/skill/plugin kullanımını anlatır.
+Doğrudan FIRIK API komutları için [ana kılavuza](../README.md) bakın. Bu dosya agent/MCP/skill/plugin kullanımını anlatır.
 
-An extensible, AI Agent framework designed with **Model Context Protocol (MCP)**, **modular Skills**, and **lifecycle Plugins**, with native first-class integration for **EVREN** (Savunma Sanayii Başkanlığı / SAYZEK) and **LLMTR Gateway**, as well as OpenAI-compatible providers.
+An extensible, AI Agent framework designed with **Model Context Protocol (MCP)**, **modular Skills**, and **lifecycle Plugins**, with native first-class integration for **FIRIK** (Savunma Sanayii Başkanlığı / SAYZEK) and **LLMTR Gateway**, as well as OpenAI-compatible providers.
 
 ---
 
 ## 🌟 Highlights
 
-- 🇹🇷 **Native EVREN & LLMTR Integration**:
-  - Direct EVREN platform: `https://evren-llmapi.ssyz.org.tr/v1`
-  - LLMTR Gateway routing: `https://llmtr.com/v1` (documentation: [llmtr.com/docs/gateway/evren](https://llmtr.com/docs/gateway/evren/))
+- 🇹🇷 **Native FIRIK & LLMTR Integration**:
+  - Direct FIRIK platform: `https://evren-llmapi.ssyz.org.tr/v1`
+  - LLMTR Gateway routing: `https://llmtr.com/v1` (documentation: [llmtr.com/docs/gateway/firik](https://llmtr.com/docs/gateway/firik/))
   - Full support for models: `glm-5.3`, `deepseek-v4-flash`, `qwen3.8-flash-next`, `gemma-4-31b`, `qwen3-vl-30b`, `auto` (and `evren/glm-5.3-fp8`, `evren/deepseek-v4-flash-tr` via LLMTR).
   - Real-time **reasoning stream extraction** (`delta.reasoning` / `delta.reasoning_content`) for thinking models.
   - Explicit Terms of Service status, text, and version acceptance (`/v1/terms/status`, `/v1/terms/text`, `/v1/terms/accept`).
@@ -43,7 +43,7 @@ make install         # macOS / Linux (Make ile)
 
 .\install.ps1        # Windows (PowerShell)
 
-python install.py    # Tüm Sistemler (Evrensel Python)
+python install.py    # Tüm Sistemler (Firiksel Python)
 ```
 
 <details>
@@ -68,16 +68,16 @@ provider without a key using `/provider` also prompts before switching.
 To save or replace a key explicitly:
 
 ```bash
-evren login
-evren login --provider llmtr
-evren login --provider openai
+firik login
+firik login --provider llmtr
+firik login --provider openai
 ```
 
 Existing environment variables and optional legacy `.env` files remain supported
 and take precedence over stored keys. Remove an old value to use a newly saved
 key. No `.env` file is created by the installer. Without a usable OS credential
 store, automatic onboarding keeps the key only for that run and reports this;
-`evren login` fails if it cannot save. Non-interactive runs require an existing
+`firik login` fails if it cannot save. Non-interactive runs require an existing
 stored key or environment variable and never wait for input.
 
 You can customize defaults in `config.yaml`.
@@ -113,7 +113,7 @@ firik-agent --provider llmtr --model evren/glm-5.3-fp8
 | `/help` | General | Show the categorized beneficial commands reference guide |
 | `/commands` / `/list` | General | List all available slash commands with syntax and optional category filter (`/list skills`) |
 | `/status` | Diagnostics | Display full agent diagnostics (provider, model, tools, skills, message count) |
-| `/provider [name]` | Providers | Switch or list providers (`/provider evren`, `/provider llmtr`, `/provider openai`) |
+| `/provider [name]` | Providers | Switch or list providers (`/provider firik`, `/provider llmtr`, `/provider openai`) |
 | `/model [name]` | Models | Switch active model (`/model glm-5.3`, `/model evren/glm-5.3-fp8`) or list models |
 | `/mcp list` | MCP | Show connected MCP servers and their exposed tools (`/mcp list` or `/mcp ls`) |
 | `/mcp add <name> <cmd> [args]` | MCP | Connect and persist a new MCP server (`/mcp add git npx -y @modelcontextprotocol/server-git`) |
@@ -126,10 +126,10 @@ firik-agent --provider llmtr --model evren/glm-5.3-fp8
 | `/plugin add <file.py>` | Plugins | Load a Python plugin dynamically (`/plugin add plugins/weather_plugin.py`) |
 | `/tools` | Tools | List all registered tools, their parameters, and sources (`builtin`, `mcp`, `skill`, `plugin`) |
 | `/shell <command>` / `!<command>` | Terminal | Run a local command directly and keep its output in context (`!ls -la`, `!git status`) |
-| `/api <command>` | EVREN | All direct API commands; `/api --help`, `/api quota`, `/api ocr --file scan.png` |
-| `/terms text` | EVREN | Read the current terms before explicit acceptance |
-| `/terms` | EVREN | Check EVREN direct endpoint terms of service status |
-| `/terms accept <version>` | EVREN | Accept EVREN terms of service directly |
+| `/api <command>` | FIRIK | All direct API commands; `/api --help`, `/api quota`, `/api ocr --file scan.png` |
+| `/terms text` | FIRIK | Read the current terms before explicit acceptance |
+| `/terms` | FIRIK | Check FIRIK direct endpoint terms of service status |
+| `/terms accept <version>` | FIRIK | Accept FIRIK terms of service directly |
 | `/history` | Session | View conversation turns summary and context stats |
 | `/export [file.md]` | Session | Export conversation transcript with reasoning to Markdown |
 | `/clear` | Session | Clear chat history and reset context window |
@@ -191,8 +191,8 @@ firik-agent mcp add remote --url http://localhost:8000/sse
 # Bağlantı testini atlayarak doğrudan kaydetme:
 firik-agent mcp add my-server python /path/to/server.py --no-test
 
-# Aynı komutlar 'evren mcp add ...' olarak da çalışır:
-evren mcp add git npx -y @modelcontextprotocol/server-git
+# Aynı komutlar 'firik mcp add ...' olarak da çalışır:
+firik mcp add git npx -y @modelcontextprotocol/server-git
 ```
 
 `mcp add` komutu varsayılan olarak sunucuya bağlanır, araçları (tools) listeler, testi başarılı olursa `config.yaml` dosyasına yazar.
@@ -226,7 +226,7 @@ You > /mcp rm git
 
 ## 🖥️ Desktop MCP Manager & Per-Chat Architecture
 
-EVREN Masaüstü uygulaması (`evren gui`), CLI'daki MCP altyapısını görsel bir yönetim merkezine ve oturum bazlı (per-chat) araç izolasyonuna kavuşturur.
+FIRIK Masaüstü uygulaması (`firik gui`), CLI'daki MCP altyapısını görsel bir yönetim merkezine ve oturum bazlı (per-chat) araç izolasyonuna kavuşturur.
 
 ### 1. Üç Ayrı Durum Modeli (Lifecycle States)
 Sistemde her MCP sunucusu için 3 bağımsız durum katmanı bulunur:
@@ -263,7 +263,7 @@ Masaüstü Tkinter ana iş parçacığını dondurmamak ve `MCPClient` bağlant�
 - Arayüzde `••••••••` şeklinde maskelenir ve loglarda/araç çıktılarında `redact_secrets()` ile sansürlenir.
 
 ### 6. Otonom Araç Akışı & Katlanabilir Kartlar (`ToolActivityBubble`)
-- Desktop Chat doğrudan EVREN API çağrısı yerine `EvrenService.chat_agent_stream_async()` köprüsünü kullanır.
+- Desktop Chat doğrudan FIRIK API çağrısı yerine `FirikService.chat_agent_stream_async()` köprüsünü kullanır.
 - Dil modeli araç çağırdığında `tool_call_started`, `tool_call_result`, `tool_call_error` gibi türlenmiş `AgentEvent` olayları fırlatılır.
 - Sohbet akışında katlanabilir `ToolActivityBubble` kartları üretilir; parametreler, çalışma süresi ve önizleme kullanıcıya açık ve anlaşılır şekilde sunulur.
 
@@ -282,15 +282,15 @@ Masaüstü Tkinter ana iş parçacığını dondurmamak ve `MCPClient` bağlant�
 ## 🧩 Architecture Overview
 
 ```
-evren/
-├── evren_agent/
+firik/
+├── firik_agent/
 │   ├── core/
 │   │   ├── agent.py          # Autonomous execution loop & meta-tools
 │   │   ├── tools.py          # ToolRegistry & @tool decorator
 │   │   └── types.py          # Message, ToolCall, StreamChunk types
 │   ├── providers/
 │   │   ├── base.py           # BaseProvider abstract class
-│   │   ├── evren.py          # Direct EVREN & LLMTR Gateway provider
+│   │   ├── firik.py          # Direct FIRIK & LLMTR Gateway provider
 │   │   ├── openai_provider.py# OpenAI-compatible provider
 │   │   └── registry.py       # ProviderRegistry for dynamic switching
 │   ├── mcp/
@@ -314,11 +314,11 @@ evren/
 
 ## 🐍 Python SDK Usage
 
-### 1. Basic Chat with EVREN
+### 1. Basic Chat with FIRIK
 
 ```python
 import asyncio
-from evren_agent import Agent
+from firik_agent import Agent
 
 async def main():
     agent = Agent()
@@ -337,7 +337,7 @@ asyncio.run(main())
 ```python
 import asyncio
 import sys
-from evren_agent import Agent
+from firik_agent import Agent
 
 async def main():
     agent = Agent()
@@ -364,7 +364,7 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from evren_agent import Agent
+from firik_agent import Agent
 
 async def main():
     agent = Agent()
@@ -390,8 +390,8 @@ asyncio.run(main())
 ### 4. Writing a Custom Plugin with Tools & Hooks
 
 ```python
-from evren_agent.plugins.base import BasePlugin
-from evren_agent.core.types import ToolDefinition
+from firik_agent.plugins.base import BasePlugin
+from firik_agent.core.types import ToolDefinition
 
 class TranslationPlugin(BasePlugin):
     name = "translator"

@@ -5,7 +5,7 @@
 AppId={{A52AB91C-69CB-4777-9FA1-B4DD6C942179}
 AppName=firik-agent
 AppVersion={#AppVersion}
-AppPublisher=EVREN
+AppPublisher=FIRIK
 DefaultDirName={localappdata}\Programs\firik-agent
 DefaultGroupName=firik-agent
 PrivilegesRequired=lowest
@@ -13,7 +13,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\release_assets
 OutputBaseFilename=firik-agent-{#AppVersion}-windows-x64-setup
-SetupIconFile=..\evren_agent\ui\assets\icon.ico
+SetupIconFile=..\firik_agent\ui\assets\icon.ico
 UninstallDisplayIcon={app}\firik-agent.exe
 Compression=lzma2
 SolidCompression=yes

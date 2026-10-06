@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "firik-agent"
 version = "0.2.21"
 
-description = "Firik Agent: desktop and CLI AI assistant with MCP, Skills, Plugins and EVREN API support"
+description = "Firik Agent: desktop and CLI AI assistant with MCP, Skills, Plugins and FIRIK API support"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -31,17 +31,14 @@ dev = [
 ]
 
 [project.scripts]
-firik = "evren_agent.api.cli:main"
-firik-agent = "evren_agent.cli:main"
-evren = "evren_agent.api.cli:main"
-firik-gui = "evren_agent.ui.app:main"
-evren-agent = "evren_agent.cli:main"
-evren-gui = "evren_agent.ui.app:main"
+firik = "firik_agent.api.cli:main"
+firik-agent = "firik_agent.cli:main"
+firik-gui = "firik_agent.ui.app:main"
 
 [tool.setuptools.package-data]
-"evren_agent.api" = ["openapi.json"]
-"evren_agent.ui" = ["assets/*"]
-"evren_agent" = ["builtin_skills/*/*.md", "builtin_skills/*/*.yaml"]
+"firik_agent.api" = ["openapi.json"]
+"firik_agent.ui" = ["assets/*"]
+"firik_agent" = ["builtin_skills/*/*.md", "builtin_skills/*/*.yaml"]
 
 [tool.setuptools.packages.find]
-include = ["evren_agent*"]
+include = ["firik_agent*"]

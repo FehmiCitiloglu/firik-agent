@@ -5,12 +5,12 @@ from types import SimpleNamespace
 import customtkinter as ctk
 import pytest
 
-from evren_agent.core.session import ChatSession
-from evren_agent.projects.coding_sessions import CodingSessionStore
-from evren_agent.projects.db import ProjectDatabase
-from evren_agent.projects.models import Project, Task
-from evren_agent.ui.coding_bridge import CodingBridge
-from evren_agent.ui.coding_history import CodingHistoryMixin, restore_state_history
+from firik_agent.core.session import ChatSession
+from firik_agent.projects.coding_sessions import CodingSessionStore
+from firik_agent.projects.db import ProjectDatabase
+from firik_agent.projects.models import Project, Task
+from firik_agent.ui.coding_bridge import CodingBridge
+from firik_agent.ui.coding_history import CodingHistoryMixin, restore_state_history
 
 
 def test_subagent_record_reopens_as_one_passive_card(history):

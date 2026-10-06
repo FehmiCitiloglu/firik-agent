@@ -7,10 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from evren_agent.core import environment, shell
-from evren_agent.core.agent import Agent
-from evren_agent.core.session import ChatSession, SessionToolFilter
-from evren_agent.core.types import Message, StreamChunk, ToolCall, ToolCallFunction
+from firik_agent.core import environment, shell
+from firik_agent.core.agent import Agent
+from firik_agent.core.session import ChatSession, SessionToolFilter
+from firik_agent.core.types import Message, StreamChunk, ToolCall, ToolCallFunction
 
 
 def snapshot_from_prompt(prompt):
@@ -57,7 +57,7 @@ def test_snapshot_matches_runner_shell(monkeypatch, tmp_path, system, runtime_pl
 def test_missing_shell_and_limited_inventory_do_not_expose_environment(monkeypatch):
     monkeypatch.setenv("SHELL", "/missing/shell")
     monkeypatch.setattr(shell, "sys", SimpleNamespace(platform="darwin"))
-    monkeypatch.setenv("EVREN_API_KEY", "secret-must-not-appear")
+    monkeypatch.setenv("FIRIK_API_KEY", "secret-must-not-appear")
     monkeypatch.setenv("UNRELATED_VARIABLE", "private-must-not-appear")
     monkeypatch.setattr(environment.shutil, "which", lambda name: "/usr/bin/git" if name == "git" else None)
     info = environment.get_environment_info()
@@ -72,7 +72,7 @@ def test_missing_shell_and_limited_inventory_do_not_expose_environment(monkeypat
 
 def test_packaged_app_is_not_described_as_python_cli(monkeypatch):
     monkeypatch.setattr(environment.sys, "frozen", True, raising=False)
-    monkeypatch.setattr(environment.sys, "executable", "/Applications/evren.app/Contents/MacOS/evren")
+    monkeypatch.setattr(environment.sys, "executable", "/Applications/firik.app/Contents/MacOS/firik")
     info = environment.get_environment_info()
     assert info["runtime_is_packaged"] is True
     assert "packaged app, not a Python CLI" in environment.environment_prompt()

@@ -5,11 +5,11 @@ import pytest
 
 from test_ui_model_selection import service_factory
 
-from evren_agent.core.session import ChatSession
-from evren_agent.core.types import Message
-from evren_agent.providers.evren import EvrenProvider
-from evren_agent.providers.openai_provider import OpenAIProvider
-from evren_agent.providers.reasoning import effort_levels, effort_payload
+from firik_agent.core.session import ChatSession
+from firik_agent.core.types import Message
+from firik_agent.providers.firik import FirikProvider
+from firik_agent.providers.openai_provider import OpenAIProvider
+from firik_agent.providers.reasoning import effort_levels, effort_payload
 
 
 def metadata(values=None, aliases=None, supported=True):
@@ -28,7 +28,7 @@ def test_explicit_support_lists_and_aliases():
     assert effort_payload(metadata(["none"]), "none") == {"reasoning_effort": "none"}
 
 
-@pytest.mark.parametrize("provider_class", [EvrenProvider, OpenAIProvider])
+@pytest.mark.parametrize("provider_class", [FirikProvider, OpenAIProvider])
 @pytest.mark.asyncio
 async def test_stream_and_nonstream_transport_gate_by_current_model(provider_class, monkeypatch):
     provider = provider_class(default_model="supported")
@@ -56,7 +56,7 @@ async def test_stream_and_nonstream_transport_gate_by_current_model(provider_cla
 
 
 def test_chat_effort_survives_history(tmp_path):
-    from evren_agent.core.chat_history import ChatHistoryStore
+    from firik_agent.core.chat_history import ChatHistoryStore
     store = ChatHistoryStore(tmp_path / "history.db")
     session = ChatSession(model="supported", reasoning_effort="none")
     session.messages = [Message(role="user", content="hello")]
@@ -71,11 +71,11 @@ def test_chat_effort_survives_history(tmp_path):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stream", [False, True])
 async def test_agent_uses_session_effort_and_resets_next_request(monkeypatch, stream):
-    from evren_agent.core.agent import Agent
+    from firik_agent.core.agent import Agent
     agent = Agent(config={"providers": {}, "mcp_servers": {},
                           "plugins": {"autoload_builtins": False}, "skills": {"active_skills": []}})
     agent._is_initialized = True
-    provider = EvrenProvider(default_model="supported")
+    provider = FirikProvider(default_model="supported")
     provider.model_metadata = {"supported": metadata(["high"])}
     agent.providers.register("test", provider, set_active=True)
     requests = []
@@ -101,13 +101,13 @@ async def test_agent_uses_session_effort_and_resets_next_request(monkeypatch, st
 def test_service_metadata_stays_scoped_to_server(service_factory):
     service = service_factory()
     service._model_metadata = {"supported": metadata(["high"])}
-    provider = EvrenProvider(default_model="supported", base_url=service.base_url)
+    provider = FirikProvider(default_model="supported", base_url=service.base_url)
     service.configure_model_metadata(provider)
     provider.reasoning_effort = "high"
     assert provider.reasoning_options() == {"reasoning_effort": "high"}
     service.base_url = "https://other.invalid/v1"
     assert service.model_effort_levels("supported") == []
-    provider = EvrenProvider(default_model="supported", base_url=service.base_url)
+    provider = FirikProvider(default_model="supported", base_url=service.base_url)
     service.configure_model_metadata(provider)
     provider.reasoning_effort = "high"
     assert provider.reasoning_options() == {}
