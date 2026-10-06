@@ -1,6 +1,7 @@
 """Desktop chat layout and event lifecycle regressions (requires a Tk display)."""
 import time
 import tempfile
+import sys
 from pathlib import Path
 
 import customtkinter as ctk
@@ -213,6 +214,57 @@ def test_activity_is_folded_and_complete_output_is_inspectable(chat):
     pump(root)
     assert tool.is_expanded
     assert "SON SATIR" in tool.output_text.get("1.0", "end")
+
+
+def test_reasoning_stream_follows_tail_and_wheel_stays_inside_textbox(chat):
+    root, view, service = chat
+    stream = send(view, service, "Uzun istem satırı\n" * 35)
+    content = "".join(f"Düşünce satırı {i}\n" for i in range(120))
+    emit(root, stream, AgentEventType.REASONING_DELTA, content=content)
+    group = view._current_activity
+    group.toggle_btn.invoke()
+    group.reasoning_btn.invoke()
+    box = group.reasoning_text
+    pump(root, 0.15)
+    view.chat_scroll._parent_canvas.yview_moveto(1)
+    wait_for_layout(root, lambda: box.yview()[1] >= 0.99)
+    canvas = view.chat_scroll._parent_canvas
+    outer_position = canvas.yview()
+    assert outer_position[0] > 0  # The outer conversation can also scroll.
+    box.yview_moveto(0.4)
+    pump(root)
+    before = box.yview()[0]
+    # Use native Tk events so both Text and CTk's global bindings participate.
+    if sys.platform in ("darwin", "win32"):
+        delta = 1 if sys.platform == "darwin" else 120
+        box._textbox.event_generate("<MouseWheel>", delta=-delta)
+    else:
+        box._textbox.event_generate("<Button-5>")
+    pump(root)
+    assert box.yview()[0] > before
+    assert canvas.yview() == outer_position
+    before = box.yview()[0]
+    if sys.platform in ("darwin", "win32"):
+        box._textbox.event_generate("<MouseWheel>", delta=delta)
+    else:
+        box._textbox.event_generate("<Button-4>")
+    pump(root)
+    assert box.yview()[0] < before
+    assert canvas.yview() == outer_position
+    box._textbox.tag_add("sel", "2.0", "2.5")
+    for i in range(4):
+        piece = f"Yeni stream satırı {i}\n"
+        content += piece
+        emit(root, stream, AgentEventType.REASONING_DELTA, content=piece)
+        wait_for_layout(root, lambda: box.yview()[1] >= 0.99)
+        assert box.get("1.0", "end-1c") == content
+        assert box._textbox.tag_ranges("sel")  # Appending preserves selection.
+    group.reasoning_btn.invoke()
+    content += "Kapalıyken gelen son satır"
+    emit(root, stream, AgentEventType.REASONING_DELTA, content="Kapalıyken gelen son satır")
+    group.reasoning_btn.invoke()
+    wait_for_layout(root, lambda: box.yview()[1] >= 0.99)
+    assert box.get("1.0", "end-1c") == content
 
 
 def test_closing_older_activity_reveals_its_reply_instead_of_latest_turn(chat):
@@ -598,3 +650,17 @@ def test_saved_image_preview_survives_original_file_removal(chat, tmp_path):
                     if isinstance(child, ctk.CTkLabel) and child.cget("image") is not None]
     assert len(image_labels) == 1
     assert user.raw_content == "Görseli incele"
+
+
+def test_automatic_compaction_has_visible_live_stage(chat):
+    root, view, service = chat
+    stream = send(view, service, "Uzun konuşmaya devam et")
+    emit(root, stream, AgentEventType.CONTEXT_COMPACTION_STARTED, content="Bağlam sıkıştırılıyor…")
+    assert view.activity_stage == "Bağlam sıkıştırılıyor"
+    wait_for_mapping(root, view.live_activity)
+    emit(root, stream, AgentEventType.CONTEXT_COMPACTED, content="Bağlam özeti hazır.")
+    assert view.activity_stage == "Bağlam hazır"
+    emit(root, stream, AgentEventType.MODEL_REQUEST_STARTED)
+    assert view.activity_stage == "Model yanıtı bekleniyor"
+    stream["on_done"]("Devam edildi.")
+    pump(root)

@@ -85,6 +85,112 @@ def start(bridge, project="p1", session=None, mode="auto", **callbacks):
     return session, future
 
 
+def test_subagents_real_loop_read_only_history_and_usage(bridge):
+    service, state, roots = bridge
+    async def script(iteration, messages):
+        child = "Araştırma uzmanısın" in messages[0].content
+        if child:
+            if iteration == 1:
+                yield StreamChunk(tool_calls=[tool("read_file", path="main.py")])
+            else:
+                yield StreamChunk(delta_content="main.py:1 eski değer içeriyor.", usage={"total_tokens": 7})
+        elif iteration == 1:
+            yield StreamChunk(tool_calls=[tool("spawn_subagent", role="research", task="main.py dosyasını incele.")])
+        elif iteration == 2:
+            spawned = next(json.loads(m.content) for m in messages if m.name == "spawn_subagent")
+            yield StreamChunk(tool_calls=[tool("wait_subagent", agent_id=spawned["agent_id"])])
+        else:
+            result = next(json.loads(m.content) for m in messages if m.name == "wait_subagent")
+            assert result["passed"] and "eski değer" in result["result"]
+            yield StreamChunk(delta_content="Araştırma sonucunu topladım.", usage={"total_tokens": 5})
+    state["script"] = script
+    events, errors = [], []
+    session, future = start(bridge, options={"subagents_enabled": True}, on_event=events.append, on_error=errors.append)
+    future.result(timeout=8)
+    assert not errors
+    assert (roots["p1"] / "main.py").read_text() == "value = 'eski'\n"
+    children = [request for request in state["requests"] if "Araştırma uzmanısın" in request["messages"][0]["content"]]
+    assert len(children) == 2
+    for request in children:
+        names = {entry["function"]["name"] for entry in request["tools"]}
+        assert "read_file" in names and not names & {"write_file", "run_command", "spawn_subagent", "record_verification"}
+        assert all(message.get("content") != "İsteği uygula" for message in request["messages"])
+    assert not any(message.name == "read_file" for message in session.messages)
+    record = service.coding_store.latest_run("p1")
+    assert record.tokens_used == 12
+    decision = next(item for item in record.decisions if item["kind"] == "subagent")
+    assert decision["status"] == "completed" and decision["parent_run_id"] == record.id
+    assert any(message.get("name") == "read_file" for message in decision["messages"])
+    stored = service.coding_store.list_events(record.id)
+    assert any(event.event_type == "subagent_event" for event in stored)
+    assert sum(event.type == AgentEventType.DONE for event in events) == 1
+    assert "alt ajanları kullanılabilir" not in session.system_prompt
+
+
+def test_parent_cancellation_stops_active_subagent_and_records_it(bridge):
+    service, state, roots = bridge
+    entered = threading.Event()
+    async def script(iteration, messages):
+        if "Araştırma uzmanısın" in messages[0].content:
+            entered.set()
+            await asyncio.Event().wait()
+            yield
+        elif iteration == 1:
+            yield StreamChunk(tool_calls=[tool("spawn_subagent", role="research", task="main.py incele")])
+        else:
+            spawned = next(json.loads(m.content) for m in messages if m.name == "spawn_subagent")
+            yield StreamChunk(tool_calls=[tool("wait_subagent", agent_id=spawned["agent_id"])])
+    state["script"] = script
+    session, future = start(bridge, options={"subagents_enabled": True})
+    assert entered.wait(timeout=4)
+    assert service.coding_control(session.session_id, "cancel")
+    try:
+        future.result(timeout=4)
+    except CancelledError:
+        pass
+    # Future cancellation may precede the coroutine's durable cleanup.
+    import time
+    deadline = time.monotonic() + 4
+    while service._streams and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert not service._streams
+    record = service.coding_store.latest_run("p1")
+    assert record.status == "cancelled"
+    children = [item for item in record.decisions if item["kind"] == "subagent"]
+    assert len(children) == 1 and children[0]["status"] == "cancelled"
+
+
+def test_subagents_disabled_does_not_expose_delegation(bridge):
+    service, state, roots = bridge
+    _, future = start(bridge)
+    future.result(timeout=8)
+    assert "spawn_subagent" not in {item["function"]["name"] for item in state["requests"][0]["tools"]}
+
+
+def test_subagent_failure_is_returned_without_terminating_parent(bridge):
+    service, state, roots = bridge
+    async def script(iteration, messages):
+        if "Araştırma uzmanısın" in messages[0].content:
+            raise RuntimeError("alt sağlayıcı hatası")
+            yield
+        if iteration == 1:
+            yield StreamChunk(tool_calls=[tool("spawn_subagent", role="review", task="main.py incele")])
+        elif iteration == 2:
+            spawned = next(json.loads(m.content) for m in messages if m.name == "spawn_subagent")
+            yield StreamChunk(tool_calls=[tool("wait_subagent", agent_id=spawned["agent_id"])])
+        else:
+            result = next(json.loads(m.content) for m in messages if m.name == "wait_subagent")
+            assert result["status"] == "failed" and result["passed"] is False
+            yield StreamChunk(delta_content="İnceleme başarısız oldu.")
+    state["script"] = script
+    errors = []
+    _, future = start(bridge, options={"subagents_enabled": True}, on_error=errors.append)
+    future.result(timeout=8)
+    assert not errors
+    record = service.coding_store.latest_run("p1")
+    assert record.decisions[-1]["status"] == "failed"
+
+
 def test_real_agent_approval_edit_diff_test_evidence_provider_and_sqlite_history(bridge):
     service, state, roots = bridge
     path = roots["p1"] / "main.py"

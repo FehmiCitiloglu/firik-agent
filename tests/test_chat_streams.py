@@ -18,7 +18,9 @@ class GatedAgent:
         self.started = threading.Event()
         self.release = threading.Event()
         self.model = None
-        self.providers = SimpleNamespace(get_active=lambda: SimpleNamespace(set_model=self.set_model))
+        provider = SimpleNamespace(name="test", base_url="https://test.invalid/v1",
+                                   model_metadata={}, set_model=self.set_model)
+        self.providers = SimpleNamespace(get_active=lambda: provider)
 
     def set_model(self, model):
         self.model = model

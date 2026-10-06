@@ -18,6 +18,34 @@ def _set_text(widget: ctk.CTkTextbox, content: str) -> None:
     widget.configure(state="disabled")
 
 
+class _ReasoningTextbox(ctk.CTkTextbox):
+    """Append streamed text and keep native scrolling inside this disclosure."""
+
+    def __init__(self, master: Any, **kwargs: Any) -> None:
+        super().__init__(master, **kwargs)
+        self._rendered_content = ""
+        # Let Tk's Text class handle the wheel, then stop propagation before
+        # CTkScrollableFrame's global binding also scrolls the conversation.
+        tags = list(self._textbox.bindtags())
+        tags.insert(tags.index("Text") + 1, "EvrenReasoningScrollBoundary")
+        self._textbox.bindtags(tuple(tags))
+        for event in ("<MouseWheel>", "<Shift-MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.tk.call("bind", "EvrenReasoningScrollBoundary", event, "break")
+
+    def set_stream_text(self, content: str) -> None:
+        content = redact_secrets(content)
+        self.configure(state="normal")
+        if content.startswith(self._rendered_content):
+            self.insert("end", content[len(self._rendered_content):])
+        else:
+            # Redaction can change an earlier suffix once a secret completes.
+            self.delete("1.0", "end")
+            self.insert("1.0", content)
+        self._rendered_content = content
+        self.configure(state="disabled")
+        self.see("end")
+
+
 class ToolActivityBubble(ctk.CTkFrame):
     """A collapsed invocation with selectable, complete arguments and output."""
 
@@ -147,7 +175,7 @@ class ToolActivityGroup(ctk.CTkFrame):
         self.failed = False
         self.phase = "Model yanıtı bekleniyor"
         self._reasoning_parts: List[str] = []
-        self.reasoning_text: Optional[ctk.CTkTextbox] = None
+        self.reasoning_text: Optional[_ReasoningTextbox] = None
         self.grid_columnconfigure(0, weight=1)
         self.toggle_btn = ctk.CTkButton(self, text="İşlem ayrıntıları ▸", height=30, anchor="w",
                                        fg_color=("#e2e8f0", "#172336"),
@@ -177,10 +205,10 @@ class ToolActivityGroup(ctk.CTkFrame):
             self.reasoning_text.pack_forget()
         else:
             if self.reasoning_text is None:
-                self.reasoning_text = ctk.CTkTextbox(self.details_frame, height=180, wrap="word",
+                self.reasoning_text = _ReasoningTextbox(self.details_frame, height=180, wrap="word",
                                                      font=ctk.CTkFont(size=12))
-            _set_text(self.reasoning_text, "".join(self._reasoning_parts))
             self.reasoning_text.pack(fill="x", pady=4, after=self.reasoning_btn)
+            self.reasoning_text.set_stream_text("".join(self._reasoning_parts))
         self._reasoning_expanded = not self._reasoning_expanded
         self.reasoning_btn.configure(text="Model düşüncesi ▾" if self._reasoning_expanded else "Model düşüncesi ▸")
 
@@ -189,7 +217,7 @@ class ToolActivityGroup(ctk.CTkFrame):
             self.reasoning_btn.pack(fill="x", pady=4)
         self._reasoning_parts.append(content)
         if self._reasoning_expanded:
-            _set_text(self.reasoning_text, "".join(self._reasoning_parts))
+            self.reasoning_text.set_stream_text("".join(self._reasoning_parts))
         self._refresh_summary()
 
     @staticmethod

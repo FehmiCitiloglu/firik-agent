@@ -109,8 +109,8 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         self.coding_editor_combo.grid(row=0, column=1, sticky="ew", padx=4)
         self.coding_open_project_btn = ctk.CTkButton(models, text="Projeyi Aç", width=90, command=self._open_coding_editor)
         self.coding_open_project_btn.grid(row=0, column=2)
-        self.coding_effort_selector = EffortSelector(models, self.service, self._on_coding_effort_selected)
-        self.coding_effort_selector.grid(row=1, column=0, columnspan=3, sticky="w", pady=4)
+        self.coding_effort_selector = EffortSelector(right, self.service, self._on_coding_effort_selected)
+        self.coding_effort_selector.grid(row=1, column=0, sticky="ew", padx=8, pady=4)
         settings = self.project_service.db.get_settings(self.current_project_id)
         state["session"].reasoning_effort = settings.coding_preferences.get("reasoning_effort")
         self._refresh_coding_effort()
@@ -194,6 +194,10 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         controls = ctk.CTkScrollableFrame(right, width=200)
         controls.grid(row=0, column=0, sticky="nsew")
         ctk.CTkLabel(controls, text="Ajan kontrol merkezi", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+        self.coding_subagents_var = tk.BooleanVar(value=prefs.get("subagents_enabled", False))
+        ctk.CTkCheckBox(controls, text="Araştırma / inceleme\nalt ajanları", variable=self.coding_subagents_var,
+            command=lambda: self._save_coding_preferences({"subagents_enabled": self.coding_subagents_var.get()}),
+            height=36).pack(fill="x", pady=4)
         self.coding_task_label = ctk.CTkLabel(controls, text="", anchor="w", justify="left", wraplength=200)
         self.coding_task_label.pack(fill="x", pady=4)
         self.coding_context_label = ctk.CTkLabel(controls, text="", anchor="w", justify="left", wraplength=200)
@@ -403,7 +407,25 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             if event.metadata.get("project_id", project_id) != project_id or event.metadata.get("task_id", state["task_id"]) != state["task_id"]:
                 return
             kind = event.type.value
-            if kind == "text_delta" and event.content:
+            if kind in {"context_compaction_started", "context_compacted"}:
+                state["status"] = event.content or "Bağlam hazırlanıyor…"
+                refresh(True)
+            elif kind == "subagent_event":
+                if event.metadata.get("child_event_type") in {"text_delta", "reasoning_delta"}:
+                    return
+                from evren_agent.ui.subagent_activity import update_subagent_activity
+                update_subagent_activity(state["activities"], event.metadata, event.content or "")
+                if event.metadata.get("child_event_type") == "model_usage":
+                    key = (event.metadata["agent_id"], event.metadata.get("request_iteration", 1))
+                    state["usage_requests"][key] = event.metadata.get("child_metadata", {}).get("usage", {})
+                    totals = {}
+                    for usage in state["usage_requests"].values():
+                        for name, value in usage.items():
+                            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                totals[name] = totals.get(name, 0) + value
+                    state["usage"] = totals
+                refresh(True)
+            elif kind == "text_delta" and event.content:
                 content = sanitize_secrets(event.content)
                 response["content"] += content
                 state["text"] += content
@@ -484,6 +506,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                        "mcp_servers": state["preferences"].get("mcp_servers", []),
                        "mcp_tools": state["preferences"].get("mcp_tools", []),
                        "capabilities": state["capabilities"]}
+            options["subagents_enabled"] = state["preferences"].get("subagents_enabled", False)
             options["provider"] = state["preferences"].get("provider", self.service.provider)
             options["previous_plan"] = state["plan"]
             try:

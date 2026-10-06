@@ -282,6 +282,8 @@ class ChatView(ctk.CTkFrame):
         top_bar.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 6))
         model_bar = ctk.CTkFrame(top_bar, fg_color="transparent")
         model_bar.pack(fill="x")
+        effort_bar = ctk.CTkFrame(top_bar, fg_color="transparent")
+        effort_bar.pack(fill="x")
         actions_bar = ctk.CTkFrame(top_bar, fg_color="transparent")
         actions_bar.pack(fill="x")
 
@@ -298,7 +300,7 @@ class ChatView(ctk.CTkFrame):
         self.model_combo.set(self.service.default_model)
         self.model_combo.pack(side="left", padx=4, pady=10)
 
-        self.effort_selector = EffortSelector(model_bar, self.service, self._on_effort_selected)
+        self.effort_selector = EffortSelector(effort_bar, self.service, self._on_effort_selected)
         self.effort_selector.pack(side="left", padx=6, pady=4)
         self._refresh_effort()
 
@@ -939,6 +941,10 @@ class ChatView(ctk.CTkFrame):
                 return
             if evt.type == AgentEventType.MODEL_REQUEST_STARTED:
                 self._show_activity_stage("Model yanıtı bekleniyor", "Modelin sonraki adımı bekleniyor…")
+            elif evt.type == AgentEventType.CONTEXT_COMPACTION_STARTED:
+                self._show_activity_stage("Bağlam sıkıştırılıyor", "Önceki konuşma özetleniyor…")
+            elif evt.type == AgentEventType.CONTEXT_COMPACTED:
+                self._show_activity_stage("Bağlam hazır", evt.content or "Bağlam özeti hazır.")
             elif evt.type == AgentEventType.MCP_CONNECTING:
                 self._show_activity_stage("MCP bağlanıyor", f"{evt.server_name} bağlantısı kuruluyor…")
             elif evt.type == AgentEventType.MCP_CONNECTED:

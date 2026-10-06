@@ -47,6 +47,29 @@ def settle(app, seconds=0.15):
         time.sleep(0.005)
 
 
+def test_subagent_opt_in_native_activity_card_and_terminal_isolation(workspace):
+    app, view, project, streams = workspace
+    assert not view.coding_subagents_var.get()
+    view.coding_subagents_var.set(True)
+    view._save_coding_preferences({"subagents_enabled": True})
+    view.coding_input.insert(0, "Kaynağı araştır")
+    view.coding_send_btn.invoke()
+    call = streams[-1]
+    assert call["coding_options"]["subagents_enabled"] is True
+    emit = lambda **kwargs: call["on_event"](AgentEvent(AgentEventType.SUBAGENT_EVENT, call["session_id"], **kwargs))
+    metadata = {"agent_id": "a", "role": "research", "task": "main.py incele", "status": "running", "elapsed_sec": 1}
+    emit(metadata=metadata)
+    emit(metadata={**metadata, "status": "completed", "elapsed_sec": 2}, content="main.py:1 kanıtı")
+    settle(app)
+    assert view._coding_state()["busy"]
+    activity = next(item for item in view._coding_state()["activities"] if item.get("agent_id") == "a")
+    assert activity["status"] == "Tamamlandı" and activity["output"] == "main.py:1 kanıtı"
+    assert "main.py:1 kanıtı" not in view.coding_chat_box.get()
+    call["on_done"]("Ana sonuç")
+    settle(app)
+    assert not view._coding_state()["busy"]
+
+
 def test_modes_multiline_cards_approvals_and_project_identity(workspace, monkeypatch):
     app, view, project, streams = workspace
     view._coding_mode_selected("Planla")
@@ -188,4 +211,20 @@ def test_stop_during_context_preparation_prevents_model_start(workspace, monkeyp
     assert future.cancelled()
     pending["ready"]({"system_prompt": "Türkçe", "visibility_report": []})
     assert not streams
+    assert not view._coding_state()["busy"]
+
+
+def test_native_compaction_stage_is_visible_and_keeps_running(workspace):
+    app, view, project, streams = workspace
+    view.coding_input.insert(0, "Uzun göreve devam et")
+    view.coding_send_btn.invoke()
+    call = streams[-1]
+    for kind, content in [(AgentEventType.CONTEXT_COMPACTION_STARTED, "Bağlam otomatik olarak sıkıştırılıyor…"),
+                          (AgentEventType.CONTEXT_COMPACTED, "Bağlam özeti hazır; tam konuşma geçmişi korundu.")]:
+        call["on_event"](AgentEvent(type=kind, session_id=call["session_id"], content=content))
+        settle(app)
+        assert view._coding_state()["status"] == content
+        assert view._coding_state()["busy"]
+    call["on_done"]("Devam edildi")
+    settle(app)
     assert not view._coding_state()["busy"]

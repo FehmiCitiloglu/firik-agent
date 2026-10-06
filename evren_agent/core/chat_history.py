@@ -1,5 +1,7 @@
 """Local desktop conversations: display transcript and resumable agent context."""
 from __future__ import annotations
+from dataclasses import asdict
+from evren_agent.core.compaction import CompactionState
 
 from contextlib import closing
 import json
@@ -38,6 +40,7 @@ class ChatHistoryStore:
             "reasoning_effort": session.reasoning_effort,
             "active_mcp_servers": sorted(session.active_mcp_servers),
             "enabled_tool_names": sorted(session.enabled_tool_names) if session.enabled_tool_names is not None else None,
+            "compaction": asdict(session.compaction),
             "messages": [message.model_dump(mode="json") for message in list(session.messages)],
         }
 
@@ -50,7 +53,7 @@ class ChatHistoryStore:
             content = " ".join(part.get("text", "") for part in content if part.get("type") == "text")
         session.title = " ".join(str(content).split())[:70] or "Görsel sohbeti"
         context = self._context(session)
-        settings = {key: value for key, value in context.items() if key != "messages"}
+        settings = {key: value for key, value in context.items() if key not in {"messages", "compaction"}}
         with closing(self._connect()) as conn, conn:
             # UI saves never overwrite the independently updated runtime context.
             conn.execute("""INSERT INTO conversations
@@ -68,7 +71,7 @@ class ChatHistoryStore:
                          (json.dumps(self._context(session), ensure_ascii=False), session.session_id))
 
     def save_settings(self, session: ChatSession) -> None:
-        settings = {key: value for key, value in self._context(session).items() if key != "messages"}
+        settings = {key: value for key, value in self._context(session).items() if key not in {"messages", "compaction"}}
         with closing(self._connect()) as conn, conn:
             conn.execute("UPDATE conversations SET settings=? WHERE session_id=?",
                          (json.dumps(settings, ensure_ascii=False), session.session_id))
@@ -86,7 +89,8 @@ class ChatHistoryStore:
         result = dict(row)
         result["transcript"] = json.loads(result["transcript"])
         result["context"] = json.loads(result["context"])
-        result["context"].update(json.loads(result.pop("settings")))
+        result["context"].update({key: value for key, value in json.loads(result.pop("settings")).items()
+                                  if key not in {"messages", "compaction"}})
         self._recover_completed_turn(result)
         return result
 
@@ -151,6 +155,13 @@ class ChatHistoryStore:
         session.created_at = record["created_at"]
         session.enabled_tool_names = set(context["enabled_tool_names"]) if context.get("enabled_tool_names") is not None else None
         session.messages = [Message.model_validate(message) for message in context.get("messages", [])]
+        saved_compaction = context.get("compaction", {})
+        if isinstance(saved_compaction, dict):
+            try:
+                session.compaction = CompactionState(**saved_compaction)
+                session.compaction.validate(session.messages)
+            except (TypeError, ValueError):
+                session.compaction.reset()
         # An interrupted run may leave unanswered tool calls. Close those before
         # sending the restored context to a provider, without re-executing tools.
         pending = {}

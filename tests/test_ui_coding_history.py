@@ -13,6 +13,19 @@ from evren_agent.ui.coding_bridge import CodingBridge
 from evren_agent.ui.coding_history import CodingHistoryMixin, restore_state_history
 
 
+def test_subagent_record_reopens_as_one_passive_card(history):
+    app, view, first, second = history
+    view.service.coding_store.record_decision(first.id, {
+        "kind": "subagent", "agent_id": "a1", "parent_run_id": first.id,
+        "role": "review", "task": "main.py incele", "status": "completed",
+        "elapsed_sec": 3, "result": "main.py:1 incelendi", "messages": []})
+    state = view._coding_state()
+    cards = [item for item in state["activities"] if item.get("agent_id") == "a1"]
+    assert len(cards) == 1 and cards[0]["historical"]
+    assert cards[0]["output"] == "main.py:1 incelendi" and cards[0]["duration_ms"] == 3000
+    assert not state["busy"] and state["future"] is None
+
+
 class HistoryView(CodingHistoryMixin, ctk.CTkFrame):
     def __init__(self, master, service):
         super().__init__(master)

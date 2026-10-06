@@ -6,6 +6,8 @@ from typing import Any, Dict, Optional
 
 
 class AgentEventType(str, Enum):
+    CONTEXT_COMPACTION_STARTED = "context_compaction_started"
+    CONTEXT_COMPACTED = "context_compacted"
     MODEL_REQUEST_STARTED = "model_request_started"
     TEXT_DELTA = "text_delta"
     REASONING_DELTA = "reasoning_delta"
@@ -23,6 +25,7 @@ class AgentEventType(str, Enum):
     FILE_CHANGED = "file_changed"
     VERIFICATION = "verification"
     MODEL_USAGE = "model_usage"
+    SUBAGENT_EVENT = "subagent_event"
     DONE = "done"
     ERROR = "error"
 

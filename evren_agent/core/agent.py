@@ -8,6 +8,7 @@ from uuid import uuid4
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple, Union
 
+from evren_agent.core.compaction import ContextCompactor, CompactionState, estimate_tokens
 from evren_agent.config import load_config
 from evren_agent.core.environment import environment_prompt, get_environment_info
 from evren_agent.core.shell import run_shell
@@ -101,6 +102,8 @@ class Agent:
         self.plugins = PluginManager(self.tools, plugins_dir=plugins_path)
 
         self.messages: List[Message] = []
+        self.compaction = CompactionState()
+        self.context_compactor = ContextCompactor(agent_conf.get("context_compaction"))
         self._is_initialized = False
         self.computer_use_service: Optional[Any] = None
         self.default_cwd: Optional[str] = None
@@ -588,6 +591,18 @@ class Agent:
             else:
                 tools_schemas = self.tools.get_schemas()
 
+            provider = self.providers.get_active()
+            provider.reasoning_effort = session.reasoning_effort if session else None
+            from evren_agent.projects.model_capabilities import model_capabilities
+            window = model_capabilities(provider.model_metadata.get(provider.current_model)).get("context_window")
+            budget = self.context_compactor.input_budget(window, session.max_tokens if session else 2048,
+                                                         estimate_tokens([system_msg], tools_schemas))
+            state = session.compaction if session else self.compaction
+            if self.context_compactor.needs_compaction(state, msg_target, [system_msg], tools_schemas, budget):
+                if on_thought:
+                    on_thought("Bağlam otomatik olarak sıkıştırılıyor…")
+                await self.context_compactor.compact(state, msg_target, [system_msg], tools_schemas, budget, provider)
+            request_messages = [system_msg] + state.view(msg_target)
             await self.plugins.dispatch_model_request(request_messages, tools_schemas)
 
             provider = self.providers.get_active()
@@ -598,6 +613,7 @@ class Agent:
                     messages=request_messages,
                     tools=tools_schemas if tools_schemas else None,
                     temperature=temp,
+                    max_tokens=session.max_tokens if session else 2048,
                 )
             except Exception as e:
                 await self.plugins.dispatch_error(e)
@@ -740,11 +756,51 @@ class Agent:
             else:
                 tools_schemas = self.tools.get_schemas()
 
+            provider = self.providers.get_active()
+            provider.reasoning_effort = session.reasoning_effort if session else None
+            from evren_agent.projects.model_capabilities import model_capabilities
+            window = (run_control.capabilities if run_control else
+                      model_capabilities(provider.model_metadata.get(provider.current_model))).get("context_window")
+            if run_control and run_control.capabilities.get("supports_tools") is False:
+                tools_schemas = []
+            system_messages = [system_msg]
             if run_control:
-                from evren_agent.projects.coding_runtime import prepare_coding_messages
-                if run_control.capabilities.get("supports_tools") is False:
-                    tools_schemas = []
-                request_messages = prepare_coding_messages(request_messages, run_control, tools_schemas, session.max_tokens)
+                from evren_agent.projects.coding_runtime import safe_payload
+                system_messages.append(Message(role="system", content="Kayıtlı görev durumu:\n" + json.dumps(safe_payload({
+                    "state": run_control.state, "plan": run_control.plan,
+                    "verifications": run_control.verifications, "decisions": run_control.decisions}), ensure_ascii=False)))
+            budget = self.context_compactor.input_budget(window, session.max_tokens if session else 2048,
+                                                         estimate_tokens(system_messages, tools_schemas))
+            state = session.compaction if session else self.compaction
+            async def compaction_checkpoint():
+                if run_control:
+                    await run_control.checkpoint()
+                if cancel_event and cancel_event.is_set():
+                    raise asyncio.CancelledError()
+            try:
+                if self.context_compactor.needs_compaction(state, msg_target, system_messages, tools_schemas, budget):
+                    yield event(type=AgentEventType.CONTEXT_COMPACTION_STARTED, session_id=sid,
+                                content="Bağlam otomatik olarak sıkıştırılıyor…")
+                    details = await self.context_compactor.compact(state, msg_target, system_messages, tools_schemas,
+                                                                  budget, provider, compaction_checkpoint)
+                    yield event(type=AgentEventType.CONTEXT_COMPACTED, session_id=sid,
+                                content="Bağlam özeti hazır; tam konuşma geçmişi korundu.",
+                                metadata={**details, "context_window": window, "capacity_known": window is not None})
+                request_messages = system_messages + state.view(msg_target)
+                if run_control:
+                    from evren_agent.projects.coding_runtime import prepare_coding_messages, sanitize_message
+                    if self.context_compactor.enabled:
+                        request_messages = [sanitize_message(message) for message in request_messages]
+                        if estimate_tokens(request_messages, tools_schemas) > budget:
+                            raise ValueError("Hazırlanan bağlam model bütçesine sığmıyor.")
+                    else:
+                        request_messages = prepare_coding_messages(request_messages, run_control, tools_schemas, session.max_tokens)
+            except asyncio.CancelledError:
+                yield event(type=AgentEventType.DONE, session_id=sid, content="Çalışma kullanıcı tarafından durduruldu.")
+                return
+            except Exception as exc:
+                yield event(type=AgentEventType.ERROR, session_id=sid, content=f"Bağlam hazırlığı başarısız: {exc}")
+                return
 
             if not run_control:
                 await self.plugins.dispatch_model_request(request_messages, tools_schemas)
@@ -765,7 +821,7 @@ class Agent:
                     messages=request_messages,
                     tools=tools_schemas if tools_schemas else None,
                     temperature=temp,
-                    **({"max_tokens": session.max_tokens} if run_control else {}),
+                    max_tokens=session.max_tokens if session else 2048,
                 ):
                     received_chunk = True
                     if run_control:
@@ -810,7 +866,7 @@ class Agent:
                         messages=request_messages,
                         tools=tools_schemas if tools_schemas else None,
                         temperature=temp,
-                        **({"max_tokens": session.max_tokens} if run_control else {}),
+                        max_tokens=session.max_tokens if session else 2048,
                     )
                     if fallback_resp.reasoning:
                         yield event(type=AgentEventType.REASONING_DELTA, session_id=sid, content=fallback_resp.reasoning)
@@ -940,6 +996,7 @@ class Agent:
     async def clear_history(self) -> None:
         """Clear conversation history."""
         self.messages.clear()
+        self.compaction.reset()
 
     async def close(self) -> None:
         """Cleanup resources, disconnect MCP servers."""

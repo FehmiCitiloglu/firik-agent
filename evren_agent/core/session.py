@@ -5,6 +5,7 @@ import time
 from typing import Any, Dict, List, Optional, Set
 from uuid import uuid4
 
+from evren_agent.core.compaction import CompactionState
 from evren_agent.core.tools import ToolRegistry
 from evren_agent.core.types import Message, ToolCall, ToolResult
 from evren_agent.mcp.connection import MCPConnectionManager
@@ -44,6 +45,7 @@ class ChatSession:
         self.active_mcp_servers: Set[str] = set(active_mcp_servers or [])
         self.enabled_tool_names: Optional[Set[str]] = set(enabled_tool_names) if enabled_tool_names is not None else None
         self.messages: List[Message] = []
+        self.compaction = CompactionState()
         self.created_at: float = time.time()
 
     def enable_mcp(self, server_name: str) -> None:
@@ -57,6 +59,7 @@ class ChatSession:
 
     def clear(self) -> None:
         self.messages.clear()
+        self.compaction.reset()
 
 
 class SessionToolFilter:
