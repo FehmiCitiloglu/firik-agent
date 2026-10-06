@@ -14,12 +14,12 @@ if not re.fullmatch(r"v\d+\.\d+\.\d+", tag) or tag != f"v{version}":
 if "--assets" in sys.argv:
     assets = root / "release_assets"
     expected = [
-        f"evren-{version}-macos-arm64.dmg", f"evren-{version}-macos-x64.dmg",
-        f"evren-{version}-macos-arm64.zip", f"evren-{version}-macos-x64.zip",
-        f"evren-{version}-windows-x64-setup.exe", f"evren-{version}-windows-x64.zip",
-        f"evren-{version}-linux-x86_64.tar.gz", f"evren_{version}_amd64.deb",
-        f"evren-{version}-1.x86_64.rpm", f"evren_agent-{version}-py3-none-any.whl",
-        f"evren_agent-{version}.tar.gz",
+        f"firik-agent-{version}-macos-arm64.dmg", f"firik-agent-{version}-macos-x64.dmg",
+        f"firik-agent-{version}-macos-arm64.zip", f"firik-agent-{version}-macos-x64.zip",
+        f"firik-agent-{version}-windows-x64-setup.exe", f"firik-agent-{version}-windows-x64.zip",
+        f"firik-agent-{version}-linux-x86_64.tar.gz", f"firik-agent_{version}_amd64.deb",
+        f"firik-agent-{version}-1.x86_64.rpm", f"firik_agent-{version}-py3-none-any.whl",
+        f"firik_agent-{version}.tar.gz",
     ]
     for name in expected:
         path = assets / name

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Basic chat example using EVREN Agent.
+Basic chat example using Firik Agent.
 Configures provider (direct EVREN or LLMTR gateway) and executes a prompt.
 """
 import asyncio

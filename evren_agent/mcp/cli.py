@@ -32,7 +32,7 @@ async def mcp_add(
     out = con or console
     if not command and not url:
         out.print("[bold red]Error:[/bold red] You must specify an executable command or --url for the MCP server.")
-        out.print("[dim]Usage: evren-agent mcp add <name> <command> [args...] or evren-agent mcp add <name> --url <url>[/dim]")
+        out.print("[dim]Usage: firik-agent mcp add <name> <command> [args...] or firik-agent mcp add <name> --url <url>[/dim]")
         return 1
 
     clean_args = list(args) if args else []
@@ -109,8 +109,8 @@ async def mcp_list(
 
     if not servers:
         out.print("[yellow]No MCP servers configured.[/yellow]")
-        out.print("[dim]Add one with: evren-agent mcp add <name> <command> [args...][/dim]")
-        out.print("[dim]Example: evren-agent mcp add git npx -y @modelcontextprotocol/server-git[/dim]")
+        out.print("[dim]Add one with: firik-agent mcp add <name> <command> [args...][/dim]")
+        out.print("[dim]Example: firik-agent mcp add git npx -y @modelcontextprotocol/server-git[/dim]")
         return 0
 
     table = Table(title="Configured MCP Servers", border_style="cyan", show_header=True, header_style="bold cyan")
@@ -189,7 +189,7 @@ async def mcp_remove(
 
 def print_mcp_help(con: Optional[Console] = None) -> None:
     out = con or console
-    help_text = """[bold cyan]evren-agent mcp[/bold cyan] — Model Context Protocol (MCP) server manager
+    help_text = """[bold cyan]firik-agent mcp[/bold cyan] — Model Context Protocol (MCP) server manager
 
 [bold]Commands:[/bold]
   [bold cyan]add[/bold cyan] <name> <command> [args...]    Add and configure an MCP server (persisted to config.yaml)
@@ -208,25 +208,25 @@ def print_mcp_help(con: Optional[Console] = None) -> None:
 
 [bold]Examples:[/bold]
   [dim]# Add standard stdio MCP servers (like Claude and Codex):[/dim]
-  evren-agent mcp add git npx -y @modelcontextprotocol/server-git
-  evren-agent mcp add fs npx -y @modelcontextprotocol/server-filesystem /Users/me/docs
-  evren-agent mcp add sqlite uvx mcp-server-sqlite --db-path ./app.db
+  firik-agent mcp add git npx -y @modelcontextprotocol/server-git
+  firik-agent mcp add fs npx -y @modelcontextprotocol/server-filesystem /Users/me/docs
+  firik-agent mcp add sqlite uvx mcp-server-sqlite --db-path ./app.db
 
   [dim]# Add server with environment variables:[/dim]
-  evren-agent mcp add github -e GITHUB_PERSONAL_ACCESS_TOKEN=ghp_123 npx -y @modelcontextprotocol/server-github
+  firik-agent mcp add github -e GITHUB_PERSONAL_ACCESS_TOKEN=ghp_123 npx -y @modelcontextprotocol/server-github
 
   [dim]# Add remote HTTP/SSE server:[/dim]
-  evren-agent mcp add fetch --url http://localhost:8000/sse
+  firik-agent mcp add fetch --url http://localhost:8000/sse
 
   [dim]# List & Remove:[/dim]
-  evren-agent mcp list
-  evren-agent mcp remove git
+  firik-agent mcp list
+  firik-agent mcp remove git
 """
     out.print(help_text)
 
 
 async def run_mcp(argv: Sequence[str] | None = None, con: Optional[Console] = None) -> int:
-    """CLI runner for 'evren-agent mcp' and 'evren mcp'."""
+    """CLI runner for 'firik-agent mcp' and 'evren mcp'."""
     out = con or console
     args_list = list(sys.argv[1:] if argv is None else argv)
 
@@ -238,28 +238,28 @@ async def run_mcp(argv: Sequence[str] | None = None, con: Optional[Console] = No
     sub_args = args_list[1:]
 
     if sub in ("list", "ls"):
-        parser = argparse.ArgumentParser(prog="evren-agent mcp list", add_help=False)
+        parser = argparse.ArgumentParser(prog="firik-agent mcp list", add_help=False)
         parser.add_argument("--test", action="store_true", help="Test live connection to each server")
         parser.add_argument("--config", "-c", type=str, default=None, help="Path to config.yaml")
         parser.add_argument("-h", "--help", action="store_true")
         parsed, _ = parser.parse_known_args(sub_args)
         if parsed.help:
-            out.print("[bold cyan]Usage:[/bold cyan] evren-agent mcp list [--test] [-c config.yaml]")
+            out.print("[bold cyan]Usage:[/bold cyan] firik-agent mcp list [--test] [-c config.yaml]")
             return 0
         return await mcp_list(config_path=parsed.config, test=parsed.test, con=out)
 
     elif sub in ("remove", "rm", "delete"):
-        parser = argparse.ArgumentParser(prog="evren-agent mcp remove", add_help=False)
+        parser = argparse.ArgumentParser(prog="firik-agent mcp remove", add_help=False)
         parser.add_argument("--config", "-c", type=str, default=None, help="Path to config.yaml")
         parser.add_argument("-h", "--help", action="store_true")
         parsed, extra = parser.parse_known_args(sub_args)
         if parsed.help or not extra:
-            out.print("[bold cyan]Usage:[/bold cyan] evren-agent mcp remove <name> [-c config.yaml]")
+            out.print("[bold cyan]Usage:[/bold cyan] firik-agent mcp remove <name> [-c config.yaml]")
             return 0 if parsed.help else 1
         return await mcp_remove(name=extra[0], config_path=parsed.config, con=out)
 
     elif sub == "add":
-        parser = argparse.ArgumentParser(prog="evren-agent mcp add", add_help=False)
+        parser = argparse.ArgumentParser(prog="firik-agent mcp add", add_help=False)
         parser.add_argument("--url", type=str, default=None, help="Remote HTTP/SSE URL")
         parser.add_argument("-e", "--env", action="append", default=[], help="Environment variables in KEY=VALUE format")
         parser.add_argument("--no-test", action="store_true", help="Skip connection test before saving")
@@ -276,7 +276,7 @@ async def run_mcp(argv: Sequence[str] | None = None, con: Optional[Console] = No
 
         if not extra:
             out.print("[bold red]Error:[/bold red] Missing server name.")
-            out.print("[dim]Usage: evren-agent mcp add <name> <command> [args...][/dim]")
+            out.print("[dim]Usage: firik-agent mcp add <name> <command> [args...][/dim]")
             return 1
 
         name = extra[0]
@@ -290,7 +290,7 @@ async def run_mcp(argv: Sequence[str] | None = None, con: Optional[Console] = No
         else:
             if len(extra) < 2:
                 out.print("[bold red]Error:[/bold red] Missing command for stdio server.")
-                out.print("[dim]Usage: evren-agent mcp add <name> <command> [args...] or specify --url <url>[/dim]")
+                out.print("[dim]Usage: firik-agent mcp add <name> <command> [args...] or specify --url <url>[/dim]")
                 return 1
             cmd = extra[1]
             cmd_args = extra[2:]
@@ -317,7 +317,7 @@ async def run_mcp(argv: Sequence[str] | None = None, con: Optional[Console] = No
         )
 
     else:
-        out.print(f"[yellow]Unknown MCP command: '{sub}'. Run 'evren-agent mcp --help' for usage.[/yellow]")
+        out.print(f"[yellow]Unknown MCP command: '{sub}'. Run 'firik-agent mcp --help' for usage.[/yellow]")
         return 1
 
 

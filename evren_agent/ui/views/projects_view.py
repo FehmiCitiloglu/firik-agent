@@ -443,7 +443,7 @@ class ProjectsView(CodingWorkspaceMixin, ctk.CTkFrame):
         browse_btn.grid(row=0, column=2, pady=8)
 
         ctk.CTkLabel(tab1, text="Proje Adı:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=1, column=0, sticky="w", pady=8)
-        name_entry = ctk.CTkEntry(tab1, placeholder_text="Örn: evren-agent")
+        name_entry = ctk.CTkEntry(tab1, placeholder_text="Örn: firik-agent")
         name_entry.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=8)
 
         ctk.CTkLabel(tab1, text="Açıklama:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=2, column=0, sticky="w", pady=8)

@@ -74,6 +74,8 @@ mcp_servers:
     enabled: true
     autostart: true
     default_for_chat: true
+  parallel-search:
+    url: https://search.parallel.ai/mcp
 skills:
   directory: skills
   autoload_builtins: true

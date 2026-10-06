@@ -103,7 +103,7 @@ jobs:
       - name: Build desktop application
         env:
           PYINSTALLER_STRICT_BUNDLE_CODESIGN_ERROR: '1'
-        run: python -m PyInstaller evren.spec --clean --noconfirm
+        run: python -m PyInstaller firik-agent.spec --clean --noconfirm
       - name: Smoke test packaged application on Linux
         if: runner.os == 'Linux'
         run: xvfb-run -a python scripts/smoke_desktop.py
@@ -187,7 +187,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag_name || github.ref_name }}
-          name: evren ${{ inputs.tag_name || github.ref_name }}
+          name: firik-agent ${{ inputs.tag_name || github.ref_name }}
           draft: false
           prerelease: false
           generate_release_notes: true

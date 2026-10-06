@@ -65,7 +65,7 @@ def common_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--metadata", action="store_true", default=argparse.SUPPRESS, help="İstek/kredi/kota başlıklarını stderr'e yaz")
 
 
-def build_parser(prog: str = "evren") -> argparse.ArgumentParser:
+def build_parser(prog: str = "firik") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog=prog, description="EVREN API terminal istemcisi — agent başlatmadan doğrudan işlemler")
     common_options(parser)
     commands = parser.add_subparsers(dest="command")

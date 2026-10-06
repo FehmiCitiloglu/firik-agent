@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec dosyası - evren masaüstü uygulaması.
+"""PyInstaller spec dosyası - firik-agent masaüstü uygulaması.
 
-macOS (evren.app), Windows (evren.exe) ve Linux (evren)
+macOS (firik-agent.app), Windows (firik-agent.exe) ve Linux (firik-agent)
 için tek tıkla çalıştırılabilir ikili (binary) paketler üretir.
 """
 from importlib.metadata import version
@@ -17,7 +17,7 @@ hiddenimports.append({
     "darwin": "keyring.backends.macOS",
     "win32": "keyring.backends.Windows",
 }.get(sys.platform, "keyring.backends.SecretService"))
-app_version = version("evren-agent")
+app_version = version("firik-agent")
 
 
 # CustomTkinter varlıkları (fontlar, JSON tema dosyaları, ikonlar)
@@ -83,7 +83,7 @@ exe = EXE(
     [] if is_mac else a.datas,
     [],
     exclude_binaries=is_mac,
-    name="evren",
+    name="firik-agent",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -100,17 +100,17 @@ exe = EXE(
 )
 
 if is_mac:
-    collected = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="evren")
+    collected = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="firik-agent")
     app = BUNDLE(
         collected,
-        name="evren.app",
+        name="firik-agent.app",
         icon=icon_file,
-        bundle_identifier="ssyz.evren.desktop",
+        bundle_identifier="ssyz.firik-agent.desktop",
         info_plist={
-            "CFBundleName": "evren",
-            "CFBundleDisplayName": "evren",
-            "CFBundleGetInfoString": "EVREN LLM API Masaüstü Uygulaması",
-            "CFBundleIdentifier": "ssyz.evren.desktop",
+            "CFBundleName": "firik-agent",
+            "CFBundleDisplayName": "firik-agent",
+            "CFBundleGetInfoString": "Firik Agent Masaüstü Uygulaması",
+            "CFBundleIdentifier": "ssyz.firik-agent.desktop",
             "CFBundleVersion": app_version,
             "CFBundleShortVersionString": app_version,
             "NSHighResolutionCapable": "True",

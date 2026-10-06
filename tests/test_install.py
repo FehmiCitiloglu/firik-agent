@@ -54,7 +54,7 @@ def test_commands_without_activation_and_idempotent_path(home, monkeypatch, shel
     assert profile.read_text().startswith("# existing settings\n")
     result = subprocess.run(
         ["/bin/sh", "-c", f'. {shlex.quote(str(profile))}; . {shlex.quote(str(profile))}; '
-         'evren "argument with spaces"; evren-agent --commands; printf "%s" "$PATH"'],
+         'evren "argument with spaces"; firik-agent --commands; printf "%s" "$PATH"'],
         cwd=home, env={"HOME": str(home), "PATH": "/usr/bin:/bin"},
         text=True, capture_output=True, check=True,
     )
@@ -66,7 +66,7 @@ def test_unrelated_command_is_preserved(tmp_path):
     venv, bin_dir = tmp_path / ".venv", tmp_path / "bin"
     make_commands(venv)
     bin_dir.mkdir()
-    existing = bin_dir / "evren-agent"
+    existing = bin_dir / "firik-agent"
     existing.write_text("user command")
     with pytest.raises(RuntimeError, match="Cannot replace"):
         installer.install_commands(venv, bin_dir, False)

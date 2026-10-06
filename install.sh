@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# EVREN CLI & Agent — Unix/Linux/macOS Installer
+# Firik Agent — Unix/Linux/macOS Installer
 set -euo pipefail
 
 # Keep installation logic in install.py so every entry point configures
 # the same isolated venv, command launchers, and persistent user PATH.
 EVREN_INSTALL_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "EVREN kurulumu: evren ve evren-agent PATH'e eklenecek; venv aktivasyonu gerekmeyecek."
+echo "EVREN kurulumu: evren ve firik-agent PATH'e eklenecek; venv aktivasyonu gerekmeyecek."
 echo "Kurulumdan sonra yeni terminal açın veya gösterilen PATH komutunu bir kez çalıştırın."
 
 # exec preserves the Python installer's exit status and forwarded arguments.

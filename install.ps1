@@ -1,10 +1,10 @@
-# EVREN CLI & Agent — Windows PowerShell Installer
+# Firik Agent — Windows PowerShell Installer
 $ErrorActionPreference = "Stop"
 # install.py owns venv creation, command launchers, and persistent user PATH.
 $EvrenInstaller = Join-Path $PSScriptRoot "install.py"
 
-Write-Host "EVREN CLI & Agent Windows Kurulumu başlatılıyor..." -ForegroundColor Cyan
-Write-Host "evren ve evren-agent PATH'e eklenecek; venv aktivasyonu gerekmeyecek." -ForegroundColor Cyan
+Write-Host "Firik Agent Windows Kurulumu başlatılıyor..." -ForegroundColor Cyan
+Write-Host "evren ve firik-agent PATH'e eklenecek; venv aktivasyonu gerekmeyecek." -ForegroundColor Cyan
 
 if (Get-Command py -ErrorAction SilentlyContinue) {
     py -3 $EvrenInstaller @args
@@ -31,4 +31,4 @@ $EvrenBin = Join-Path $EvrenLocalAppData "EVREN\bin"
 if (($env:Path -split ';') -notcontains $EvrenBin) {
     $env:Path = "$EvrenBin;$env:Path"
 }
-Write-Host "Bu PowerShell oturumu hazır: evren --help veya evren-agent çalıştırabilirsiniz." -ForegroundColor Green
+Write-Host "Bu PowerShell oturumu hazır: evren --help veya firik-agent çalıştırabilirsiniz." -ForegroundColor Green

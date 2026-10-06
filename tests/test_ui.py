@@ -11,12 +11,12 @@ from evren_agent.ui.service import EvrenService, turkce_hata_mesaji
 from evren_agent.ui.theme import APP_NAME, THEME_COLORS
 
 
-def test_app_title_is_evren():
-    """Uygulama adı ve pencere başlığının sadece 'evren' olduğunu doğrular."""
-    assert APP_NAME == "evren"
+def test_app_title_is_firik_agent():
+    """Uygulama adı ve pencere başlığının sadece 'firik-agent' olduğunu doğrular."""
+    assert APP_NAME == "firik-agent"
     app = EvrenApp()
     try:
-        assert app.title() == "evren"
+        assert app.title() == "firik-agent"
     finally:
         app.destroy()
 

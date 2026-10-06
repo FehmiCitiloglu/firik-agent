@@ -194,7 +194,7 @@ def test_agent_first_launch(monkeypatch):
     from evren_agent.core.agent import Agent
     agent = Agent(config={"agent": {"default_provider": "llmtr"}})
     monkeypatch.setattr(cli, "Agent", lambda **kwargs: agent)
-    monkeypatch.setattr(sys, "argv", ["evren-agent"])
+    monkeypatch.setattr(sys, "argv", ["firik-agent"])
     async def repl(actual):
         assert actual.providers.get_active().api_key == KEY
     monkeypatch.setattr(cli, "run_repl", repl)

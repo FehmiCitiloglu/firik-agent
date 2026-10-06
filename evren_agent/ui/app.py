@@ -130,7 +130,7 @@ class EvrenApp(ctk.CTk):
                 # Windows için Taskbar ID ve ICO
                 try:
                     import ctypes
-                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ssyz.evren.desktop.0.2")
+                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ssyz.firik-agent.desktop.0.2")
                 except Exception:
                     pass
                 ico_path = icon_path.with_suffix(".ico")

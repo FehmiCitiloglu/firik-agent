@@ -150,7 +150,7 @@ async def test_ctrl_c_cancels_shell_and_preserves_session(monkeypatch):
 
 
 def test_single_shot_bang_needs_no_credentials(monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["evren-agent", "-p", "!" + python_command("print('single shot')")])
+    monkeypatch.setattr(sys, "argv", ["firik-agent", "-p", "!" + python_command("print('single shot')")])
     monkeypatch.setattr(cli, "ensure_provider_key", lambda *args: pytest.fail("Requested API key"))
     cli.main()
     assert "single shot" in capsys.readouterr().out

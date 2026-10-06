@@ -436,7 +436,7 @@ def print_banner(agent: Agent) -> None:
     mcp_count = len(agent.mcp.clients)
     plugins_count = len(agent.plugins.plugins)
 
-    content = f"""[bold cyan]EVREN Agent[/bold cyan] — Extensible AI with MCP, Skills & Plugins
+    content = f"""[bold cyan]Firik Agent[/bold cyan] — Extensible AI with MCP, Skills & Plugins
 [green]Provider:[/green] [bold]{prov.name}[/bold] ([dim]{prov.base_url}[/dim])
 [green]Model:[/green]    [bold yellow]{prov.current_model}[/bold yellow]
 [green]Skills:[/green]   {', '.join(active_skills) or '[dim]none[/dim]'}
@@ -452,7 +452,7 @@ def print_help() -> None:
     """Displays categorized beneficial commands with practical examples."""
     console.print(
         Panel(
-            "[bold cyan]EVREN Agent — Command Center[/bold cyan]\n"
+            "[bold cyan]Firik Agent — Command Center[/bold cyan]\n"
             "[dim]Manage providers, models, MCP servers, skills, plugins, and session diagnostics.[/dim]",
             border_style="cyan",
         )
@@ -631,7 +631,7 @@ async def handle_slash_command(agent: Agent, cmd: str) -> bool:
         filename = parts[1] if len(parts) > 1 else "session_export.md"
         try:
             lines = [
-                f"# Evren Agent Session Export",
+                f"# Firik Agent Session Export",
                 f"- Provider: {agent.providers.active_name}",
                 f"- Model: {agent.providers.get_active().current_model}",
                 f"- Total Messages: {len(agent.messages)}\n",
@@ -1110,8 +1110,8 @@ def main():
         from evren_agent.computer_use.cli import main as cu_main
         raise SystemExit(cu_main(sys.argv[2:]))
     parser = argparse.ArgumentParser(
-        description="EVREN Agent CLI",
-        epilog="MCP commands: evren-agent mcp --help | Computer Use: evren-agent computer-use doctor | Direct API: evren-agent api --help",
+        description="Firik Agent CLI",
+        epilog="MCP commands: firik-agent mcp --help | Computer Use: firik-agent computer-use doctor | Direct API: firik-agent api --help",
     )
 
     parser.add_argument("--prompt", "-p", type=str, help="Single-shot prompt to execute")

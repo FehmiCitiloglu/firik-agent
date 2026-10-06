@@ -9,7 +9,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "release_assets"
-VERSION = version("evren-agent")
+VERSION = version("firik-agent")
 
 
 def run(*args):
@@ -23,16 +23,16 @@ def linux():
     icons = stage / "usr/share/icons/hicolor/256x256/apps"
     apps.mkdir(parents=True, exist_ok=True)
     icons.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(ROOT / "dist/evren", stage / "usr/bin/evren")
-    (stage / "usr/bin/evren").chmod(0o755)
-    desktop = (ROOT / "evren.desktop").read_text().replace("Exec=evren gui", "Exec=evren")
-    (apps / "evren.desktop").write_text(desktop)
-    shutil.copy2(ROOT / "evren_agent/ui/assets/icon.png", icons / "evren.png")
-    with tarfile.open(OUT / f"evren-{VERSION}-linux-x86_64.tar.gz", "w:gz") as archive:
+    shutil.copy2(ROOT / "dist/firik-agent", stage / "usr/bin/firik-agent")
+    (stage / "usr/bin/firik-agent").chmod(0o755)
+    desktop = (ROOT / "firik-agent.desktop").read_text().replace("Exec=firik-gui", "Exec=firik-agent")
+    (apps / "firik-agent.desktop").write_text(desktop)
+    shutil.copy2(ROOT / "evren_agent/ui/assets/icon.png", icons / "firik-agent.png")
+    with tarfile.open(OUT / f"firik-agent-{VERSION}-linux-x86_64.tar.gz", "w:gz") as archive:
         archive.add(stage / "usr", arcname="usr")
     control = stage / "DEBIAN"
     control.mkdir(exist_ok=True)
-    (control / "control").write_text(f"""Package: evren
+    (control / "control").write_text(f"""Package: firik-agent
 Version: {VERSION}
 Section: utils
 Priority: optional
@@ -40,19 +40,19 @@ Architecture: amd64
 Maintainer: EVREN <noreply@ssyz.org.tr>
 Depends: libc6 (>= 2.35), libx11-6, libxext6, libxft2, libxrender1, libfontconfig1
 Recommends: gnome-keyring
-Description: EVREN desktop client
+Description: Firik Agent desktop client
  Chat, OCR, transcription and reranking with EVREN APIs.
 """)
-    run("dpkg-deb", "--root-owner-group", "--build", stage, OUT / f"evren_{VERSION}_amd64.deb")
+    run("dpkg-deb", "--root-owner-group", "--build", stage, OUT / f"firik-agent_{VERSION}_amd64.deb")
     # rpmbuild uses the same payload, with explicit runtime dependencies.
     top = ROOT / "build/rpm"
     for name in ("BUILD", "BUILDROOT", "RPMS", "SOURCES", "SPECS", "SRPMS"):
         (top / name).mkdir(parents=True, exist_ok=True)
-    spec = top / "SPECS/evren.spec"
-    spec.write_text(f"""Name: evren
+    spec = top / "SPECS/firik-agent.spec"
+    spec.write_text(f"""Name: firik-agent
 Version: {VERSION}
 Release: 1
-Summary: EVREN desktop client
+Summary: Firik Agent desktop client
 License: Proprietary
 BuildArch: x86_64
 AutoReqProv: no
@@ -63,9 +63,9 @@ Chat, OCR, transcription and reranking with EVREN APIs.
 mkdir -p %{{buildroot}}/usr
 cp -a "{stage}/usr/." %{{buildroot}}/usr/
 %files
-/usr/bin/evren
-/usr/share/applications/evren.desktop
-/usr/share/icons/hicolor/256x256/apps/evren.png
+/usr/bin/firik-agent
+/usr/share/applications/firik-agent.desktop
+/usr/share/icons/hicolor/256x256/apps/firik-agent.png
 """)
     run("rpmbuild", "--define", f"_topdir {top}", "--define", "__os_install_post %{nil}", "-bb", spec)
     for rpm in (top / "RPMS").rglob("*.rpm"):
@@ -77,19 +77,19 @@ def macos(arch):
     if stage.exists():
         shutil.rmtree(stage)
     stage.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(ROOT / "dist/evren.app", stage / "evren.app", symlinks=True, dirs_exist_ok=True)
+    shutil.copytree(ROOT / "dist/firik-agent.app", stage / "firik-agent.app", symlinks=True, dirs_exist_ok=True)
     (stage / "Applications").symlink_to("/Applications", target_is_directory=True)
-    run("hdiutil", "create", "-volname", "evren", "-srcfolder", stage, "-ov", "-format", "UDZO",
-        OUT / f"evren-{VERSION}-macos-{arch}.dmg")
-    run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", ROOT / "dist/evren.app",
-        OUT / f"evren-{VERSION}-macos-{arch}.zip")
+    run("hdiutil", "create", "-volname", "firik-agent", "-srcfolder", stage, "-ov", "-format", "UDZO",
+        OUT / f"firik-agent-{VERSION}-macos-{arch}.dmg")
+    run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", ROOT / "dist/firik-agent.app",
+        OUT / f"firik-agent-{VERSION}-macos-{arch}.zip")
 
 
 def windows():
     compiler = shutil.which("iscc") or r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
     run(compiler, f"/DAppVersion={VERSION}", ROOT / "packaging/windows.iss")
-    with zipfile.ZipFile(OUT / f"evren-{VERSION}-windows-x64.zip", "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.write(ROOT / "dist/evren.exe", "evren.exe")
+    with zipfile.ZipFile(OUT / f"firik-agent-{VERSION}-windows-x64.zip", "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.write(ROOT / "dist/firik-agent.exe", "firik-agent.exe")
 
 
 if __name__ == "__main__":

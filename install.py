@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EVREN CLI & Agent — Cross-Platform Installer
+Firik Agent — Cross-Platform Installer
 Supports: macOS, Linux, and Windows (PowerShell / CMD)
 Requirements: Python 3.10+
 """
@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 MIN_PYTHON = (3, 10)
-COMMANDS = ("evren", "evren-agent")
+COMMANDS = ("firik", "firik-agent", "firik-gui", "evren", "evren-agent", "evren-gui")
 
 
 def install_commands(venv_dir: Path, bin_dir: Path, is_windows: bool):
@@ -125,7 +125,7 @@ def main():
     os.chdir(root_dir)
 
     log("\n" + "=" * 55, "cyan")
-    log("  🚀 EVREN CLI & Agent — Installation Setup", "bold")
+    log("  🚀 Firik Agent — Installation Setup", "bold")
     log("=" * 55, "cyan")
 
     check_python_version()
@@ -166,7 +166,7 @@ def main():
         subprocess.run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], check=True)
         log("  Running 'pip install -e .[dev]'...", "dim")
         subprocess.run([str(venv_python), "-m", "pip", "install", "-e", ".[dev]"], check=True)
-    log("✔ Package evren-agent and dependencies installed successfully", "green")
+    log("✔ Package firik-agent and dependencies installed successfully", "green")
 
     log("\n[3/3] Making EVREN commands available without activation...", "cyan")
     install_commands(venv_dir, bin_dir, is_windows)
@@ -184,14 +184,14 @@ def main():
     for command in refresh_commands:
         log(f"     {command}", "bold")
 
-    log("\n  2. Run evren or evren-agent. First launch asks for your API key.", "yellow")
+    log("\n  2. Run evren or firik-agent. First launch asks for your API key.", "yellow")
     log("     The key is stored in your OS credential store; no .env needed.", "dim")
     log("     evren login            (Save or replace your API key)", "bold")
 
     log("\n  3. Test & Run:", "yellow")
     log("     evren --help           (Direct EVREN API CLI)", "bold")
-    log("     evren-agent            (Interactive Agent REPL)", "bold")
-    log("     evren-agent --commands (List all available commands)\n", "bold")
+    log("     firik-agent            (Interactive Agent REPL)", "bold")
+    log("     firik-agent --commands (List all available commands)\n", "bold")
 
 
 if __name__ == "__main__":

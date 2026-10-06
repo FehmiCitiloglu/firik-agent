@@ -3,10 +3,10 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "evren-agent"
+name = "firik-agent"
 version = "0.2.21"
 
-description = "EVREN public API CLI and Python client, with optional MCP/Skills/Plugins agent"
+description = "Firik Agent: desktop and CLI AI assistant with MCP, Skills, Plugins and EVREN API support"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -31,8 +31,11 @@ dev = [
 ]
 
 [project.scripts]
-evren-agent = "evren_agent.cli:main"
+firik = "evren_agent.api.cli:main"
+firik-agent = "evren_agent.cli:main"
 evren = "evren_agent.api.cli:main"
+firik-gui = "evren_agent.ui.app:main"
+evren-agent = "evren_agent.cli:main"
 evren-gui = "evren_agent.ui.app:main"
 
 [tool.setuptools.package-data]

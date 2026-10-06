@@ -1,12 +1,12 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=evren
+Name=firik-agent
 GenericName=Yapay Zekâ ve Dil Modelleri Masaüstü İstemcisi
 Comment=EVREN LLM API Masaüstü Uygulaması
-Exec=evren gui
-Icon=evren
+Exec=firik-gui
+Icon=firik-agent
 Terminal=false
 Categories=Utility;Development;Office;ArtificialIntelligence;
 StartupNotify=true
-StartupWMClass=evren
+StartupWMClass=firik-agent

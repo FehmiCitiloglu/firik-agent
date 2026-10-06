@@ -1,11 +1,11 @@
 .PHONY: install setup test test-ui clean run commands ui gui help
 
 help:
-	@echo "EVREN CLI & Agent — Make Commands:"
+	@echo "Firik Agent — Make Commands:"
 	@echo "  make install   - Run installer (sets up .venv, deps, and commands)"
 	@echo "  make test      - Run full pytest test suite"
 	@echo "  make test-ui   - Run UI unit tests"
-	@echo "  make run       - Launch interactive evren-agent REPL"
+	@echo "  make run       - Launch interactive firik-agent REPL"
 	@echo "  make commands  - List all available slash commands"
 	@echo "  make ui        - Launch desktop UI application (GUI)"
 	@echo "  make gui       - Alias for make ui"
@@ -23,13 +23,13 @@ test-ui:
 	@.venv/bin/pytest tests/test_ui*.py || .venv/Scripts/pytest.exe tests/test_ui*.py
 
 run:
-	@.venv/bin/evren-agent || .venv/Scripts/evren-agent.exe
+	@.venv/bin/firik-agent || .venv/Scripts/firik-agent.exe
 
 commands:
-	@.venv/bin/evren-agent --commands || .venv/Scripts/evren-agent.exe --commands
+	@.venv/bin/firik-agent --commands || .venv/Scripts/firik-agent.exe --commands
 
 ui:
-	@.venv/bin/evren-gui $(ARGS) || .venv/Scripts/evren-gui.exe $(ARGS)
+	@.venv/bin/firik-gui $(ARGS) || .venv/Scripts/firik-gui.exe $(ARGS)
 
 gui: ui
 

@@ -1,6 +1,8 @@
-# EVREN CLI
+# Firik Agent
 
-EVREN'in **LLM Çıkarım API'sini terminalden kullanmak** için CLI ve Python istemcisi. Sohbetin yanında görsel anlama, OCR, ses çözümleme, embeddings, rerank, medya yükleme, kota/kredi ve istek durumu sorgularını destekler. Önceki agent, MCP, skill ve plugin özellikleri `evren-agent` komutuyla kullanılmaya devam eder.
+Masaüstü uygulaması: `firik-gui`; agent: `firik-agent`; doğrudan API istemcisi: `firik`. EVREN API sağlayıcısı desteklenmeye devam eder. Eski `evren`, `evren-agent` ve `evren-gui` komutları ile `evren_agent` Python paketi uyumluluk için korunur; mevcut kullanıcı verileri aynı konumdan okunur.
+
+EVREN'in **LLM Çıkarım API'sini terminalden kullanmak** için CLI ve Python istemcisi. Sohbetin yanında görsel anlama, OCR, ses çözümleme, embeddings, rerank, medya yükleme, kota/kredi ve istek durumu sorgularını destekler. Önceki agent, MCP, skill ve plugin özellikleri `firik-agent` komutuyla kullanılmaya devam eder.
 
 **Kapsam:** 22 Eylül 2026 tarihinde okunan [resmî OpenAPI şemasındaki](https://evren-llmapi.ssyz.org.tr/openapi.json) **20 genel işlemin tamamı**. `internal` servis uçları kapsam dışıdır. [Uç nokta ve kapsam tablosu](docs/API.md).
 
@@ -29,9 +31,9 @@ python install.py
 
 Kurulum betiği `uv` (varsa) veya Python'un yerleşik `venv` + `pip` modülünü kullanarak sanal ortamı kurar ve bağımlılıkları yükler. `.env` oluşturmaz; mevcut dosyanıza dokunmaz.
 
-**Venv'i aktive etmeniz gerekmez.** Kurulum, `evren` ve `evren-agent` komutlarını macOS/Linux'ta `~/.local/bin`, Windows'ta `%LOCALAPPDATA%\EVREN\bin` üzerinden erişilebilir yapar ve kullanıcı PATH ayarını kaydeder. macOS/Linux'ta kullanılan kabuğun zsh, bash veya fish başlangıç dosyası güncellenir. Diğer kabuklarda `~/.profile` güncellenir; kabuğunuz bu dosyayı okumuyorsa PATH'i kendi başlangıç dosyanıza ekleyin.
+**Venv'i aktive etmeniz gerekmez.** Kurulum, `evren` ve `firik-agent` komutlarını macOS/Linux'ta `~/.local/bin`, Windows'ta `%LOCALAPPDATA%\EVREN\bin` üzerinden erişilebilir yapar ve kullanıcı PATH ayarını kaydeder. macOS/Linux'ta kullanılan kabuğun zsh, bash veya fish başlangıç dosyası güncellenir. Diğer kabuklarda `~/.profile` güncellenir; kabuğunuz bu dosyayı okumuyorsa PATH'i kendi başlangıç dosyanıza ekleyin.
 
-İlk kurulumdan sonra **yeni bir terminal açın** veya kurulumun sonunda gösterilen PATH komutunu mevcut terminalde bir kez çalıştırın. Kurulum betiği, kendisini başlatan terminalin ortamını doğrudan değiştiremez. Sonrasında `evren --help` ve `evren-agent --commands` herhangi bir klasörden çalışır; bağımlılıklar projenin `.venv` ortamında kalır. Proje klasörünü veya `.venv` dizinini silmeyin; projeyi taşırsanız `.venv` ortamını yeniden oluşturup kurulumu tekrar çalıştırın. `config.yaml` gibi göreli dosya yolları komutu çalıştırdığınız klasöre göre değerlendirilir.
+İlk kurulumdan sonra **yeni bir terminal açın** veya kurulumun sonunda gösterilen PATH komutunu mevcut terminalde bir kez çalıştırın. Kurulum betiği, kendisini başlatan terminalin ortamını doğrudan değiştiremez. Sonrasında `evren --help` ve `firik-agent --commands` herhangi bir klasörden çalışır; bağımlılıklar projenin `.venv` ortamında kalır. Proje klasörünü veya `.venv` dizinini silmeyin; projeyi taşırsanız `.venv` ortamını yeniden oluşturup kurulumu tekrar çalıştırın. `config.yaml` gibi göreli dosya yolları komutu çalıştırdığınız klasöre göre değerlendirilir.
 
 `install.sh` ve `install.ps1` aynı `install.py` kurulumunu çalıştırır; üç giriş noktası da aktivasyonsuz kullanımı ayarlar. Windows'ta `install.ps1` mevcut PowerShell oturumunun PATH'ini de yeniler; bu oturumda yeni terminal açmadan komutları kullanabilirsiniz.
 
@@ -56,7 +58,7 @@ uv pip install -e '.[dev]'
 ```
 </details>
 
-Kurulumdan sonra `evren`, `evren-agent` veya anahtar gerektiren ilk komutu çalıştırın. Anahtar bulunamazsa terminalde **LLM Çıkarım** API anahtarınız gizli girişle sorulur. Anahtar proje dosyalarına yazılmaz; [keyring](https://keyring.readthedocs.io/en/latest/) aracılığıyla macOS Keychain, Windows Credential Locker veya Linux Secret Service/KWallet kasasında saklanır. Sonraki açılışlarda, farklı bir klasörden çalıştırsanız da otomatik okunur.
+Kurulumdan sonra `evren`, `firik-agent` veya anahtar gerektiren ilk komutu çalıştırın. Anahtar bulunamazsa terminalde **LLM Çıkarım** API anahtarınız gizli girişle sorulur. Anahtar proje dosyalarına yazılmaz; [keyring](https://keyring.readthedocs.io/en/latest/) aracılığıyla macOS Keychain, Windows Credential Locker veya Linux Secret Service/KWallet kasasında saklanır. Sonraki açılışlarda, farklı bir klasörden çalıştırsanız da otomatik okunur.
 
 ```bash
 evren                              # İlk kurulum, ardından komut yardımı
@@ -93,7 +95,7 @@ evren chat -p 'Merhaba!' --text
 Yeni komutlar şu biçimlerde de çalışır:
 
 ```bash
-evren-agent api models
+firik-agent api models
 python -m evren_agent.api.cli models
 # Agent REPL içinde:
 # /api models
@@ -125,11 +127,11 @@ python -m evren_agent.api.cli models
 
 Her komutta `--help` bulunur. API komutları agent, plugin veya MCP sunucusu başlatmaz; LLMTR'ye otomatik yönlendirme yapmaz.
 
-Agent sohbetlerinde (`evren-agent`, masaüstü sohbet ve Coding Agent) model, ilk yanıtından önce yerel çalışma ortamını sistem bağlamında alır: işletim sistemi/sürümü, mimari, komut aracının gerçekten kullandığı kabuk, çalışma dizini, Python çalışma zamanı, saat dilimi içeren yerel saat ve PATH üzerinde bulunan temel araçlar. Bu bilgiler her model isteğinde yenilenir; `get_environment_info` aracıyla da sorgulanabilir. Örneğin macOS/zsh ortamında komutların zsh sözdizimine göre yazılması yönlendirilir. Ortam değişkenlerinin tamamı veya API anahtarları bu bağlama eklenmez. Terminal penceresinin kabuğu ile komut aracının varsayılan kabuğu farklı olabilir; model komut aracının kabuğunu esas alır.
+Agent sohbetlerinde (`firik-agent`, masaüstü sohbet ve Coding Agent) model, ilk yanıtından önce yerel çalışma ortamını sistem bağlamında alır: işletim sistemi/sürümü, mimari, komut aracının gerçekten kullandığı kabuk, çalışma dizini, Python çalışma zamanı, saat dilimi içeren yerel saat ve PATH üzerinde bulunan temel araçlar. Bu bilgiler her model isteğinde yenilenir; `get_environment_info` aracıyla da sorgulanabilir. Örneğin macOS/zsh ortamında komutların zsh sözdizimine göre yazılması yönlendirilir. Ortam değişkenlerinin tamamı veya API anahtarları bu bağlama eklenmez. Terminal penceresinin kabuğu ile komut aracının varsayılan kabuğu farklı olabilir; model komut aracının kabuğunu esas alır.
 
 ## Masaüstü Uygulaması (`evren`)
 
-EVREN LLM API'sini grafiksel kullanıcı arayüzü ile kullanmak için çapraz platform (macOS, Windows, Linux) ve tamamen Türkçe tasarlanmış modern masaüstü uygulamasıdır. Pencere başlığı ve uygulama adı yalnızca **`evren`** olarak tanımlanmıştır.
+EVREN LLM API'sini grafiksel kullanıcı arayüzü ile kullanmak için çapraz platform (macOS, Windows, Linux) ve tamamen Türkçe tasarlanmış modern masaüstü uygulamasıdır. Pencere başlığı ve uygulama adı **`firik-agent`** olarak tanımlanmıştır.
 
 ### Başlatma Seçenekleri:
 
@@ -137,15 +139,15 @@ EVREN LLM API'sini grafiksel kullanıcı arayüzü ile kullanmak için çapraz p
 # Terminalden:
 evren gui
 # veya
-evren-gui
+firik-gui
 # veya
 python -m evren_agent.ui
 ```
 
 Grafik ortamda çift tıklayarak çalıştırmak için:
-- **macOS:** `evren.command`
-- **Windows:** `evren.bat`
-- **Linux:** `evren.desktop` (Sistem menüsüne eklemek için `~/.local/share/applications/` içine kopyalanabilir)
+- **macOS:** `firik-agent.command`
+- **Windows:** `firik-agent.bat`
+- **Linux:** `firik-agent.desktop` (Sistem menüsüne eklemek için `~/.local/share/applications/` içine kopyalanabilir)
 
 ### Temel Özellikler:
 - 💬 **Sohbet:** Gerçek zamanlı akışlı yanıtlar, görsel yükleme, model parametreleri, sağda kullanıcı / solda asistan mesajları, katlanabilir işlem ayrıntıları, otomatik kaydedilen sohbet geçmişi ve dışa aktarma (Markdown/JSON).
@@ -278,7 +280,7 @@ evren api-docs --path /v1/media
 
 `request` yalnızca kaydedilmiş genel uçlara erişir; `internal` servis yollarını veya başka siteleri kabul etmez. Yeni uç noktalar için şemanın ve kapsam testinin güncellenmesi gerekir. Ses için dosya seçeneği olan `transcribe` komutunu kullanın.
 
-Varsayılan stdout çıktısı JSON'dur. `--text` metin çıktısını seçer. Akışta varsayılan çıktı her satırda `{ "event": ..., "data": ... }` içeren **JSONL**'dır; reasoning, usage, tool-call ve Responses olayları korunur. `--stream --text` yalnızca metin deltalarını gösterir; araç çağrısı işlemek isteyenler JSONL kullanmalıdır. Doğrudan API komutları modelin döndürdüğü araç çağrılarını kendiliğinden çalıştırmaz; otonom araç döngüsü `evren-agent` içindedir.
+Varsayılan stdout çıktısı JSON'dur. `--text` metin çıktısını seçer. Akışta varsayılan çıktı her satırda `{ "event": ..., "data": ... }` içeren **JSONL**'dır; reasoning, usage, tool-call ve Responses olayları korunur. `--stream --text` yalnızca metin deltalarını gösterir; araç çağrısı işlemek isteyenler JSONL kullanmalıdır. Doğrudan API komutları modelin döndürdüğü araç çağrılarını kendiliğinden çalıştırmaz; otonom araç döngüsü `firik-agent` içindedir.
 
 - `--metadata`: istek kimliği, `X-Evren-*`, hız/kota ve `Retry-After` başlıklarını stderr'e yazar.
 - `--output DOSYA`: başarılı yanıtı atomik olarak yazar; hata olursa eski dosyayı korur.
@@ -318,15 +320,15 @@ Claude Code ve Codex CLI benzeri MCP sunucusu ekleme, listeleme ve kaldırma:
 
 ```bash
 # MCP sunucusu ekleme ve config.yaml'a otomatik kaydetme:
-evren-agent mcp add git npx -y @modelcontextprotocol/server-git
-evren-agent mcp add sqlite uvx mcp-server-sqlite --db-path ./app.db
-evren-agent mcp add github -e GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx npx -y @modelcontextprotocol/server-github
-evren-agent mcp add remote --url http://localhost:8000/sse
+firik-agent mcp add git npx -y @modelcontextprotocol/server-git
+firik-agent mcp add sqlite uvx mcp-server-sqlite --db-path ./app.db
+firik-agent mcp add github -e GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx npx -y @modelcontextprotocol/server-github
+firik-agent mcp add remote --url http://localhost:8000/sse
 
 # Sunucuları listeleme ve kaldırma:
-evren-agent mcp list
-evren-agent mcp list --test
-evren-agent mcp remove git    # veya: evren-agent mcp rm git
+firik-agent mcp list
+firik-agent mcp list --test
+firik-agent mcp remove git    # veya: firik-agent mcp rm git
 
 # (Aynı komutlar 'evren mcp add ...' olarak da çalışır)
 ```
@@ -334,16 +336,16 @@ evren-agent mcp remove git    # veya: evren-agent mcp rm git
 İnteraktif agent ve testler:
 
 ```bash
-evren-agent
-evren-agent -p 'Bu soruyu araçlarla çöz'
-evren-agent --provider llmtr --model evren/glm-5.3-fp8
+firik-agent
+firik-agent -p 'Bu soruyu araçlarla çöz'
+firik-agent --provider llmtr --model evren/glm-5.3-fp8
 pytest -q
 ```
 
 Agent içinde `!ls -la`, `!git status` veya `/shell pwd` ile yerel terminal komutu
 çalıştırabilirsiniz. Komut doğrudan çalışır, çıktısı sohbet bağlamına eklenir.
 `Ctrl+C` komutu durdurup oturuma döner; varsayılan zaman aşımı 60 saniyedir.
-Tek komut için `evren-agent -p '!ls -la'` kullanın; API anahtarı gerekmez.
+Tek komut için `firik-agent -p '!ls -la'` kullanın; API anahtarı gerekmez.
 Her komut yeni bir shell açar; dizin değiştirmek için `!cd dizin && komut` yazın.
 
 Agent'ın tool çağrıları, argümanları, sonuçları ve Thinking metinleri varsayılan
@@ -359,23 +361,23 @@ etkiler: modele iletilen sonuçlar değişmez ve ayrıntılarda eski 200 karakte
 önizleme sınırı yoktur. Etkileşimli terminal bulunmadığında `/details` ayrıntıları
 düz metin olarak yazdırır; fare desteği terminale bağlıdır.
 
-[Detaylı MCP, skill, plugin, computer-use ve agent kullanım kılavuzu](docs/AGENT.md). Bilgisayar denetimi sistem izinleri ve yetenek teşhisi için `evren-agent computer-use doctor` komutunu çalıştırabilirsiniz. Agent REPL'inde `/api ...` için doğrudan `evren` sağlayıcısını seçin. Birim/kontrat testleri sahte HTTP transport kullanır; gerçek anahtara veya ücretli API çağrılarına ihtiyaç duymaz.
+[Detaylı MCP, skill, plugin, computer-use ve agent kullanım kılavuzu](docs/AGENT.md). Bilgisayar denetimi sistem izinleri ve yetenek teşhisi için `firik-agent computer-use doctor` komutunu çalıştırabilirsiniz. Agent REPL'inde `/api ...` için doğrudan `evren` sağlayıcısını seçin. Birim/kontrat testleri sahte HTTP transport kullanır; gerçek anahtara veya ücretli API çağrılarına ihtiyaç duymaz.
 
 
 ## Masaüstü uygulamasını indirme
 
-Hazır kurulum dosyaları [GitHub Releases](https://github.com/FehmiCitiloglu/evren/releases/latest) sayfasındadır:
+Kurulum dosyaları yayımlandığında [GitHub Releases](https://github.com/FehmiCitiloglu/firik-agent/releases/latest) sayfasında yer alacaktır:
 
 | Sistem | Dosya |
 | --- | --- |
-| Windows x64 | `evren-VERSION-windows-x64-setup.exe` |
-| macOS 15+ Apple Silicon | `evren-VERSION-macos-arm64.dmg` |
-| macOS 15+ Intel | `evren-VERSION-macos-x64.dmg` |
-| Ubuntu 22.04+ / Debian 12+ | `evren_VERSION_amd64.deb` |
-| Fedora / openSUSE (glibc 2.35+) | `evren-VERSION-1.x86_64.rpm` |
-| Diğer Linux x86_64 (glibc 2.35+, X11/XWayland) | `evren-VERSION-linux-x86_64.tar.gz` |
+| Windows x64 | `firik-agent-VERSION-windows-x64-setup.exe` |
+| macOS 15+ Apple Silicon | `firik-agent-VERSION-macos-arm64.dmg` |
+| macOS 15+ Intel | `firik-agent-VERSION-macos-x64.dmg` |
+| Ubuntu 22.04+ / Debian 12+ | `firik-agent_VERSION_amd64.deb` |
+| Fedora / openSUSE (glibc 2.35+) | `firik-agent-VERSION-1.x86_64.rpm` |
+| Diğer Linux x86_64 (glibc 2.35+, X11/XWayland) | `firik-agent-VERSION-linux-x86_64.tar.gz` |
 
-Windows kurucusu kullanıcı hesabına yükler; macOS'ta DMG içinden uygulamayı Applications'a sürükleyin. Python kurulumu gerekmez. ZIP dosyaları taşınabilir Windows/macOS alternatifleridir. Linux arşivinde `usr/bin/evren` çalıştırılır. Alpine/musl desteklenmez. Linux'ta anahtar kaydetmek için Secret Service uyumlu, açık bir anahtarlık gerekir.
+Windows kurucusu kullanıcı hesabına yükler; macOS'ta DMG içinden uygulamayı Applications'a sürükleyin. Python kurulumu gerekmez. ZIP dosyaları taşınabilir Windows/macOS alternatifleridir. Linux arşivinde `usr/bin/firik-agent` çalıştırılır. Alpine/musl desteklenmez. Linux'ta anahtar kaydetmek için Secret Service uyumlu, açık bir anahtarlık gerekir.
 
 Windows paketleri henüz geliştirici sertifikasıyla imzalanmadığından SmartScreen onay isteyebilir. Yeni macOS release akışı Developer ID imzası ve Apple noter onayı gerektirir; daha önce yayımlanan imzasız paketler Gatekeeper onayı isteyebilir. Dosya bütünlüğü `SHA256SUMS.txt` ile kontrol edilebilir. [macOS imzalama ve GitHub Actions secret kurulumu](docs/MACOS_SIGNING.md).
 

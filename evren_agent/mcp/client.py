@@ -277,7 +277,7 @@ class MCPClient:
                 "sampling": {},
             },
             "clientInfo": {
-                "name": "evren-agent",
+                "name": "firik-agent",
                 "version": "0.2.4",
             },
         }

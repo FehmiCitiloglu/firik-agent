@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 # Uygulama adı
-APP_NAME = "evren"
+APP_NAME = "firik-agent"
 APP_SUBTITLE = "Yapay Zekâ ve Dil Modelleri Masaüstü İstemcisi"
 APP_VERSION = "0.2.21"
 

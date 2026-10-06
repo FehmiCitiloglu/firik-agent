@@ -18,7 +18,7 @@ console = Console()
 
 def run_doctor() -> int:
     """Runs cross-platform diagnostics for Computer Use and prints an informative report."""
-    console.print(Panel("[bold cyan]EVREN Agent — Computer Use Diagnostics & Doctor[/bold cyan]", expand=False))
+    console.print(Panel("[bold cyan]Firik Agent — Computer Use Diagnostics & Doctor[/bold cyan]", expand=False))
 
     service = ComputerUseService()
     env = service.environment()
@@ -87,7 +87,7 @@ def run_doctor() -> int:
                 "Some permissions are missing. On macOS, grant permissions in:\n"
                 "  • System Settings → Privacy & Security → Screen Recording\n"
                 "  • System Settings → Privacy & Security → Accessibility\n"
-                "Then restart EVREN Agent.",
+                "Then restart Firik Agent.",
                 title="Permission Guidance",
                 border_style="red",
             )
@@ -100,8 +100,8 @@ def run_doctor() -> int:
 
 def main(args: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="evren-agent computer-use",
-        description="EVREN Agent Computer Use Diagnostics and Services",
+        prog="firik-agent computer-use",
+        description="Firik Agent Computer Use Diagnostics and Services",
     )
     subparsers = parser.add_subparsers(dest="command")
 

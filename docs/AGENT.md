@@ -1,4 +1,4 @@
-# EVREN Agent — önceki agent modu kılavuzu
+# Firik Agent — önceki agent modu kılavuzu
 
 Doğrudan EVREN API komutları için [ana kılavuza](../README.md) bakın. Bu dosya agent/MCP/skill/plugin kullanımını anlatır.
 
@@ -60,7 +60,7 @@ uv pip install -e .
 
 ## ⚙️ Configuration
 
-Run `evren-agent` after installation. When the selected provider has no key, it
+Run `firik-agent` after installation. When the selected provider has no key, it
 prompts with hidden input and stores the key in the OS credential store. Future
 launches read it automatically, from any working directory. Switching to a
 provider without a key using `/provider` also prompts before switching.
@@ -89,19 +89,19 @@ You can customize defaults in `config.yaml`.
 Launch the interactive terminal session:
 
 ```bash
-evren-agent
+firik-agent
 ```
 
 Or pass a single prompt directly:
 
 ```bash
-evren-agent -p "Summarize the latest developments in Turkish AI"
+firik-agent -p "Summarize the latest developments in Turkish AI"
 ```
 
 Switch providers and models on startup:
 
 ```bash
-evren-agent --provider llmtr --model evren/glm-5.3-fp8
+firik-agent --provider llmtr --model evren/glm-5.3-fp8
 ```
 
 ### Slash Commands in REPL
@@ -165,31 +165,31 @@ destekler. Asenkron Python kullanımı: `await agent.run_command_async("ls -la")
 Tek komutluk kullanım da desteklenir ve API anahtarı gerektirmez:
 
 ```bash
-evren-agent -p '!ls -la'
+firik-agent -p '!ls -la'
 ```
 
 ---
 
 ## 🔌 Model Context Protocol (MCP) CLI (Codex & Claude Benzeri)
 
-EVREN Agent, Claude Code ve Codex CLI benzeri pratik bir `mcp` komut satırı arayüzü sunar. Eklenen sunucular doğrudan `config.yaml` dosyasına kaydedilir ve sonraki agent oturumlarında otomatik olarak ayağa kalkar.
+Firik Agent, Claude Code ve Codex CLI benzeri pratik bir `mcp` komut satırı arayüzü sunar. Eklenen sunucular doğrudan `config.yaml` dosyasına kaydedilir ve sonraki agent oturumlarında otomatik olarak ayağa kalkar.
 
 ### 1. Terminalden MCP Sunucusu Ekleme (`mcp add`)
 
 ```bash
 # Standart stdio MCP sunucusu ekleme (npx, uvx, python vb.):
-evren-agent mcp add git npx -y @modelcontextprotocol/server-git
-evren-agent mcp add fs npx -y @modelcontextprotocol/server-filesystem /Users/me/Documents
-evren-agent mcp add sqlite uvx mcp-server-sqlite --db-path ./app.db
+firik-agent mcp add git npx -y @modelcontextprotocol/server-git
+firik-agent mcp add fs npx -y @modelcontextprotocol/server-filesystem /Users/me/Documents
+firik-agent mcp add sqlite uvx mcp-server-sqlite --db-path ./app.db
 
 # Ortam değişkeni (Environment variable) ile ekleme:
-evren-agent mcp add github -e GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx npx -y @modelcontextprotocol/server-github
+firik-agent mcp add github -e GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx npx -y @modelcontextprotocol/server-github
 
 # Uzak HTTP/SSE MCP sunucusu ekleme:
-evren-agent mcp add remote --url http://localhost:8000/sse
+firik-agent mcp add remote --url http://localhost:8000/sse
 
 # Bağlantı testini atlayarak doğrudan kaydetme:
-evren-agent mcp add my-server python /path/to/server.py --no-test
+firik-agent mcp add my-server python /path/to/server.py --no-test
 
 # Aynı komutlar 'evren mcp add ...' olarak da çalışır:
 evren mcp add git npx -y @modelcontextprotocol/server-git
@@ -200,17 +200,17 @@ evren mcp add git npx -y @modelcontextprotocol/server-git
 ### 2. Yapılandırılmış Sunucuları Listeleme (`mcp list`)
 
 ```bash
-evren-agent mcp list
+firik-agent mcp list
 # veya canlı bağlantı ve araç durumunu kontrol ederek:
-evren-agent mcp list --test
+firik-agent mcp list --test
 ```
 
 ### 3. MCP Sunucusunu Kaldırma (`mcp remove` / `mcp rm`)
 
 ```bash
-evren-agent mcp remove git
+firik-agent mcp remove git
 # veya kısa takma ad:
-evren-agent mcp rm git
+firik-agent mcp rm git
 ```
 
 ### 4. REPL İçinde Dinamik Ekleyip Çıkarma
@@ -423,7 +423,7 @@ class TranslationPlugin(BasePlugin):
 
 ## 🖥️ Cross-Platform Computer Use (GUI Otomasyonu)
 
-EVREN Agent, macOS, Windows ve Linux üzerinde gerçek masaüstü kontrolü ve görsel gözlem yeteneklerine sahiptir.
+Firik Agent, macOS, Windows ve Linux üzerinde gerçek masaüstü kontrolü ve görsel gözlem yeteneklerine sahiptir.
 
 ### Mimari
 
@@ -441,7 +441,7 @@ EVREN Agent, macOS, Windows ve Linux üzerinde gerçek masaüstü kontrolü ve g
              │       Native Agent Tools          │   MCP Server    │
              └───────────────────────────────────┴─────────────────┘
                                ↓
-                          EVREN Agent
+                          Firik Agent
                                ↓
                        Computer Use Skill (Observe → Plan → Act → Verify)
 ```
@@ -482,13 +482,13 @@ EVREN Agent, macOS, Windows ve Linux üzerinde gerçek masaüstü kontrolü ve g
 
 ```bash
 # Sistem izinlerini ve yetenek matrisini denetle:
-evren-agent computer-use doctor
+firik-agent computer-use doctor
 
 # Standalone stdio MCP sunucusu başlat:
-evren-agent computer-use mcp
+firik-agent computer-use mcp
 
 # Teşhis ekran görüntüsü kaydet:
-evren-agent computer-use screenshot -o test.png
+firik-agent computer-use screenshot -o test.png
 ```
 
 Agent REPL içinde:
