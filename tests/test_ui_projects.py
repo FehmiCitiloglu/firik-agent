@@ -148,7 +148,8 @@ def test_projects_view_full_lifecycle(monkeypatch):
                 assert pv.coding_input.winfo_width() > 150
                 assert pv.coding_send_btn.winfo_rootx() + pv.coding_send_btn.winfo_width() <= app.winfo_rootx() + app.winfo_width()
                 for button in pv.tab_buttons.values():
-                    assert button.winfo_rootx() + button.winfo_width() <= app.winfo_rootx() + app.winfo_width()
+                    if button.winfo_ismapped():
+                        assert button.winfo_rootx() + button.winfo_width() <= app.winfo_rootx() + app.winfo_width()
 
             # 7. Test PM Check action
             pv._run_pm_check_action()

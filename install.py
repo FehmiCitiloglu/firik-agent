@@ -23,15 +23,21 @@ def install_commands(venv_dir: Path, bin_dir: Path, is_windows: bool):
     for source, target in pairs:
         if not source.is_file():
             raise RuntimeError(f"Installed command missing: {source}")
-        if not is_windows and (target.exists() or target.is_symlink()):
-            if not target.is_symlink() or target.resolve() != source.resolve():
-                raise RuntimeError(f"Cannot replace existing command: {target}. Move it aside and retry.")
+        if not is_windows and target.exists() and not target.is_symlink():
+            raise RuntimeError(f"Cannot replace existing command: {target}. Move it aside and retry.")
     bin_dir.mkdir(parents=True, exist_ok=True)
     for source, target in pairs:
         if is_windows:
             # pip's Windows launchers embed the absolute venv Python path.
             shutil.copy2(source, target)
-        elif not target.is_symlink():
+        else:
+            if target.is_symlink():
+                try:
+                    if target.resolve() == source.resolve():
+                        continue
+                except OSError:
+                    pass
+                target.unlink()
             target.symlink_to(source)
 
 
@@ -167,6 +173,16 @@ def main():
         log("  Running 'pip install -e .[dev]'...", "dim")
         subprocess.run([str(venv_python), "-m", "pip", "install", "-e", ".[dev]"], check=True)
     log("✔ Package firik-agent and dependencies installed successfully", "green")
+    try:
+        tk_check = subprocess.run([str(venv_python), "-c", "import tkinter"], capture_output=True)
+        if tk_check and getattr(tk_check, "returncode", 0) != 0:
+            log("  ℹ Bilgi: 'tkinter' bulunamadı; masaüstü arayüzü (firik-gui) için Tkinter gereklidir.", "yellow")
+            if sys.platform == "darwin":
+                log(f"    Kurulum: brew install python-tk@{sys.version_info.major}.{sys.version_info.minor}", "dim")
+            elif sys.platform.startswith("linux"):
+                log("    Kurulum: sudo apt install python3-tk", "dim")
+    except Exception:
+        pass
 
     log("\n[3/3] Making Firik commands available without activation...", "cyan")
     install_commands(venv_dir, bin_dir, is_windows)

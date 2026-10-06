@@ -12,7 +12,7 @@ def test_keyboard_views_persist_and_bindings_follow_workspace_lifetime(workspace
     assert tuple(view.coding_tabs._tab_dict) == WORKSPACE_VIEWS
     assert view.coding_tabs.get() == "Etkinlik"
     view.coding_input._textbox.focus_force()
-    view.coding_input._textbox.event_generate("<Control-Key-4>")
+    view.coding_input._textbox.event_generate(f"<{view.coding_shortcut_modifier}-Key-4>")
     settle(app)
     assert view.coding_tabs.get() == "Terminal"
     assert view.project_service.db.get_settings(project.id).coding_preferences["workspace_view"] == "Terminal"
@@ -24,7 +24,7 @@ def test_keyboard_views_persist_and_bindings_follow_workspace_lifetime(workspace
     settle(app)
     assert view.coding_tabs.get() == "Terminal"
     view.coding_input._textbox.focus_force()
-    view.coding_input._textbox.event_generate("<Control-Key-2>")
+    view.coding_input._textbox.event_generate(f"<{view.coding_shortcut_modifier}-Key-2>")
     settle(app)
     assert view.coding_tabs.get() == "Plan"
     # Rebuilding the project header replaces its live Git subscription. Native

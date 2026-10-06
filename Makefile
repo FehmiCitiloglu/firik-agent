@@ -1,5 +1,13 @@
 .PHONY: install setup test test-ui clean run commands ui gui help
 
+ifeq ($(OS),Windows_NT)
+  VENV_BIN ?= .venv/Scripts
+  EXE ?= .exe
+else
+  VENV_BIN ?= $(if $(wildcard .venv/Scripts),.venv/Scripts,.venv/bin)
+  EXE ?= $(if $(wildcard .venv/Scripts),.exe,)
+endif
+
 help:
 	@echo "Firik Agent — Make Commands:"
 	@echo "  make install   - Run installer (sets up .venv, deps, and commands)"
@@ -17,19 +25,19 @@ install:
 setup: install
 
 test:
-	@.venv/bin/pytest || .venv/Scripts/pytest.exe
+	@$(VENV_BIN)/pytest$(EXE)
 
 test-ui:
-	@.venv/bin/pytest tests/test_ui*.py || .venv/Scripts/pytest.exe tests/test_ui*.py
+	@$(VENV_BIN)/pytest$(EXE) tests/test_ui*.py
 
 run:
-	@.venv/bin/firik-agent || .venv/Scripts/firik-agent.exe
+	@$(VENV_BIN)/firik-agent$(EXE)
 
 commands:
-	@.venv/bin/firik-agent --commands || .venv/Scripts/firik-agent.exe --commands
+	@$(VENV_BIN)/firik-agent$(EXE) --commands
 
 ui:
-	@.venv/bin/firik-gui $(ARGS) || .venv/Scripts/firik-gui.exe $(ARGS)
+	@$(VENV_BIN)/firik-gui$(EXE) $(ARGS)
 
 gui: ui
 

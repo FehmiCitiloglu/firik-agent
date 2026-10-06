@@ -10,10 +10,22 @@ import os
 import platform
 import queue
 import sys
-from typing import Dict, Optional
-import tkinter as tk
+try:
+    import tkinter as tk
+    import customtkinter as ctk
+except (ImportError, ModuleNotFoundError) as err:
+    py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
+    hint = ""
+    if sys.platform == "darwin":
+        hint = f"\nHomebrew ile kurmak için:\n  brew install python-tk@{py_ver}"
+    elif sys.platform.startswith("linux"):
+        hint = "\nLinux için:\n  sudo apt install python3-tk"
+    elif sys.platform == "win32":
+        hint = "\nWindows için:\n  Python kurulumunda 'tcl/tk and IDLE' seçeneğini işaretleyerek Python'ı yeniden yükleyin."
 
-import customtkinter as ctk
+    raise ImportError(
+        f"firik-agent masaüstü arayüzü için 'tkinter' modülü bulunamadı ({err}).{hint}"
+    ) from err
 
 from firik_agent.ui.icons import ensure_app_icon
 from firik_agent.ui.service import FirikService

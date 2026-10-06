@@ -74,6 +74,32 @@ def test_unrelated_command_is_preserved(tmp_path):
     assert not (bin_dir / "firik").exists()
 
 
+def test_existing_symlink_is_updated(tmp_path):
+    old_venv, new_venv = tmp_path / "old_venv", tmp_path / "new_venv"
+    bin_dir = tmp_path / "bin"
+    make_commands(old_venv)
+    make_commands(new_venv)
+    installer.install_commands(old_venv, bin_dir, False)
+    assert (bin_dir / "firik").resolve() == (old_venv / "bin/firik").resolve()
+
+    installer.install_commands(new_venv, bin_dir, False)
+    assert (bin_dir / "firik").resolve() == (new_venv / "bin/firik").resolve()
+
+
+def test_broken_symlink_is_replaced(tmp_path):
+    venv, bin_dir = tmp_path / ".venv", tmp_path / "bin"
+    make_commands(venv)
+    bin_dir.mkdir()
+    broken = bin_dir / "firik"
+    broken.symlink_to(tmp_path / "nonexistent")
+    assert broken.is_symlink()
+    assert not broken.exists()
+
+    installer.install_commands(venv, bin_dir, False)
+    assert (bin_dir / "firik").resolve() == (venv / "bin/firik").resolve()
+
+
+
 def test_custom_shell_configuration_paths(home, monkeypatch):
     monkeypatch.setenv("SHELL", "/bin/zsh")
     monkeypatch.setenv("ZDOTDIR", str(home / "custom-zsh"))
