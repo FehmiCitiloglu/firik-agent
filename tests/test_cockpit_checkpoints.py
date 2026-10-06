@@ -34,10 +34,10 @@ def restore(store, checkpoint, root, preview):
 
 def test_checkpoint_survives_restart_and_preserves_preexisting_dirty_text(workspace):
     root, db, run_id, store = workspace
-    (root / "dirty.py").write_text("print('kullanıcı düzenlemesi')\n")
+    (root / "dirty.py").write_text("print('kullanıcı düzenlemesi')\n", encoding="utf-8")
     (root / "deleted.py").write_text("obsolete\n")
     checkpoint = store.create_checkpoint("p1", root, run_id=run_id, label="Başlangıç")
-    (root / "dirty.py").write_text("print('ajan değişikliği')\n")
+    (root / "dirty.py").write_text("print('ajan değişikliği')\n", encoding="utf-8")
     (root / "deleted.py").unlink()
     (root / "new.py").write_text("created\n")
     reopened = CheckpointStore(ProjectDatabase(db.db_path))
@@ -45,12 +45,12 @@ def test_checkpoint_survives_restart_and_preserves_preexisting_dirty_text(worksp
     preview = compare(reopened, checkpoint, root, run_id)
     assert {c["path"] for c in preview["changes"]} == {"dirty.py", "deleted.py", "new.py"}
     result = restore(reopened, checkpoint, root, preview)
-    assert (root / "dirty.py").read_text() == "print('kullanıcı düzenlemesi')\n"
+    assert (root / "dirty.py").read_text(encoding="utf-8") == "print('kullanıcı düzenlemesi')\n"
     assert (root / "deleted.py").read_text() == "obsolete\n"
     assert not (root / "new.py").exists()
     backup = {"id": result["backup_checkpoint_id"]}
     restore(reopened, backup, root, compare(reopened, backup, root))
-    assert (root / "dirty.py").read_text() == "print('ajan değişikliği')\n"
+    assert (root / "dirty.py").read_text(encoding="utf-8") == "print('ajan değişikliği')\n"
     assert not (root / "deleted.py").exists()
     assert (root / "new.py").read_text() == "created\n"
 

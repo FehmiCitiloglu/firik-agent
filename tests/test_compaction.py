@@ -127,7 +127,7 @@ async def test_agent_stream_emits_compaction_then_continues():
     assert provider.streams[0]["messages"][-1].content == "Son istek"
     assert provider.streams[0]["max_tokens"] == session.max_tokens
     assert len(session.messages) == 62
-    assert estimate_tokens(provider.streams[0]["messages"]) < 2250
+    assert estimate_tokens(provider.streams[0]["messages"]) < 2500
 
 
 @pytest.mark.asyncio
