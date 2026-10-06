@@ -12,7 +12,7 @@ from firik_agent.projects.coding_sessions import redact_sensitive
 from firik_agent.ui.coding_strings import STATUS_NAMES, WELCOME
 
 
-def restore_state_history(state, record):
+def restore_state_history(state, record, events=None):
     """Restore recorded evidence; historical diffs do not assert current bytes."""
     if record is None:
         return state
@@ -106,6 +106,9 @@ def restore_state_history(state, record):
     state["inspection_warning"] = "Kalıcı oturum kaydı gösteriliyor; dosyaların güncel durumu henüz yeniden karşılaştırılmadı."
     if record.status == "interrupted":
         state["inspection_warning"] += " Önceki çalışma kesildi; devam etmeden önce dosyalar yeniden doğrulanacak."
+    from firik_agent.projects.cockpit import CockpitState
+    cockpit = state.setdefault("cockpit", CockpitState())
+    cockpit.restore(record, events)
     return state
 
 
@@ -117,12 +120,14 @@ class CodingHistoryMixin:
             return
         session = ChatSession(model=state["session"].model, active_mcp_servers=set())
         self.service.sessions[session.session_id] = session
+        self.service._coding_session_projects[session.session_id] = self.current_project_id
         state.update(session=session, record=None, busy=False, messages=[{"role": "system", "content": WELCOME}], text=WELCOME,
                      status="Hazır", task_id=None, plan=[], activities=[], changes=[], record_journal=[], agent_paths={},
                      context_report=[], usage={}, decisions=[], tests=[], change_counts={}, test_counts={}, before=None,
                      snapshot=None, selected_change=None, inspection_warning="", pending_approvals={}, last_prompt="",
                      paused=False, stopped=False, future=None, documents=[])
         state["run_id"] += 1
+        state["cockpit"].start(model=session.model)
         self._switch_workspace_tab("coding")
 
     def _load_coding_history(self, run_id):
@@ -132,7 +137,8 @@ class CodingHistoryMixin:
         state = self._coding_state()
         state["session"] = session
         state["run_id"] += 1
-        restore_state_history(state, record)
+        restore_state_history(state, record, self.service.coding_store.list_events(
+            record.id, project_id=self.current_project_id, limit=1000, include_deltas=False))
         tool_filter = self.service._coding_filters.get(session.session_id)
         if tool_filter is not None and tool_filter.control.run_id == record.run_id:
             for change in state["changes"]:

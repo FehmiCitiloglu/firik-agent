@@ -29,12 +29,12 @@ class SpecialistRole(str, Enum):
     DOCUMENTATION = "documentation"
 
 
-READ_TOOLS = frozenset({"read_file", "list_files", "search_project", "search_symbols", "git_status", "git_diff"})
+READ_TOOLS = frozenset({"read_file", "list_files", "search_project", "search_symbols", "git_status", "git_diff", "discover_quality_gates"})
 EDIT_TOOLS = frozenset({"edit_file", "write_file", "apply_patch", "delete_file"})
 ROLE_TOOLS = {
     SpecialistRole.PLANNING: READ_TOOLS | {"update_plan"},
-    SpecialistRole.CODING: READ_TOOLS | EDIT_TOOLS | {"update_plan", "run_command", "run_tests", "record_verification"},
-    SpecialistRole.TESTING: READ_TOOLS | {"run_tests", "record_verification"},
+    SpecialistRole.CODING: READ_TOOLS | EDIT_TOOLS | {"update_plan", "run_command", "run_tests", "run_quality_gate", "record_verification"},
+    SpecialistRole.TESTING: READ_TOOLS | {"run_tests", "run_quality_gate", "record_verification"},
     SpecialistRole.REVIEW: READ_TOOLS | {"record_verification"},
     SpecialistRole.DOCUMENTATION: READ_TOOLS | {"edit_file", "write_file", "apply_patch"},
 }
@@ -124,7 +124,7 @@ class SpecialistToolFilter:
     def _allowed(self, name: str) -> bool:
         if name not in self.assignment.allowed_tools:
             return False
-        permission = ("allow_reads" if name in READ_TOOLS else "allow_edits" if name in EDIT_TOOLS else "allow_tests" if name == "run_tests"
+        permission = ("allow_reads" if name in READ_TOOLS else "allow_edits" if name in EDIT_TOOLS else "allow_tests" if name in {"run_tests", "run_quality_gate"}
                       else "allow_terminal" if name == "run_command" else None)
         if permission and self.assignment.permissions.get(permission) is not True:
             return False
@@ -149,10 +149,14 @@ class SpecialistToolFilter:
                 leases = [safe_project_path(self.assignment.workspace.root, path) for path in self.assignment.write_paths]
                 if not any(target.is_relative_to(lease) for lease in leases):
                     raise PermissionError("Dosya uzman ajanın ayrılmış düzenleme kapsamının dışında.")
-            # Re-use the parent's exact session, rather than manufacturing a wider child session.
-            return await self.parent.execute(call, self.session)
+            # Keep the exact live parent gate and label its approvals/evidence with the child identity.
+            with self.parent.control.actor(self.assignment.context.get("agent_id", self.assignment.id)):
+                return await self.parent.execute(call, self.session)
         except (ValueError, OSError, TypeError) as error:
             return ToolResult(tool_call_id=call.id, name=name, content=str(error), is_error=True)
+
+
+_SHARED_FILE_LEASES = FileLeaseManager()
 
 
 class SpecialistCoordinator:
@@ -160,7 +164,7 @@ class SpecialistCoordinator:
 
     def __init__(self, enabled: bool = False, leases: FileLeaseManager | None = None):
         self.enabled = enabled
-        self.leases = leases or FileLeaseManager()
+        self.leases = leases or _SHARED_FILE_LEASES
         self._runners: dict[SpecialistRole, Callable[..., Any]] = {}
 
     def register(self, role: SpecialistRole | str, runner: Callable[..., Any]) -> None:
@@ -199,7 +203,7 @@ class SpecialistCoordinator:
         if requested_tools is not None:
             tools &= set(requested_tools)
         if control.mode in {"ask", "plan"}:
-            tools -= EDIT_TOOLS | {"run_command", "run_tests"}
+            tools -= EDIT_TOOLS | {"run_command", "run_tests", "run_quality_gate"}
         paths = tuple(dict.fromkeys(write_paths))
         if paths and (control.mode in {"ask", "plan"} or permissions.get("allow_edits") is not True
                       or not tools & EDIT_TOOLS):

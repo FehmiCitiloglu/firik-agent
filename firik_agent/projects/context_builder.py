@@ -67,7 +67,8 @@ class ProjectContextBuilder:
                  last_session: Optional[CodingSession] = None, total_token_budget: int = 8000,
                  documents: Optional[List[Document | Dict[str, Any]]] = None,
                  selected_skills: Optional[List[Dict[str, str]]] = None,
-                 session_carry: Optional[Dict[str, Any]] = None):
+                 session_carry: Optional[Dict[str, Any]] = None,
+                 file_metadata: Optional[Dict[str, Dict[str, Any]]] = None):
         self.project, self.settings = project, settings
         self.instructions = [i for i in instructions if i.is_active and i.project_id == project.id]
         self.memories = [m for m in memories if m.status in ("approved", "pinned") and m.project_id == project.id]
@@ -87,6 +88,7 @@ class ProjectContextBuilder:
         self.documents = [doc for doc in (documents or [])
                           if (doc.get("project_id", project.id) if isinstance(doc, dict) else doc.project_id) == project.id]
         self.selected_skills = selected_skills or []
+        self.file_metadata = file_metadata or {}
         self.session_carry = dict(session_carry or {})
         if self.session_carry.get("project_id", project.id) != project.id:
             raise ValueError("Oturum özeti bu projeye ait değil.")
@@ -131,7 +133,9 @@ class ProjectContextBuilder:
                                         "sonuç": previous.result[:800], "plan": previous.plan[:1200],
                                         "özet": (getattr(previous, "context_summary", "") or previous.summary)[:1200],
                                         "değişen_dosyalar": previous.files_changed}
-        code = [{"dosya": path, "içerik": content} for path, content in self.relevant_files.items()]
+        # Separate file boundaries keep citations and inclusion evidence readable
+        # when a later file is clipped by the source slice's budget.
+        code = "\n".join(self._file_block(path, content) for path, content in self.relevant_files.items())
         documents = []
         for doc in self.documents:
             data = doc if isinstance(doc, dict) else doc.model_dump()
@@ -140,9 +144,51 @@ class ProjectContextBuilder:
             documents.append({"başlık": data.get("title", "Belge"), "içerik": data.get("content", "")})
         return {"instructions": self._json(instructions) if instructions else "",
                 "feature": self._json(task) if task else "", "memory": self._json(memory) if memory else "",
-                "session": self._json(session) if session else "", "code": self._json(code) if code else "",
+                "session": self._json(session) if session else "", "code": code,
                 "git": self.git_diff, "documents": self._json(documents) if documents else "",
                 "skills": self._json(self.selected_skills) if self.selected_skills else ""}
+
+    @staticmethod
+    def _file_block(path: str, content: str) -> str:
+        return "--- Dosya: " + sanitize_secrets(path) + " ---\n" + content + "\n"
+
+    def get_context_items(self) -> List[Dict[str, Any]]:
+        """File-level inclusion evidence from the same bounded slice sent to the model."""
+        sl = self.build_slices()["code"]
+        rendered = sl.get_truncated_text()
+        marker = "\n… Bağlam bütçesi nedeniyle kısaltıldı."
+        included_characters = len(rendered) - (len(marker) if rendered.endswith(marker) else 0)
+        cursor, items = 0, []
+        for path, content in self.relevant_files.items():
+            block = sanitize_secrets(self._file_block(path, content))
+            visible = max(0, min(len(block), included_characters - cursor))
+            metadata = self.file_metadata.get(path, {})
+            source = metadata.get("source", "retrieved")
+            header_length = len(self._file_block(path, "")) - 1
+            included = visible > header_length
+            items.append({"id": "file:" + path, "category": "selected_files" if source in {"selected", "pinned", "always"} else "retrieved_files",
+                          "path": path, "label": path, "source": source,
+                          "reason": metadata.get("reason", "Görev sorgusuyla ilişkili kaynak"),
+                          "tokens_used": approx_tokens(block[:visible]) if included else 0,
+                          "estimate_only": True, "included": included, "truncated": visible < len(block),
+                          "pinned": bool(metadata.get("pinned")), "always_include": bool(metadata.get("always_include")),
+                          "summarized": bool(metadata.get("summarized")),
+                          "line_start": metadata.get("line_start", 1), "line_end": metadata.get("line_end")})
+            cursor += len(block) + 1
+        for memory in self.memories:
+            content = sanitize_secrets(memory.content)
+            items.append({"id": "memory:" + memory.id, "category": "memory", "label": content[:100],
+                          "source": "project_memory", "scope": "project", "created_at": memory.created_at,
+                          "reason": "Bu proje için onaylanmış hafıza", "pinned": memory.status == "pinned",
+                          "estimate_only": True, "tokens_used": approx_tokens(content),
+                          "included": self._json(content)[1:-1] in self.build_slices()["memory"].get_truncated_text()})
+        for adr in self.adrs:
+            content = sanitize_secrets(adr.decision)
+            items.append({"id": "adr:" + adr.id, "category": "memory", "label": sanitize_secrets(adr.title), "source": "architecture_decision",
+                          "scope": "project", "reason": "Kabul edilmiş mimari karar", "estimate_only": True,
+                          "tokens_used": approx_tokens(content),
+                          "included": self._json(content)[1:-1] in self.build_slices()["memory"].get_truncated_text()})
+        return items
 
     def _build_slices(self, available: int) -> Dict[str, ContextSlice]:
         contents = self._contents()
@@ -209,6 +255,6 @@ class ProjectContextBuilder:
                            "available_content": bool(sl.raw_content.strip()), "sample": sl.get_truncated_text()[:180],
                            "truncated": len(sl.sanitized_content) > sl.char_budget,
                            "estimate_only": True,
-                           "files": [path for path in self.relevant_files
-                                     if self._json(path) in sl.get_truncated_text()] if key == "code" else []})
+                           "files": [item["path"] for item in self.get_context_items()
+                                     if item.get("path") and item["included"]] if key == "code" else []})
         return report

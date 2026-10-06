@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Callable, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -94,7 +94,16 @@ class StreamChunk(BaseModel):
 class ModelInfo(BaseModel):
     id: str
     name: str
-    context_window: int = 128000
-    supports_tools: bool = True
-    supports_vision: bool = False
+    context_window: Optional[int] = None
+    supports_tools: Optional[bool] = None
+    supports_vision: Optional[bool] = None
+    supports_streaming: Optional[bool] = None
+    supports_reasoning: Optional[bool] = None
+    supports_structured_output: Optional[bool] = None
+    input_cost_per_million: Optional[float] = None
+    output_cost_per_million: Optional[float] = None
+    cached_input_cost_per_million: Optional[float] = None
+    source: Optional[str] = None
+    provider: Optional[str] = None
+    local: Optional[bool] = None
     description: Optional[str] = None

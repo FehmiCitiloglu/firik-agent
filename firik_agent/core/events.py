@@ -26,6 +26,11 @@ class AgentEventType(str, Enum):
     VERIFICATION = "verification"
     MODEL_USAGE = "model_usage"
     SUBAGENT_EVENT = "subagent_event"
+    AGENT_MESSAGE = "agent.message"
+    SKILL_ACTIVATED = "skill.activated"
+    POLICY_UPDATED = "policy_updated"
+    QUALITY_GATE = "quality_gate"
+    CHECKPOINT_CREATED = "checkpoint_created"
     DONE = "done"
     ERROR = "error"
 

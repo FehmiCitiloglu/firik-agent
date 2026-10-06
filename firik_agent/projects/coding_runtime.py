@@ -4,7 +4,9 @@ from __future__ import annotations
 import ast
 import asyncio
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import difflib
 import hashlib
 import inspect
@@ -27,11 +29,39 @@ from firik_agent.core.tools import ToolRegistry
 from firik_agent.core.types import Message, ToolCall, ToolDefinition, ToolResult
 from firik_agent.projects.indexer import (IGNORED_DIRS, IGNORED_EXTENSIONS, is_sensitive_file,
                                           safe_project_path, sanitize_secrets)
+from firik_agent.projects.quality_gates import discover_quality_gates, validate_gates
 
 logger = logging.getLogger(__name__)
 MAX_FILE_BYTES = 1_048_576
 MAX_OUTPUT_CHARS = 32_768
-MODES = {"ask", "plan", "approved", "auto"}
+MODES = {"ask", "plan", "approved", "auto", "safe", "assisted", "autonomous", "custom"}
+POLICY_ACTIONS = frozenset({"filesystem.read", "filesystem.write", "filesystem.delete", "shell.safe",
+                          "shell.network", "shell.sudo", "network", "git.read", "git.commit", "git.push",
+                          "git.forcePush", "mcp", "secrets", "spawn_agents"})
+POLICY_VALUES = {"allow", "ask", "deny"}
+_POLICY_ALIASES = {"filesystem_read": "filesystem.read", "filesystem_write": "filesystem.write",
+                   "filesystem_delete": "filesystem.delete", "shell": "shell.safe", "git_read": "git.read",
+                   "git_write": "git.commit", "spawn": "spawn_agents", "agent_spawning": "spawn_agents"}
+_POLICY_RANK = {"allow": 0, "ask": 1, "deny": 2}
+
+
+def _policy_action(action: str) -> str:
+    return _POLICY_ALIASES.get(action, action)
+
+
+def _clean_policy(policy: Optional[Dict[str, str]]) -> dict[str, str]:
+    cleaned = {}
+    for key, value in (policy or {}).items():
+        action = _policy_action(key)
+        if action not in POLICY_ACTIONS or value not in POLICY_VALUES:
+            raise ValueError("İzin politikası desteklenen işlem ve allow/ask/deny değeri içermelidir.")
+        cleaned[action] = value
+    return cleaned
+
+
+def _plan_time(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _redact_content(value: str) -> str:
@@ -192,7 +222,7 @@ class _CodingRegistry(ToolRegistry):
                     raise ValueError(f"Araç parametresinin türü geçersiz: {key}")
             if inspect.iscoroutinefunction(handler):
                 value = await handler(**arguments)
-            elif name in {"read_file", "list_files", "search_project", "search_symbols"}:
+            elif name in {"read_file", "list_files", "search_project", "search_symbols", "update_plan", "record_verification", "discover_quality_gates"}:
                 value = await asyncio.to_thread(handler, **arguments)
             else:
                 value = handler(**arguments)
@@ -219,19 +249,28 @@ class CodingRunControl:
     def __init__(self, session_id: str, project_id: str, task_id: Optional[str] = None,
                  mode: str = "approved", permissions: Optional[Dict[str, bool]] = None,
                  on_event: Optional[Callable[[AgentEvent], None]] = None,
-                 run_id: Optional[str] = None):
+                 run_id: Optional[str] = None, policy: Optional[Dict[str, str]] = None,
+                 inherited_policy: Optional[Dict[str, str]] = None, excluded_paths: Optional[list[str]] = None):
         if mode not in MODES:
             raise ValueError("Geçersiz kodlama çalışma modu.")
         self.session_id, self.project_id, self.task_id = session_id, project_id, task_id
         self.mode = mode
         self.run_id = run_id or f"run_{uuid4().hex}"
+        self._actor_context: ContextVar[Optional[str]] = ContextVar(f"coding_actor_{self.run_id}", default=None)
         self.permissions = {"allow_reads": True, "allow_edits": True, "allow_deletes": True,
-                            "allow_terminal": True, "allow_tests": True, "allow_mcp": False}
+                            "allow_terminal": True, "allow_tests": True, "allow_mcp": False,
+                            "allow_subagents": True}
         for key, value in (permissions or {}).items():
             if key in self.permissions:
                 if not isinstance(value, bool):
                     raise ValueError("İşlem izinleri doğru veya yanlış olmalıdır.")
                 self.permissions[key] = value
+        self.policy = _clean_policy(policy)
+        self._inherited_policy = _clean_policy(inherited_policy)
+        if excluded_paths is not None and (not isinstance(excluded_paths, list)
+                or not all(isinstance(path, str) and path and "\x00" not in path for path in excluded_paths)):
+            raise ValueError("AI kapsamı dışında tutulan yollar metin listesi olmalıdır.")
+        self.excluded_paths = list(dict.fromkeys(excluded_paths or []))
         self.on_event = on_event
         self.cancel_event = threading.Event()
         self.pause_event = threading.Event()
@@ -245,12 +284,101 @@ class CodingRunControl:
         self.failures: Dict[str, int] = {}
         self.capabilities: Dict[str, Any] = {}
         self.decisions: list[dict[str, Any]] = []
+        self.quality_gates: list[dict[str, Any]] = []
+        self.quality_results: list[dict[str, Any]] = []
+        self.workspace_revision = 0
+
+    @contextmanager
+    def actor(self, agent_id: str):
+        """Keep delegated event identity local to the calling async task/thread.
+
+        asyncio.to_thread copies this context; concurrent specialist calls never
+        overwrite another specialist's identity on the shared parent control.
+        """
+        if not isinstance(agent_id, str) or not agent_id or len(agent_id) > 200:
+            raise ValueError("Olayı üreten ajan kimliği geçersiz.")
+        token = self._actor_context.set(agent_id)
+        try:
+            yield
+        finally:
+            self._actor_context.reset(token)
+
+    def actor_metadata(self) -> dict[str, str]:
+        actor = self._actor_context.get()
+        return {"agent_id": actor, "parent_agent_id": self.run_id} if actor else {}
+
+    def permission_decision(self, action: str) -> str:
+        """Effective live policy, narrowed by parent grants and immutable limits.
+
+        This host has no shell sandbox. All terminal commands retain per-call
+        approval even if an autonomous/custom policy asks to allow them.
+        """
+        action = _policy_action(action)
+        if action not in POLICY_ACTIONS:
+            raise ValueError("İzin işlemi desteklenmiyor.")
+        safe_mode = self.mode in {"approved", "safe", "custom"}
+        defaults = {key: "allow" for key in POLICY_ACTIONS}
+        defaults.update({"filesystem.write": "ask" if safe_mode else "allow",
+                         "filesystem.delete": "ask", "shell.safe": "ask", "shell.network": "ask",
+                         "shell.sudo": "deny", "network": "ask", "git.commit": "ask",
+                         "git.push": "ask", "git.forcePush": "deny", "mcp": "ask", "secrets": "deny",
+                         "spawn_agents": "ask" if self.mode == "safe" else "allow"})
+        decision = self.policy.get(action, defaults[action])
+        parent = self._inherited_policy.get(action, "allow")
+        decision = max((decision, parent), key=_POLICY_RANK.get)
+        permission = {"filesystem.read": "allow_reads", "filesystem.write": "allow_edits",
+                      "filesystem.delete": "allow_deletes", "git.read": "allow_reads", "mcp": "allow_mcp", "spawn_agents": "allow_subagents"}.get(action)
+        if permission and self.permissions.get(permission) is not True:
+            decision = "deny"
+        if action == "spawn_agents" and self.permissions.get("allow_reads") is not True:
+            decision = "deny"
+        if action == "filesystem.delete" and self.permissions.get("allow_edits") is not True:
+            decision = "deny"
+        if action in {"shell.safe", "shell.network"} and not (self.permissions.get("allow_terminal") is True or self.permissions.get("allow_tests") is True):
+            decision = "deny"
+        if action in {"git.commit", "git.push"} and self.permissions.get("allow_terminal") is not True:
+            decision = "deny"
+        if self.mode in {"ask", "plan"} and action not in {"filesystem.read", "git.read", "spawn_agents"}:
+            decision = "deny"
+        if action in {"secrets", "shell.sudo", "git.forcePush"}:
+            decision = "deny"
+        elif action in {"shell.safe", "shell.network", "git.commit", "git.push", "mcp"}:
+            decision = max((decision, "ask"), key=_POLICY_RANK.get)
+        if self.excluded_paths and action in {"shell.safe", "shell.network", "git.commit", "git.push", "mcp"}:
+            # An unrestricted process or external MCP handler could read the
+            # excluded source behind the guarded filesystem tools.
+            decision = "deny"
+        return decision
+
+    def policy_snapshot(self) -> dict[str, str]:
+        return {action: self.permission_decision(action) for action in sorted(POLICY_ACTIONS)}
+
+    def set_policy(self, policy: Dict[str, str]) -> None:
+        cleaned = _clean_policy(policy)
+        with self._lock:
+            self.policy = cleaned
+        self.emit(AgentEventType.POLICY_UPDATED, "İzin politikası güncellendi.", policy=self.policy_snapshot(),
+                  sandbox="none", shell_requires_approval=True)
+
+    async def authorize(self, action: str, tool_name: str, arguments: dict[str, Any], reason: str) -> None:
+        await self.checkpoint()
+        decision = self.permission_decision(action)
+        if decision == "deny":
+            raise PermissionError(f"İzin politikası bu işlemi engelliyor: {_policy_action(action)}")
+        if decision == "ask":
+            await self.request_approval(tool_name, arguments, reason)
+        await self.checkpoint()
+        # Tightening a live policy while an approval is visible takes effect
+        # before the operation starts.
+        if self.permission_decision(action) == "deny":
+            raise PermissionError("İşlem onay beklerken izin politikası değişti.")
 
     def emit(self, event_type: AgentEventType, content: str = "", **metadata: Any) -> None:
         if self.on_event:
             event = AgentEvent(event_type, self.session_id, content=safe_text(content),
                                project_id=self.project_id, task_id=self.task_id,
-                               metadata={"run_id": self.run_id, "project_id": self.project_id, "task_id": self.task_id, **metadata})
+                               metadata=safe_payload({"run_id": self.run_id, "project_id": self.project_id,
+                                   "task_id": self.task_id, **metadata, **self.actor_metadata()}))
             try:
                 self.on_event(event)
             except Exception:
@@ -282,7 +410,7 @@ class CodingRunControl:
 
     def decide_approval(self, request_id: str, allowed: bool) -> bool:
         with self._lock:
-            if request_id not in self.pending_approvals:
+            if request_id not in self.pending_approvals or request_id in self._decisions:
                 return False
             self._decisions[request_id] = bool(allowed)
         return True
@@ -294,7 +422,7 @@ class CodingRunControl:
         display = safe_payload(arguments)
         with self._lock:
             self.pending_approvals[request_id] = {"tool_name": tool_name, "arguments": display,
-                                                 "reason": reason, "created_at": time.time()}
+                                                 "reason": reason, "created_at": time.time(), **self.actor_metadata()}
         self.set_state("awaiting_approval", reason)
         self.emit(AgentEventType.APPROVAL_REQUIRED, reason, request_id=request_id,
                   tool_name=tool_name, arguments=display)
@@ -309,7 +437,8 @@ class CodingRunControl:
             self.emit(AgentEventType.APPROVAL_DECIDED, "İşlem onaylandı." if allowed else "İşlem reddedildi.",
                       request_id=request_id, allowed=allowed, tool_name=tool_name)
             self.decisions.append({"request_id": request_id, "tool_name": tool_name, "allowed": allowed,
-                                   "arguments_hash": _digest(json.dumps(arguments, sort_keys=True).encode()), "timestamp": time.time()})
+                                   "arguments_hash": _digest(json.dumps(arguments, sort_keys=True).encode()),
+                                   "timestamp": time.time(), **self.actor_metadata()})
             self.set_state("running")
             if not allowed:
                 raise PermissionError("Kullanıcı bu işleme izin vermedi.")
@@ -322,6 +451,10 @@ class CodingRunControl:
         with self._lock:
             return {"run_id": self.run_id, "session_id": self.session_id, "project_id": self.project_id, "task_id": self.task_id,
                     "mode": self.mode, "permissions": dict(self.permissions), "state": self.state,
+                    "policy": self.policy_snapshot(), "sandbox": "none", "workspace_revision": self.workspace_revision,
+                    "excluded_paths": list(self.excluded_paths),
+                    "quality_gates": [dict(g) for g in self.quality_gates],
+                    "quality_results": [dict(g) for g in self.quality_results],
                     "capabilities": dict(self.capabilities),
                     "decisions": [dict(decision) for decision in self.decisions],
                     "plan": [dict(p) for p in self.plan], "changes": [dict(c) for c in self.changes],
@@ -344,7 +477,7 @@ class CodingToolFilter:
 
     READ_TOOLS = {"read_file", "list_files", "search_project", "search_symbols", "git_status", "git_diff"}
     EDIT_TOOLS = {"edit_file", "write_file", "apply_patch", "delete_file", "undo_change"}
-    STATE_TOOLS = {"update_plan", "record_verification"}
+    STATE_TOOLS = {"update_plan", "record_verification", "discover_quality_gates", "run_quality_gate"}
 
     def __init__(self, root: str | Path, control: CodingRunControl,
                  mcp_registry: Optional[ToolRegistry] = None,
@@ -359,6 +492,8 @@ class CodingToolFilter:
         self.trusted_mcp_tools = set(trusted_mcp_tools or ())
         self._changes: dict[str, _Change] = {}
         self._verified_evidence: set[str] = set()
+        self._evidence_versions: dict[str, dict[str, Any]] = {}
+        self.before_file_mutation: Optional[Callable[[str], None]] = None
         self._register_tools()
 
     def _resolve(self, raw: str, *, must_exist: bool = True) -> Path:
@@ -373,6 +508,8 @@ class CodingToolFilter:
             parts = candidate.relative_to(self.root).parts
         except ValueError:
             raise PermissionError("Proje dışındaki dosyalara erişim engellendi.") from None
+        if self._is_excluded(candidate):
+            raise PermissionError("Dosya kullanıcı tarafından AI erişimi dışında tutuldu.")
         walked = self.root
         for part in parts:
             walked /= part
@@ -384,6 +521,15 @@ class CodingToolFilter:
         if not resolved.is_relative_to(self.root):
             raise PermissionError("Proje dışındaki dosyalara erişim engellendi.")
         return resolved
+
+    def _is_excluded(self, path: Path) -> bool:
+        candidate = Path(os.path.abspath(path))
+        for raw in self.control.excluded_paths:
+            excluded = Path(raw)
+            excluded = Path(os.path.abspath(excluded if excluded.is_absolute() else self.root / excluded))
+            if excluded.is_relative_to(self.root) and candidate.is_relative_to(excluded):
+                return True
+        return False
 
     @contextmanager
     def _parent(self, path: Path):
@@ -424,6 +570,10 @@ class CodingToolFilter:
         self._resolve(str(path), must_exist=False)
         if content is not None and len(content) > MAX_FILE_BYTES:
             raise ValueError("Yeni dosya içeriği 1 MiB sınırını aşamaz.")
+        if self.before_file_mutation is not None:
+            # A failed durable checkpoint must prevent the mutation. The exact
+            # expected bytes are checked again below after the hook returns.
+            self.before_file_mutation(str(path.relative_to(self.root)))
         with self._parent(path) as parent:
             target = path.name if parent is not None else path
             # Validate the exact bytes again immediately before the mutation.
@@ -502,12 +652,33 @@ class CodingToolFilter:
                        {"steps": {"type": "array", "items": {"type": "object"}}}, ["steps"])
         self._register("record_verification", "Kabul kriterini gerçek araç kanıtıyla ilişkilendir; doğrulanamayanı ayrı kaydet.", self.record_verification,
                        {"criterion": s, "status": s, "evidence_id": s, "detail": s}, ["criterion", "status"])
+        self._register("discover_quality_gates", "Proje manifestlerinden test/lint/typecheck/build komutlarını keşfet; komut çalıştırmaz.",
+                       self.discover_quality_gates, {}, [])
+        self._register("run_quality_gate", "Keşfedilmiş veya yapılandırılmış kalite kapısını onaylı terminalde çalıştır.",
+                       self.run_quality_gate, {"gate_id": s}, ["gate_id"])
+
+    @staticmethod
+    def _tool_policy(name: str) -> str | None:
+        if name in {"git_status", "git_diff"}:
+            return "git.read"
+        if name in CodingToolFilter.READ_TOOLS or name == "discover_quality_gates":
+            return "filesystem.read"
+        if name == "delete_file":
+            return "filesystem.delete"
+        if name in CodingToolFilter.EDIT_TOOLS:
+            return "filesystem.write"
+        if name in {"run_command", "run_tests", "run_quality_gate"}:
+            return "shell.safe"
+        return None
 
     def is_tool_allowed(self, name: str, session: ChatSession) -> bool:
         if session.session_id != self.control.session_id:
             return False
         if self.tools.get_tool(name):
-            if name in self.READ_TOOLS and not self.control.permissions["allow_reads"]:
+            if name in self.READ_TOOLS | {"discover_quality_gates"} and not self.control.permissions["allow_reads"]:
+                return False
+            action = self._tool_policy(name)
+            if action and self.control.permission_decision(action) == "deny":
                 return False
             mode_tools = self.READ_TOOLS if self.control.mode == "ask" else self.READ_TOOLS | {"update_plan"}
             if self.control.mode in {"ask", "plan"} and name not in mode_tools:
@@ -518,12 +689,13 @@ class CodingToolFilter:
                 return False
             if name == "run_command" and not self.control.permissions["allow_terminal"]:
                 return False
-            if name == "run_tests" and not self.control.permissions["allow_tests"]:
+            if name in {"run_tests", "run_quality_gate"} and not self.control.permissions["allow_tests"]:
                 return False
             return True
         definition = self.mcp_registry.get_tool(name) if self.mcp_registry else None
         return bool(definition and definition.source.startswith("mcp:")
                     and name in self.trusted_mcp_tools and self.control.permissions["allow_mcp"]
+                    and self.control.permission_decision("mcp") != "deny"
                     and self.control.mode not in {"ask", "plan"}
                     and definition.source[4:] in session.active_mcp_servers)
 
@@ -541,10 +713,13 @@ class CodingToolFilter:
             if self.control.failures.get(failure_key, 0) >= 3:
                 raise ValueError("Aynı işlem üç kez başarısız oldu; yöntem veya parametre değiştirin.")
             if not self.is_tool_allowed(name, session):
+                if self.control.excluded_paths and (name in {"run_command", "run_tests", "run_quality_gate"} or not self.tools.get_tool(name)):
+                    raise PermissionError("AI dışında tutulan dosyalar var; işletim sistemi sandboxı olmadan shell veya MCP bu dosyalara erişebilir. Bu araç engellendi.")
                 raise PermissionError("Bu araç çalışma modunda veya oturumda izinli değil.")
             arguments = json.loads(tool_call.function.arguments or "{}")
             if not isinstance(arguments, dict):
                 raise ValueError("Araç parametreleri bir JSON nesnesi olmalıdır.")
+            command_actions = []
             failure_key = _digest(json.dumps([name, arguments], sort_keys=True).encode())
             if self.control.failures.get(failure_key, 0) >= 3:
                 raise ValueError("Aynı işlem üç kez başarısız oldu; yöntem veya parametre değiştirin.")
@@ -556,29 +731,53 @@ class CodingToolFilter:
                                    if isinstance(arguments.get(key, ""), str))
                 if changed_text > MAX_OUTPUT_CHARS:
                     raise ValueError("Değişiklik çok büyük; hedefli ve incelenebilir küçük yamalara bölün.")
+                self._check_step(arguments.get("step_id"))
             if name in {"run_command", "run_tests"} and len(str(arguments.get("command", ""))) > 8000:
                 raise ValueError("Komut çok uzun; incelenebilir küçük komutlara bölün.")
             if name in self.EDIT_TOOLS:
                 if not self.control.permissions["allow_edits"]:
                     raise PermissionError("Dosya değişikliği izni kapalı.")
-                if name != "undo_change" and self.control.mode == "approved" and not self.control.plan:
+                if name != "undo_change" and self.control.mode in {"approved", "safe"} and not self.control.plan:
                     raise PermissionError("Onaylı uygulamada önce kabul kriterleri ve doğrulama yöntemiyle görev planı oluşturun.")
                 existing_overwrite = name == "write_file" and self._resolve(arguments["path"], must_exist=False).exists()
-                if self.control.mode == "approved" or name == "delete_file" or existing_overwrite:
+                action = self._tool_policy(name)
+                if self.control.permission_decision(action) == "ask" or name == "delete_file" or existing_overwrite:
                     await self.control.request_approval(name, arguments, "Dosya değişikliğini uygulamadan önce onayınız gerekiyor.")
             elif name in {"run_command", "run_tests"}:
                 permission = "allow_tests" if name == "run_tests" else "allow_terminal"
                 if not self.control.permissions[permission]:
                     raise PermissionError("Bu terminal işleminin izni kapalı.")
-                await self.control.request_approval(name, arguments,
+                command = arguments.get("command", "")
+                if re.search(r"(?i)(?:^|[\s;&|])(?:sudo|su)(?:\s|$)", command):
+                    raise PermissionError("Yükseltilmiş yetkili shell işlemleri engellendi.")
+                if re.search(r"(?i)\bgit\b.*\bpush\b.*(?:--force(?:-with-lease)?\b|\s-f\b)", command):
+                    raise PermissionError("Zorla Git push işlemi engellendi.")
+                actions = ["shell.safe"]
+                if re.search(r"(?i)(?:https?://|\b(?:curl|wget|ssh|scp|rsync)\b|\bgit\b.*\b(?:fetch|pull|push|clone)\b|\b(?:npm|pnpm|pip|pip3|yarn)\b.*\b(?:install|add|publish)\b)", command):
+                    actions += ["network", "shell.network"]
+                if re.search(r"(?i)\bgit\b.*\bcommit\b", command):
+                    actions.append("git.commit")
+                if re.search(r"(?i)\bgit\b.*\bpush\b", command):
+                    actions.append("git.push")
+                if any(self.control.permission_decision(action) == "deny" for action in actions):
+                    raise PermissionError("Komutun shell, ağ veya Git işlemi izin politikasında engellendi.")
+                command_actions = actions
+                await self.control.authorize("shell.safe", name, arguments,
                     "Komut yerel kullanıcı yetkileriyle çalışır; proje dışında erişim ve ağ kullanımı yapabilir. Bu komutu onaylayın.")
             elif not self.tools.get_tool(name):
                 for key, value in arguments.items():
                     if key in {"file", "file_path", "directory", "root", "project_path", "working_directory"} and isinstance(value, str):
                         self._resolve(value, must_exist=False)
-                await self.control.request_approval(name, arguments,
+                await self.control.authorize("mcp", name, arguments,
                     "Bu MCP çağrısının dış etkileri sunucuya bağlıdır; yalnız bu araç ve parametreler için onay gerekiyor.")
             await self.control.checkpoint()
+            if not self.is_tool_allowed(name, session):
+                raise PermissionError("İşlem başlamadan önce canlı izin politikası değişti.")
+            if any(self.control.permission_decision(action) == "deny" for action in command_actions):
+                raise PermissionError("Onay beklerken komutun ağ veya Git izni kapatıldı.")
+            if name in self.READ_TOOLS | {"discover_quality_gates"}:
+                action = self._tool_policy(name)
+                await self.control.authorize(action, name, arguments, "Bu proje okuma işlemi izin politikasında onay gerektiriyor.")
             registry = self.tools if self.tools.get_tool(name) else self.mcp_registry
             if registry is self.tools:
                 result = await registry.execute(tool_call)
@@ -640,7 +839,7 @@ class CodingToolFilter:
             raise ValueError("Liste sınırı 1–1000 arasında, başlangıcı sıfır veya büyük olmalıdır.")
         entries = []
         for p in sorted(directory.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower())):
-            if p.is_symlink() or p.name in IGNORED_DIRS or p.name.startswith(".") or is_sensitive_file(p, project_root=self.root) or p.suffix in IGNORED_EXTENSIONS:
+            if self._is_excluded(p) or p.is_symlink() or p.name in IGNORED_DIRS or p.name.startswith(".") or is_sensitive_file(p, project_root=self.root) or p.suffix in IGNORED_EXTENSIONS:
                 continue
             entries.append({"path": str(p.relative_to(self.root)), "name": p.name, "is_dir": p.is_dir()})
         return {"entries": entries[offset:offset + limit], "next_offset": offset + limit if len(entries) > offset + limit else None}
@@ -649,10 +848,10 @@ class CodingToolFilter:
         count = 0
         for base, directories, files in os.walk(self.root, followlinks=False):
             directories[:] = [d for d in directories if d not in IGNORED_DIRS and not d.startswith(".")
-                              and not (Path(base) / d).is_symlink()]
+                              and not (Path(base) / d).is_symlink() and not self._is_excluded(Path(base) / d)]
             for name in sorted(files):
                 path = Path(base) / name
-                if path.is_symlink() or name.startswith(".") or is_sensitive_file(path, project_root=self.root) or path.suffix in IGNORED_EXTENSIONS:
+                if self._is_excluded(path) or path.is_symlink() or name.startswith(".") or is_sensitive_file(path, project_root=self.root) or path.suffix in IGNORED_EXTENSIONS:
                     continue
                 if count >= 3000:
                     return
@@ -719,14 +918,31 @@ class CodingToolFilter:
         change = {"change_id": change_id, "path": relative, "step_id": step_id,
                   "before_hash": _digest(before) if before is not None else None,
                   "after_hash": _digest(after) if after is not None else None,
-                  "diff": safe_text(diff), "kind": "created" if before is None else "deleted" if after is None else "modified"}
+                  "diff": safe_text(diff), "kind": "created" if before is None else "deleted" if after is None else "modified",
+                  **self.control.actor_metadata()}
         self.control.changes.append(change)
+        self._invalidate_evidence("Dosya değişikliği doğrulama sonrasında uygulandı.")
+        if step_id:
+            for step in self.control.plan:
+                if step["id"] == step_id:
+                    step.update(status="in_progress", started_at=step.get("started_at") or datetime.now(timezone.utc).isoformat(),
+                                completed_at=None, result=None)
+            self.control.emit(AgentEventType.PLAN_UPDATED, "Uygulanan plan adımı güncellendi.", steps=self.control.plan)
         self.control.set_state("implementing")
         self.control.emit(AgentEventType.FILE_CHANGED, f"Dosya değişti: {relative}", **change)
         return change
 
+    def _check_step(self, step_id: Optional[str]) -> None:
+        if step_id is None:
+            return
+        lookup = {step["id"]: step for step in self.control.plan}
+        step = lookup.get(step_id)
+        if step is None or any(lookup[dependency]["status"] != "completed" for dependency in step.get("dependencies", [])):
+            raise ValueError("Değişiklik mevcut ve bağımlılıkları tamamlanmış bir plan adımına ait olmalıdır.")
+
     def edit_file(self, path: str, expected_hash: str, old_text: str, new_text: str,
                   step_id: Optional[str] = None) -> dict[str, Any]:
+        self._check_step(step_id)
         target, before = self._expected(path, expected_hash)
         original = before.decode("utf-8")
         if not old_text or original.count(old_text) != 1:
@@ -736,6 +952,7 @@ class CodingToolFilter:
         return self._record(target, before, after, step_id)
 
     def write_file(self, path: str, content: str, expected_hash: str, step_id: Optional[str] = None) -> dict[str, Any]:
+        self._check_step(step_id)
         target = self._resolve(path, must_exist=False)
         before = None
         if target.exists():
@@ -747,6 +964,7 @@ class CodingToolFilter:
         return self._record(target, before, after, step_id)
 
     def apply_patch(self, path: str, expected_hash: str, patch: str, step_id: Optional[str] = None) -> dict[str, Any]:
+        self._check_step(step_id)
         target, before = self._expected(path, expected_hash)
         source = before.decode("utf-8").splitlines(True)
         output: list[str] = []
@@ -798,6 +1016,7 @@ class CodingToolFilter:
         return self._record(target, before, after, step_id)
 
     def delete_file(self, path: str, expected_hash: str, step_id: Optional[str] = None) -> dict[str, Any]:
+        self._check_step(step_id)
         target, before = self._expected(path, expected_hash)
         self._replace(target, None, before)
         return self._record(target, before, None, step_id)
@@ -814,6 +1033,7 @@ class CodingToolFilter:
         for item in self.control.changes:
             if item["change_id"] == change_id:
                 item["undone"] = True
+        self._invalidate_evidence("Ajan değişikliği geri alındı; doğrulama yenilenmeli.")
         return record
 
     def undo_file(self, path: str) -> dict[str, Any]:
@@ -825,6 +1045,7 @@ class CodingToolFilter:
         return self.undo_change(change.id)
 
     async def run_command(self, command: str, cwd: str = ".", timeout: float = 60) -> dict[str, Any]:
+        started = time.monotonic()
         directory = self._resolve(cwd)
         if not directory.is_dir():
             raise ValueError("Komut çalışma yolu bir klasör olmalıdır.")
@@ -855,16 +1076,136 @@ class CodingToolFilter:
             translated = "Komut başlatılamadı: " + output.split(":", 1)[-1]
         return {"command": safe_text(command), "cwd": str(directory.relative_to(self.root)),
                 "exit_code": code, "timed_out": timed_out, "output": safe_text(translated),
+                "duration_sec": round(time.monotonic() - started, 3),
                 "passed": code == 0 and not timed_out}
 
     async def run_tests(self, command: str, cwd: str = ".", timeout: float = 60) -> ToolResult:
         self.control.set_state("verifying", "Doğrulama komutu çalıştırılıyor.")
+        revision = self.control.workspace_revision
+        before = await asyncio.to_thread(self._workspace_version)
         result = await self.run_command(command, cwd, timeout)
-        result.update({"evidence_id": f"verify_{uuid4().hex}", "kind": "test", "executed": True})
+        after = await asyncio.to_thread(self._workspace_version)
+        fresh = (before["complete"] and after["complete"] and before["digest"] == after["digest"]
+                 and revision == self.control.workspace_revision)
+        result.update({"evidence_id": f"verify_{uuid4().hex}", "kind": "test", "executed": True,
+                       "created_at": datetime.now(timezone.utc).isoformat(), "fresh": fresh,
+                       "workspace_revision": self.control.workspace_revision, "workspace_hash": after["digest"],
+                       "status": "passed" if result["passed"] and fresh else "failed" if not result["passed"] else "stale",
+                       **self.control.actor_metadata()})
+        if not fresh:
+            result["stale_reason"] = "Komut sırasında kaynak değişti veya kaynak taraması tamamlanamadı."
         self.control.verifications.append(result)
-        self._verified_evidence.add(result["evidence_id"])
+        self._evidence_versions[result["evidence_id"]] = after
+        if result["passed"] and fresh:
+            self._verified_evidence.add(result["evidence_id"])
         self.control.emit(AgentEventType.VERIFICATION, "Test başarılı." if result["passed"] else "Test başarısız veya çalıştırılamadı.", **result)
         return ToolResult(tool_call_id="", name="run_tests", content=json.dumps(result, ensure_ascii=False), is_error=not result["passed"])
+
+    def _workspace_version(self) -> dict[str, Any]:
+        """A bounded digest of safe source bytes, never a persisted source copy."""
+        hashes = {}
+        complete = True
+        total_bytes = 0
+        for path in self._files():
+            relative = str(path.relative_to(self.root))
+            try:
+                content = self._read_bytes(relative)
+                total_bytes += len(content)
+                if total_bytes > 20 * MAX_FILE_BYTES:
+                    complete = False
+                    break
+                hashes[relative] = _digest(content)
+            except (OSError, ValueError):
+                complete = False
+        if len(hashes) >= 3000:
+            complete = False
+        return {"digest": _digest(json.dumps(hashes, sort_keys=True).encode()), "complete": complete,
+                "file_hashes": hashes}
+
+    def _invalidate_evidence(self, reason: str) -> None:
+        self.control.workspace_revision += 1
+        self._verified_evidence.clear()
+        for evidence in self.control.verifications:
+            if evidence.get("kind") == "test" and evidence.get("fresh", True):
+                evidence.update(fresh=False, status="stale", stale_reason=reason)
+        for result in self.control.quality_results:
+            result.update(fresh=False, status="stale", stale_reason=reason)
+        for step in self.control.plan:
+            if step.get("status") == "completed":
+                step.update(status="pending", completed_at=None, result={"status": "stale", "reason": reason})
+        if self.control.verifications:
+            self.control.emit(AgentEventType.VERIFICATION, reason, status="stale", workspace_revision=self.control.workspace_revision)
+
+    def refresh_evidence(self) -> dict[str, Any]:
+        current = self._workspace_version()
+        stale = [identifier for identifier in list(self._verified_evidence)
+                 if not current["complete"] or self._evidence_versions.get(identifier, {}).get("digest") != current["digest"]]
+        if stale:
+            self._invalidate_evidence("Doğrulama sonrasında proje kaynakları dışarıdan değişti.")
+        return current
+
+    def discover_quality_gates(self) -> dict[str, Any]:
+        gates = discover_quality_gates(self.root, excluded_paths=self.control.excluded_paths)
+        self.configure_quality_gates(gates)
+        return {"gates": [gate.to_dict() for gate in gates], "sandbox": "none", "requires_approval": True}
+
+    def configure_quality_gates(self, gates) -> list[dict[str, Any]]:
+        specifications = validate_gates(gates)
+        self.control.quality_gates = [gate.to_dict() for gate in specifications]
+        self.control.emit(AgentEventType.QUALITY_GATE, "Kalite kapıları yapılandırıldı.",
+                          gates=self.control.quality_gates, status="configured")
+        return self.control.quality_gates
+
+    async def run_quality_gate(self, gate_id: str) -> ToolResult:
+        gate = next((value for value in self.control.quality_gates if value["id"] == gate_id), None)
+        if gate is None or not gate["enabled"]:
+            raise ValueError("Kalite kapısı bulunamadı veya etkin değil.")
+        self.control.emit(AgentEventType.QUALITY_GATE, "Kalite kapısı çalıştırılıyor.", gate_id=gate_id, status="running", kind=gate["kind"])
+        session = ChatSession(session_id=self.control.session_id)
+        call = ToolCall(id=f"gate_{uuid4().hex}", function={"name": "run_tests", "arguments": json.dumps(
+            {"command": gate["command"], "timeout": gate["timeout"]})})
+        result = await self.execute(call, session)
+        try:
+            data = json.loads(result.content)
+        except (TypeError, ValueError):
+            data = {"passed": False, "executed": False, "status": "blocked", "output": result.content}
+        data.update(gate_id=gate_id, gate_kind=gate["kind"], required=gate["required"])
+        if data.get("evidence_id"):
+            evidence = next(value for value in self.control.verifications if value.get("evidence_id") == data["evidence_id"])
+            evidence.update(gate_id=gate_id, gate_kind=gate["kind"])
+        self.control.quality_results.append(data)
+        self.control.emit(AgentEventType.QUALITY_GATE, "Kalite kapısı sonucu kaydedildi.", **data)
+        return ToolResult(tool_call_id="", name="run_quality_gate", content=json.dumps(data, ensure_ascii=False), is_error=result.is_error)
+
+    def completion_gate(self) -> dict[str, Any]:
+        """Read current source hashes before permitting a successful completion."""
+        self.refresh_evidence()
+        reasons = []
+        if self.control.state in {"blocked", "cancelled"}:
+            reasons.append("Çalışma engellendi veya durduruldu.")
+        if self.control.mode not in {"ask", "plan"}:
+            for step in self.control.plan:
+                if step["status"] != "completed":
+                    reasons.append(f"Plan adımı tamamlanmadı: {step['title']}")
+                elif not step.get("evidence_ids") or any(value not in self._verified_evidence for value in step["evidence_ids"]):
+                    reasons.append(f"Plan adımının güncel doğrulama kanıtı yok: {step['title']}")
+            for gate in self.control.quality_gates:
+                if not gate["enabled"] or not gate["required"]:
+                    continue
+                result = next((value for value in reversed(self.control.quality_results) if value["gate_id"] == gate["id"]), None)
+                if (not result or not result.get("passed") or result.get("evidence_id") not in self._verified_evidence
+                        or result.get("command") != safe_text(gate["command"])):
+                    reasons.append(f"Kalite kapısı başarılı ve güncel değil: {gate['kind']}")
+            if self.control.changes and not self.control.plan and not self._verified_evidence:
+                reasons.append("Dosya değişiklikleri güncel doğrulama gerektiriyor.")
+        result = {"passed": not reasons, "status": "passed" if not reasons else "blocked", "reasons": reasons,
+                  "workspace_revision": self.control.workspace_revision,
+                  "evidence_ids": sorted(self._verified_evidence)}
+        self.control.emit(AgentEventType.QUALITY_GATE, "Tamamlanma kontrolü başarılı." if not reasons else "Tamamlanma kontrolü engellendi.", **result)
+        return result
+
+    async def completion_gate_async(self) -> dict[str, Any]:
+        return await asyncio.to_thread(self.completion_gate)
 
     async def _git(self, *args: str) -> str:
         # Only fixed read-only argv are passed. No shell, external diff, pager or hooks.
@@ -896,9 +1237,12 @@ class CodingToolFilter:
         return await self._git("diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "--", *paths[:1000])
 
     def update_plan(self, steps: list[dict[str, Any]]) -> dict[str, Any]:
+        self.refresh_evidence()
         if not isinstance(steps, list) or len(steps) > 50:
             raise ValueError("Plan en fazla 50 adım içermelidir.")
         cleaned = []
+        previous = {step["id"]: step for step in self.control.plan}
+        now = datetime.now(timezone.utc).isoformat()
         for index, step in enumerate(steps):
             if not isinstance(step, dict) or not step.get("title"):
                 raise ValueError("Her plan adımının başlığı olmalıdır.")
@@ -909,6 +1253,29 @@ class CodingToolFilter:
                 raise ValueError("Planla modunda uygulama adımları tamamlanmış olarak işaretlenemez.")
             criteria, verification = step.get("acceptance_criteria", []), step.get("verification", "")
             evidence = step.get("evidence_ids", [])
+            identifier = str(step.get("id", f"step_{index + 1}"))
+            old = previous.get(identifier, {})
+            dependencies = step.get("dependencies", step.get("depends_on", []))
+            assigned = step.get("assigned_agent", step.get("assignedAgent", old.get("assigned_agent")))
+            started = step.get("started_at", step.get("startedAt", old.get("started_at")))
+            completed = step.get("completed_at", step.get("completedAt", old.get("completed_at")))
+            result = step.get("result", old.get("result") if status != "completed" else None)
+            if (not isinstance(dependencies, list) or not all(isinstance(value, str) and value for value in dependencies)
+                    or len(dependencies) != len(set(dependencies)) or identifier in dependencies):
+                raise ValueError("Plan bağımlılıkları benzersiz başka adım kimlikleri olmalıdır.")
+            if assigned is not None and (not isinstance(assigned, str) or not assigned.strip() or len(assigned) > 200):
+                raise ValueError("Atanan ajan kimliği geçersiz.")
+            for timestamp in (started, completed):
+                if timestamp is not None:
+                    try:
+                        _plan_time(timestamp)
+                    except (TypeError, ValueError, AttributeError):
+                        raise ValueError("Plan zaman damgaları ISO-8601 biçiminde olmalıdır.") from None
+            if result is not None and (not isinstance(result, (str, dict)) or len(json.dumps(result)) > MAX_OUTPUT_CHARS):
+                raise ValueError("Plan sonucu kısa bir metin veya yapılandırılmış nesne olmalıdır.")
+            if status == "completed" and isinstance(result, dict) and (result.get("passed") is False
+                    or result.get("status") in {"failed", "blocked", "unverified", "stale"}):
+                raise ValueError("Başarısız veya doğrulanmamış sonuçla plan adımı tamamlanamaz.")
             if not isinstance(criteria, list) or not all(isinstance(item, str) for item in criteria):
                 raise ValueError("Kabul kriterleri metin listesinden oluşmalıdır.")
             if not isinstance(evidence, list) or not all(isinstance(item, str) for item in evidence):
@@ -918,21 +1285,52 @@ class CodingToolFilter:
                     or any(not item.get("passed") for item in self.control.verifications
                            if item.get("kind") == "test" and item.get("evidence_id") in evidence)):
                 raise ValueError("Tamamlanan adımın kabul kriterleri, doğrulama yöntemi ve başarılı gerçek araç kanıtı olmalıdır.")
-            cleaned.append({"id": str(step.get("id", f"step_{index + 1}")), "title": safe_text(str(step["title"])),
+            if status in {"in_progress", "completed"}:
+                started = started or now
+            if status == "completed":
+                completed = completed or now
+                result = result if result is not None else {"status": "passed", "evidence_ids": list(evidence)}
+            else:
+                completed = None
+            if started and completed and _plan_time(completed) < _plan_time(started):
+                raise ValueError("Plan tamamlanma zamanı başlangıçtan önce olamaz.")
+            cleaned.append({"id": identifier, "title": safe_text(str(step["title"])),
+                            "description": safe_text(str(step.get("description", old.get("description", "")))),
                             "status": status, "acceptance_criteria": [safe_text(str(c)) for c in criteria],
-                            "verification": safe_text(str(verification)), "evidence_ids": list(evidence)})
+                            "verification": safe_text(str(verification)), "evidence_ids": list(evidence),
+                            "dependencies": dependencies, "assigned_agent": assigned,
+                            "started_at": started, "completed_at": completed, "result": safe_payload(result)})
         if len({step["id"] for step in cleaned}) != len(cleaned):
             raise ValueError("Plan adımı kimlikleri birbirinden farklı olmalıdır.")
+        lookup = {step["id"]: step for step in cleaned}
+        visiting, visited = set(), set()
+        def visit(identifier):
+            if identifier in visiting:
+                raise ValueError("Plan bağımlılıkları döngü içeremez.")
+            if identifier in visited:
+                return
+            visiting.add(identifier)
+            for dependency in lookup[identifier]["dependencies"]:
+                if dependency not in lookup:
+                    raise ValueError("Plan bağımlılığı mevcut bir adımı göstermelidir.")
+                visit(dependency)
+            visiting.remove(identifier)
+            visited.add(identifier)
+        for step in cleaned:
+            visit(step["id"])
+            if step["status"] in {"in_progress", "completed"} and any(lookup[value]["status"] != "completed" for value in step["dependencies"]):
+                raise ValueError("Plan adımı başlamadan önce bağımlılıkları tamamlanmalıdır.")
         self.control.plan = cleaned
         self.control.set_state("planning")
         self.control.emit(AgentEventType.PLAN_UPDATED, "Görev planı güncellendi.", steps=cleaned)
         return {"steps": cleaned}
 
     def record_verification(self, criterion: str, status: str, evidence_id: str = "", detail: str = "") -> dict[str, Any]:
+        self.refresh_evidence()
         if status not in {"passed", "failed", "unverified"}:
             raise ValueError("Doğrulama durumu passed, failed veya unverified olmalıdır.")
         evidence = next((v for v in self.control.verifications if v.get("evidence_id") == evidence_id), None)
-        if status == "passed" and (evidence_id not in self._verified_evidence or not evidence or not evidence.get("passed")):
+        if status == "passed" and (evidence_id not in self._verified_evidence or not evidence or not evidence.get("passed") or not evidence.get("fresh")):
             raise ValueError("Başarılı kriter gerçek başarılı araç kanıtı gerektirir.")
         result = {"criterion": safe_text(criterion), "status": status, "evidence_id": evidence_id,
                   "detail": safe_text(detail), "kind": "criterion"}

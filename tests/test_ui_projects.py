@@ -286,7 +286,17 @@ def test_coding_changes_activity_preview_and_editor(tmp_path, monkeypatch):
         call = streams[-1]
         emit = lambda event_type, **kwargs: call["on_event"](AgentEvent(type=event_type, session_id=call["session_id"], **kwargs))
         emit(AgentEventType.TOOL_CALL_STARTED, tool_name="write_file", arguments={"path": "main.py", "content": "print('new')\n"})
-        assert "Çalışıyor" in pv.coding_activity_list.winfo_children()[0].winfo_children()[0].winfo_children()[0].cget("text")
+        # Assert the visible evidence card, independent of retained empty-state
+        # widgets or the number of nested layout frames.
+        card = next(value[1] for value in pv._coding_evidence_cache["activity"].values())
+        pending = list(card.winfo_children())
+        labels = []
+        while pending:
+            widget = pending.pop()
+            if isinstance(widget, ctk.CTkLabel):
+                labels.append(widget.cget("text"))
+            pending.extend(widget.winfo_children())
+        assert any("Çalışıyor" in text for text in labels)
         (root / "main.py").write_text("print('new')\n")
         (root / "new.py").write_text("new = True\n")
         (root / "remove.py").unlink()

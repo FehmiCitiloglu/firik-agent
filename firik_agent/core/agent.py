@@ -1,12 +1,12 @@
 from __future__ import annotations
 import asyncio
+import inspect
 import json
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 from firik_agent.core.compaction import ContextCompactor, CompactionState, estimate_tokens
 from firik_agent.config import load_config
@@ -15,8 +15,6 @@ from firik_agent.core.shell import run_shell
 from firik_agent.core.tools import ToolRegistry
 from firik_agent.core.types import (
     Message,
-    ModelInfo,
-    StreamChunk,
     ToolCall,
     ToolCallFunction,
     ToolDefinition,
@@ -24,12 +22,10 @@ from firik_agent.core.types import (
 )
 from firik_agent.mcp.manager import MCPManager
 from firik_agent.plugins.manager import PluginManager
-from firik_agent.providers.base import BaseProvider
 from firik_agent.providers.registry import ProviderRegistry
 import time
 from firik_agent.core.events import AgentEvent, AgentEventType
 from firik_agent.core.session import ChatSession, SessionToolFilter
-from firik_agent.mcp.models import redact_secrets
 from firik_agent.skills.manager import SkillManager
 
 logger = logging.getLogger(__name__)
@@ -694,7 +690,7 @@ class Agent:
             if session is None or sid != run_control.session_id or session_tool_filter is None:
                 raise ValueError("Kodlama çalışması doğru oturum ve izin yürütücüsü gerektirir.")
             await run_control.checkpoint()
-            from firik_agent.projects.coding_runtime import repair_tool_history, sanitize_message, safe_text
+            from firik_agent.projects.coding_runtime import repair_tool_history, sanitize_message
             repair_tool_history(msg_target)
             msg_target[:] = [sanitize_message(message) for message in msg_target]
             prompt = sanitize_message(Message(role="user", content=prompt)).content or ""
@@ -710,6 +706,11 @@ class Agent:
         while iteration_limit is None or iteration < iteration_limit:
             if run_control:
                 await run_control.checkpoint()
+                drain = getattr(run_control, "drain_pending_messages", None)
+                if drain:
+                    result = drain(session)
+                    if inspect.isawaitable(result):
+                        await result
             if cancel_event and cancel_event.is_set():
                 yield event(type=AgentEventType.DONE, session_id=sid, content="Çalışma kullanıcı tarafından durduruldu.")
                 return
@@ -769,6 +770,8 @@ class Agent:
                 system_messages.append(Message(role="system", content="Kayıtlı görev durumu:\n" + json.dumps(safe_payload({
                     "state": run_control.state, "plan": run_control.plan,
                     "verifications": run_control.verifications, "decisions": run_control.decisions}), ensure_ascii=False)))
+            compaction_enabled = self.context_compactor.enabled and (
+                run_control is None or getattr(run_control, "permit_context_compaction", True))
             budget = self.context_compactor.input_budget(window, session.max_tokens if session else 2048,
                                                          estimate_tokens(system_messages, tools_schemas))
             state = session.compaction if session else self.compaction
@@ -778,7 +781,8 @@ class Agent:
                 if cancel_event and cancel_event.is_set():
                     raise asyncio.CancelledError()
             try:
-                if self.context_compactor.needs_compaction(state, msg_target, system_messages, tools_schemas, budget):
+                if compaction_enabled and self.context_compactor.needs_compaction(
+                        state, msg_target, system_messages, tools_schemas, budget):
                     yield event(type=AgentEventType.CONTEXT_COMPACTION_STARTED, session_id=sid,
                                 content="Bağlam otomatik olarak sıkıştırılıyor…")
                     details = await self.context_compactor.compact(state, msg_target, system_messages, tools_schemas,
@@ -789,7 +793,7 @@ class Agent:
                 request_messages = system_messages + state.view(msg_target)
                 if run_control:
                     from firik_agent.projects.coding_runtime import prepare_coding_messages, sanitize_message
-                    if self.context_compactor.enabled:
+                    if compaction_enabled:
                         request_messages = [sanitize_message(message) for message in request_messages]
                         if estimate_tokens(request_messages, tools_schemas) > budget:
                             raise ValueError("Hazırlanan bağlam model bütçesine sığmıyor.")
@@ -801,6 +805,12 @@ class Agent:
             except Exception as exc:
                 yield event(type=AgentEventType.ERROR, session_id=sid, content=f"Bağlam hazırlığı başarısız: {exc}")
                 return
+            if run_control:
+                before_request = getattr(run_control, "before_model_request", None)
+                if before_request:
+                    result = before_request(session, request_messages, tools_schemas)
+                    if inspect.isawaitable(result):
+                        await result
 
             if not run_control:
                 await self.plugins.dispatch_model_request(request_messages, tools_schemas)
@@ -813,9 +823,21 @@ class Agent:
             reasoning_accum: List[str] = []
             stream_tool_calls: List[ToolCall] = []
             received_chunk = False
+            request_started = time.monotonic()
+            first_token_at = None
+            last_usage = {}
+            retries = 0
+            request_metadata = {"iteration": iteration}
+            if run_control:
+                from firik_agent.projects.context_inspector import inspect_request_context
+                request_metadata["context_inspector"] = inspect_request_context(
+                    request_messages, tools_schemas, run_control.capabilities,
+                    visibility_report=getattr(run_control, "visibility_report", None),
+                    context_items=getattr(run_control, "context_items", None), output_tokens=session.max_tokens,
+                    agent_instructions=base_sys)
 
             yield event(type=AgentEventType.MODEL_REQUEST_STARTED, session_id=sid,
-                             metadata={"iteration": iteration})
+                             metadata=request_metadata)
             try:
                 async for chunk in provider.chat_stream(
                     messages=request_messages,
@@ -824,6 +846,8 @@ class Agent:
                     max_tokens=session.max_tokens if session else 2048,
                 ):
                     received_chunk = True
+                    if first_token_at is None and (chunk.delta_content or chunk.delta_reasoning or chunk.tool_calls):
+                        first_token_at = time.monotonic()
                     if run_control:
                         await run_control.checkpoint()
                     if cancel_event and cancel_event.is_set():
@@ -831,8 +855,10 @@ class Agent:
                         return
 
                     if chunk.usage:
+                        last_usage = chunk.usage
                         yield event(type=AgentEventType.MODEL_USAGE, session_id=sid,
-                                    metadata={"usage": chunk.usage, "model": session.model if session else provider.current_model})
+                                    metadata={"usage": chunk.usage, "iteration": iteration,
+                                              "model": session.model if session else provider.current_model})
 
                     if chunk.delta_reasoning:
                         reasoning_accum.append(chunk.delta_reasoning)
@@ -854,7 +880,7 @@ class Agent:
                         stream_tool_calls.extend(chunk.tool_calls)
 
             except Exception as e:
-                if received_chunk:
+                if received_chunk or (run_control and getattr(run_control, "permit_provider_fallback", True) is False):
                     # Reissuing after partial output could repeat a provider-side request.
                     yield event(type=AgentEventType.ERROR, session_id=sid,
                                 content=f"Model akışı kesildi; kısmi yanıt yeniden gönderilmedi: {e}")
@@ -862,6 +888,7 @@ class Agent:
                 # If stream fails or not supported, attempt non-streaming fallback
                 logger.warning("Streaming provider call error (%s); trying fallback chat(): %s", type(e).__name__, e)
                 try:
+                    retries = 1
                     fallback_resp = await provider.chat(
                         messages=request_messages,
                         tools=tools_schemas if tools_schemas else None,
@@ -880,6 +907,22 @@ class Agent:
                         await self.plugins.dispatch_error(ex2)
                     yield event(type=AgentEventType.ERROR, session_id=sid, content=f"Model isteği başarısız: {ex2}")
                     return
+
+            if run_control:
+                from firik_agent.projects.model_capabilities import estimate_usage_cost
+                cost_report = estimate_usage_cost(last_usage, run_control.capabilities)
+                if cost_report.get("cost") is not None:
+                    last_usage = {**last_usage, "cost": cost_report["cost"]}
+                elapsed = max(0.000001, time.monotonic() - request_started)
+                output_tokens = last_usage.get("completion_tokens", last_usage.get("output_tokens"))
+                generation_elapsed = time.monotonic() - first_token_at if first_token_at else None
+                metrics = {"latency_ms": elapsed * 1000, "retry_count": retries,
+                           "ttft_ms": (first_token_at - request_started) * 1000 if first_token_at else None,
+                           "tokens_per_sec": output_tokens / generation_elapsed
+                           if isinstance(output_tokens, (int, float)) and generation_elapsed and generation_elapsed > 0 else None}
+                yield event(type=AgentEventType.MODEL_USAGE, session_id=sid,
+                            metadata={"iteration": iteration, "usage": last_usage, "metrics": metrics,
+                                      "model": session.model, "cost_report": cost_report})
 
             if run_control and stream_tool_calls and run_control.capabilities.get("supports_tools") is False:
                 yield event(type=AgentEventType.ERROR, session_id=sid,

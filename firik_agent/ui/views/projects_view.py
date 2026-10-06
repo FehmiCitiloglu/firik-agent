@@ -7,50 +7,32 @@ kodlama oturumlarını yöneten merkezi masaüstü çalışma alanı.
 """
 from __future__ import annotations
 
-import datetime
 import hashlib
-import json
-import re
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import Any, Callable, Dict, List, Optional
-import uuid
+from typing import Any, Dict, List, Optional
 
 import customtkinter as ctk
 
-from firik_agent.core.events import AgentEventType
-from firik_agent.projects.context_builder import ProjectContextBuilder
 from firik_agent.projects.analyzer import detect_tech_stack
 from firik_agent.projects.git_service import GitService
 from firik_agent.projects.indexer import is_sensitive_file
 from firik_agent.projects.workspace import workspace_path
-from firik_agent.mcp.models import redact_secrets
 from firik_agent.projects.models import (
-    AISuggestion,
-    ArchitectureDecision,
-    AutonomyLevel,
-    Bug,
-    Feature,
     FeatureStatus,
-    Priority,
     Project,
-    ProjectInstruction,
-    ProjectMemory,
-    ProjectStatus,
-    PromptTemplate,
     Task,
     TaskStatus,
-    TaskType,
 )
 from firik_agent.projects.service import ProjectService
 from firik_agent.ui.service import FirikService
-from firik_agent.ui.editor import EDITORS, open_in_editor
-from firik_agent.ui.theme import THEME_COLORS
+from firik_agent.ui.editor import open_in_editor
 from firik_agent.ui.views.git_view import GitView
 from firik_agent.ui.coding_workspace import CodingWorkspaceMixin
+from firik_agent.ui.coding_evidence import CodingEvidenceMixin
 
 
-class ProjectsView(CodingWorkspaceMixin, ctk.CTkFrame):
+class ProjectsView(CodingEvidenceMixin, CodingWorkspaceMixin, ctk.CTkFrame):
     """Ana Projeler Çalışma Alanı Görünümü."""
 
     def __init__(self, master: Any, service: FirikService, **kwargs: Any) -> None:
@@ -269,7 +251,7 @@ class ProjectsView(CodingWorkspaceMixin, ctk.CTkFrame):
             name_box,
             text=p.name,
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#f8fafc",
+            text_color=("#172033", "#f8fafc"),
             anchor="w",
         )
         name_lbl.pack(anchor="w")
@@ -585,17 +567,32 @@ class ProjectsView(CodingWorkspaceMixin, ctk.CTkFrame):
             title_box,
             text=f"{p.icon}  {p.name}",
             font=ctk.CTkFont(size=16, weight="bold"),
-            text_color="#f8fafc",
+            text_color=("gray15", "#f8fafc"),
         )
         title_line.pack(side="left")
 
         branch_lbl = ctk.CTkLabel(
             title_box,
-            text=f"  🌿 {p.active_branch}",
+            text="  Git durumu yükleniyor…",
             font=ctk.CTkFont(size=11),
             text_color="#38bdf8",
         )
         branch_lbl.pack(side="left")
+        def display_git(state):
+            if self.current_project_id == p.id and branch_lbl.winfo_exists():
+                if state.get("is_repository"):
+                    text = f"  🌿 {state.get('branch') or 'HEAD'} · {state['changed_files']} değişiklik"
+                    if state.get("upstream_known"):
+                        text += f" · ↑{state.get('ahead', 0)} ↓{state.get('behind', 0)}"
+                else:
+                    text = "  Git deposu yok" if "not a git repository" in state.get("error", "").lower() else "  Git durumu okunamadı"
+                branch_lbl.configure(text=text)
+        source = self.service.git_state
+        listener = source.subscribe(p.local_path, lambda state: self.service._dispatch(display_git, state))
+        # CustomTkinter binds to the frame's native canvas; that destruction
+        # event owns the subscription just as the visible header does.
+        header.bind("<Destroy>", lambda event: source.unsubscribe(listener), add="+")
+        self.service._coding_background(lambda: source.refresh(p.local_path), display_git, lambda error: None)
 
         path_lbl = ctk.CTkLabel(
             title_box,
@@ -683,9 +680,27 @@ class ProjectsView(CodingWorkspaceMixin, ctk.CTkFrame):
             btn.configure(width=130)
             self.tab_buttons[tid] = btn
 
+        groups = {
+            "Planlama": ["tasks", "features", "backlog", "roadmap", "bugs_debt", "ai_pm"],
+            "Bilgi": ["docs_adr", "memory", "search_ask"],
+        }
+        tab_labels = dict(tabs)
+        self.workspace_groups = {}
+        def choose_group(value, identifiers):
+            selected = next((key for key in identifiers if tab_labels[key] == value), None)
+            if selected:
+                self._switch_workspace_tab(selected)
+        for name, identifiers in groups.items():
+            values = [name, *[tab_labels[key] for key in identifiers]]
+            combo = ctk.CTkComboBox(sub_nav, values=values, state="readonly", width=155,
+                command=lambda value, ids=identifiers: choose_group(value, ids))
+            combo.set(tab_labels[self.active_workspace_tab] if self.active_workspace_tab in identifiers else name)
+            self.workspace_groups[name] = combo
+        visible_nav = [self.tab_buttons[key] for key in ("overview", "coding", "git")]
+        visible_nav += list(self.workspace_groups.values()) + [self.tab_buttons["settings"]]
         def layout_tabs(event):
             columns = max(1, event.width // 134)
-            for index, button in enumerate(self.tab_buttons.values()):
+            for index, button in enumerate(visible_nav):
                 button.grid(row=index // columns, column=index % columns, padx=2, pady=2, sticky="ew")
         sub_nav.bind("<Configure>", layout_tabs)
         layout_tabs(type("Size", (), {"width": 700})())
@@ -1060,51 +1075,10 @@ class ProjectsView(CodingWorkspaceMixin, ctk.CTkFrame):
         ctk.CTkButton(dialog, text="Editörde Aç", command=open_file).grid(row=2, column=0, sticky="e", padx=12, pady=10)
 
     def _refresh_coding_activity(self) -> None:
-        for widget in self.coding_activity_list.winfo_children():
-            widget.destroy()
-        activities = self._coding_state()["activities"]
-        if not activities:
-            ctk.CTkLabel(self.coding_activity_list, text="Ajanın komutları ve araç sonuçları burada görünür.", wraplength=350).pack(anchor="w")
-        for activity in activities:
-            card = ctk.CTkFrame(self.coding_activity_list)
-            card.pack(fill="x", pady=4)
-            header = ctk.CTkFrame(card, fg_color="transparent")
-            header.pack(fill="x", padx=8, pady=4)
-            header.grid_columnconfigure(0, weight=1)
-            color = {"Çalışıyor": "#f59e0b", "Tamamlandı": "#10b981", "Hata": "#f87171"}.get(activity["status"], "#94a3b8")
-            duration = f" · {activity['duration_ms'] / 1000:.2f} sn" if activity.get("duration_ms") is not None else ""
-            ctk.CTkLabel(header, text=f"{activity['tool']} · {activity['status']}{duration}", text_color=color, anchor="w").grid(row=0, column=0, sticky="ew")
-            ctk.CTkButton(header, text="Detay", width=55, height=24,
-                          command=lambda a=activity: self._show_coding_activity(a)).grid(row=0, column=1)
-            def toggle(a=activity):
-                a["expanded"] = not a.get("expanded", False)
-                self._refresh_coding_activity()
-            ctk.CTkButton(header, text="Kapat" if activity.get("expanded") else "Aç", width=45, height=24,
-                          command=toggle).grid(row=0, column=2, padx=3)
-            args = activity.get("arguments", {})
-            detail = args.get("command") or args.get("path") or args.get("görev") or ""
-            if detail:
-                ctk.CTkLabel(card, text=redact_secrets(str(detail))[:500], anchor="w", justify="left", wraplength=350).pack(fill="x", padx=8, pady=(0, 6))
-            if activity.get("expanded"):
-                output = ctk.CTkTextbox(card, height=140, wrap="none", font=ctk.CTkFont(family="monospace", size=11))
-                output.pack(fill="x", padx=8, pady=6)
-                output.insert("end", redact_secrets(json.dumps(args, ensure_ascii=False, indent=2) + "\n\n" +
-                              str(activity.get("output") or "Sonuç bekleniyor."))[:12000])
-                output.configure(state="disabled")
+        return CodingEvidenceMixin._refresh_coding_activity(self)
 
     def _show_coding_activity(self, activity: Dict[str, Any]) -> None:
-        dialog = ctk.CTkToplevel(self)
-        dialog.title(f"{activity['tool']} · {activity['status']}")
-        dialog.geometry("800x550")
-        dialog.transient(self.winfo_toplevel())
-        box = ctk.CTkTextbox(dialog, wrap="word", font=ctk.CTkFont(family="monospace", size=12))
-        box.pack(fill="both", expand=True, padx=12, pady=12)
-        args = json.dumps(activity.get("arguments", {}), indent=2, ensure_ascii=False)
-        content = f"Parametreler:\n{args}\n\nÇıktı:\n{activity.get('output') or 'Sonuç bekleniyor.'}"
-        box.insert("end", redact_secrets(content))
-        box.configure(state="disabled")
-
-
+        return CodingEvidenceMixin._show_coding_activity(self, activity)
 
     def _handle_coding_return(self, event=None) -> str:
         self.coding_send_btn.invoke()

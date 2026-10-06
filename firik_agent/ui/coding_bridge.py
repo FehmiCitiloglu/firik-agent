@@ -14,15 +14,16 @@ import time
 from uuid import uuid4
 
 from firik_agent.core.agent import Agent
-from firik_agent.core.events import AgentEvent, AgentEventType
+from firik_agent.core.events import AgentEventType
 from firik_agent.core.session import ChatSession
 from firik_agent.core.types import Message
 from firik_agent.mcp.models import redact_secrets
+from firik_agent.ui.coding_actions import CodingActions
 
 logger = logging.getLogger(__name__)
 
 
-class CodingBridge:
+class CodingBridge(CodingActions):
     def _init_coding_bridge(self):
         from firik_agent.projects.coding_sessions import CodingSessionStore
         def configured_secrets(value):
@@ -40,6 +41,13 @@ class CodingBridge:
         self.coding_store.recover_interrupted()
         self._coding_controls = {}
         self._coding_filters = {}
+        self._coding_managers = {}
+        self._coding_session_projects = {}
+        self._coding_steering = {}
+        from firik_agent.projects.checkpoints import CheckpointStore
+        self.checkpoint_store = CheckpointStore(self.projects.db, known_secrets=self._coding_known_secrets)
+        from firik_agent.projects.git_state import GitStateStore
+        self.git_state = GitStateStore()
 
     def prepare_coding_async(self, project_id, prompt, on_success, on_error, **options):
         def prepare_context():
@@ -51,15 +59,7 @@ class CodingBridge:
                 selected_provider = provider or settings.coding_preferences.get("provider") or self.provider
                 session = self.sessions.get(options.get("session_id"))
                 selected_model = model or (session.model if session is not None else settings.coding_model)
-                config = self.config.get("providers", {}).get(selected_provider, {})
-                configured = config.get("models", []) if isinstance(config, dict) else []
-                if isinstance(configured, dict):
-                    metadata = configured.get(selected_model)
-                elif isinstance(configured, (list, tuple)):
-                    metadata = next((entry for entry in configured if isinstance(entry, dict)
-                                     and entry.get("id") == selected_model), None)
-                else:
-                    metadata = None
+                metadata = self._coding_metadata(selected_provider, selected_model)
                 # Only explicit config evidence is accepted. ModelInfo defaults
                 # and model-name guesses cannot establish a capability.
                 if isinstance(metadata, dict):
@@ -89,6 +89,9 @@ class CodingBridge:
             session.messages = [Message.model_validate(self._coding_redact(m)) for m in record.messages
                                 if m.get("role") in {"user", "assistant"} and not m.get("tool_calls")]
         self.sessions[session.session_id] = session
+        if not hasattr(self, "_coding_session_projects"):
+            self._coding_session_projects = {}
+        self._coding_session_projects[session.session_id] = project_id
         return session, record
 
     def coding_control(self, session_id, action, request_id=None, allowed=False):
@@ -125,7 +128,7 @@ class CodingBridge:
 
     def _coding_stream_async(self, session_id, prompt, cwd, on_event, on_done, on_error, options):
         from firik_agent.projects.coding_runtime import CodingRunControl, CodingToolFilter
-        from firik_agent.projects.coding_sessions import ACTIVE_STATUSES
+        from firik_agent.projects.coding_sessions import ACTIVE_STATUSES, TERMINAL_STATUSES
         if not cwd:
             raise ValueError("Kodlama çalışması için proje klasörü gerekli.")
         project_id = options.get("project_id")
@@ -158,6 +161,8 @@ class CodingBridge:
                     self._stream_futures.pop(session_id, None)
                 if control is not None and self._coding_controls.get(session_id) is control:
                     self._coding_controls.pop(session_id, None)
+                self._coding_managers.pop(session_id, None)
+                self._coding_steering.pop(session_id, None)
 
         def notify(status, final):
             if notified.is_set():
@@ -200,7 +205,7 @@ class CodingBridge:
             current_status = status or state["terminal_status"] or snapshot["state"]
             if current_status == "implementing":
                 current_status = "applying"
-            if current_status not in ACTIVE_STATUSES | {"completed", "failed", "cancelled", "interrupted"}:
+            if current_status not in ACTIVE_STATUSES | TERMINAL_STATUSES:
                 current_status = "running"
             usage = {}
             for values in usage_requests.values():
@@ -258,7 +263,12 @@ class CodingBridge:
                 elif event.type == AgentEventType.TEXT_DELTA:
                     state["partial"] += safe.content or ""
                 elif event.type == AgentEventType.MODEL_USAGE:
-                    usage_requests[state["iteration"]] = safe.metadata.get("usage", {})
+                    from firik_agent.projects.model_capabilities import estimate_usage_cost
+                    usage = dict(safe.metadata.get("usage", {}))
+                    cost = estimate_usage_cost(usage, control.capabilities)
+                    if cost.get("cost") is not None:
+                        usage["cost"] = cost["cost"]
+                    usage_requests[state["iteration"]] = usage
                 elif event.type == AgentEventType.APPROVAL_DECIDED:
                     decisions.append({"kind": "approval", **safe.metadata})
                 elif event.type in {AgentEventType.TOOL_CALL_RESULT, AgentEventType.TOOL_CALL_ERROR}:
@@ -295,7 +305,7 @@ class CodingBridge:
                 state["prior_count"] = len(session.messages)
                 state["initial_messages"] = [m.model_dump(exclude_none=True) for m in session.messages] + [{"role": "user", "content": safe_prompt}]
                 previous = self.coding_store.latest_run(project_id, session_id=session_id)
-                continuation = previous if previous and previous.status in {"interrupted", "failed", "cancelled"} else None
+                continuation = previous if previous and previous.status in {"interrupted", "failed", "cancelled", "blocked"} else None
                 legacy = self.projects.db.get_settings(project_id).permissions
                 permissions = dict(options.get("permissions") or {})
                 denied = {"never", "deny"}
@@ -309,8 +319,21 @@ class CodingBridge:
                         permissions.update({capability: False for capability in capabilities})
                 control = CodingRunControl(session_id=session_id, project_id=project_id, task_id=task_id,
                                            mode=options.get("mode", "approved"), permissions=permissions,
-                                           run_id=run_id)
+                                           run_id=run_id, policy=options.get("policy"),
+                                           excluded_paths=options.get("excluded_paths", []))
                 control.capabilities = dict(options.get("capabilities", {}))
+                control.visibility_report = options.get("visibility_report", [])
+                control.context_items = options.get("context_items", [])
+                control.excluded_paths = options.get("excluded_paths", [])
+                def drain_messages(target):
+                    with self._stream_lock:
+                        pending = self._coding_steering.pop(session_id, [])
+                    for message in pending:
+                        target.messages.append(Message(role="user", content=message))
+                    manager = self._coding_managers.get(session_id)
+                    if manager:
+                        manager.drain_parent_messages(target)
+                control.drain_pending_messages = drain_messages
                 for index, step in enumerate(options.get("previous_plan", [])[:50]):
                     if isinstance(step, dict) and step.get("title"):
                         control.plan.append(self._coding_redact({**step, "id": step.get("id", f"step_{index + 1}"),
@@ -319,13 +342,17 @@ class CodingBridge:
                 record = self.coding_store.create_run(
                     project_id, task_id=task_id, session_id=session_id, run_id=run_id,
                     provider=options.get("provider", self.provider), model=session.model, mode=control.mode,
-                    permissions=control.permissions, user_request=safe_prompt,
+                    permissions={**control.permissions, **control.policy_snapshot()}, user_request=safe_prompt,
                     resumed_from=continuation.id if continuation else None,
                 )
                 self.coding_store.update_run(run_id, messages=self._coding_redact(state["initial_messages"]),
                     context_report=options.get("visibility_report", []))
                 self._coding_controls[session_id] = control
+                self._coding_session_projects[session_id] = project_id
                 control.on_event = receive
+                for skill in options.get("selected_skills", [])[:30]:
+                    control.emit(AgentEventType.SKILL_ACTIVATED, f"Beceri talimatları bağlama eklendi: {skill}",
+                                 skill=skill, source="selected_instructions")
                 if legacy.get("network_access") in denied or legacy.get("install_packages") in denied:
                     control.emit(AgentEventType.TASK_STATE,
                         "Proje izinleri ağ erişimini veya paket kurulumunu engelliyor; genel terminal ve test komutları kapatıldı.",
@@ -360,13 +387,29 @@ class CodingBridge:
                     # Track attempts too: acquire may add a session association
                     # before a failed network connection needs cleanup.
                     acquired.add(name)
+                    control.emit(AgentEventType.MCP_CONNECTING, f"MCP bağlantısı kuruluyor: {name}", server=name)
                     if await self.mcp_manager.acquire_for_session(session_id, name):
                         connected.add(name)
+                        control.emit(AgentEventType.MCP_CONNECTED, f"MCP bağlantısı hazır: {name}", server=name)
+                    else:
+                        control.emit(AgentEventType.MCP_ERROR, f"MCP bağlantısı kurulamadı: {name}", server=name, status="failed")
                 session.active_mcp_servers = connected
                 allowed = {name for name in allowed if gate.is_tool_allowed(name, session)}
                 tool_filter = CodingToolFilter(cwd, control, mcp_registry=policy_registry,
                                                trusted_mcp_tools=allowed)
                 self._coding_filters[session_id] = tool_filter
+                baseline = await asyncio.to_thread(self.checkpoint_store.create_checkpoint,
+                    project_id, cwd, run_id=run_id, label="Çalışma öncesi", kind="before_run")
+                checkpoints.append({"kind": "source", "checkpoint_id": baseline["id"], "created_at": time.time()})
+                control.emit(AgentEventType.CHECKPOINT_CREATED, "Çalışma öncesi dosyalar kaydedildi.", checkpoint=baseline)
+                def checkpoint_file(path):
+                    point = self._checkpoint_before_edit(project_id, cwd, run_id, path)
+                    control.emit(AgentEventType.CHECKPOINT_CREATED, "Dosya düzenleme kontrol noktası.", checkpoint=point)
+                tool_filter.before_file_mutation = checkpoint_file
+                if options.get("quality_gates") is not None:
+                    tool_filter.configure_quality_gates(options["quality_gates"])
+                elif options.get("auto_quality_gates"):
+                    await asyncio.to_thread(tool_filter.discover_quality_gates)
                 stream_filter = tool_filter
                 if options.get("subagents_enabled") is True:
                     from firik_agent.projects.subagents import SubagentToolFilter
@@ -377,11 +420,16 @@ class CodingBridge:
                         worker.providers.get_active().set_model(session.model)
                         self.configure_model_metadata(worker.providers.get_active())
                         return worker
-                    subagents = SubagentToolFilter(tool_filter, session, child_agent, receive, self._coding_redact)
+                    selected_provider = options.get("provider", self.provider)
+                    subagents = SubagentToolFilter(tool_filter, session, child_agent, receive, self._coding_redact,
+                        provider_resolver=lambda p, m: self._coding_worker(p or selected_provider, m or session.model),
+                        limits=options.get("subagent_limits"))
+                    self._coding_managers[session_id] = subagents
                     stream_filter = subagents
                     session.system_prompt += (
-                        "\nAraştırma ve inceleme alt ajanları kullanılabilir. Yalnız bağımsız işlerde spawn_subagent kullan. "
-                        "Göreve ilgili dosyaları ve beklenen çıktıyı ekle. Alt ajanlar salt okunurdur; sonuçları doğrula. "
+                        "\nAraştırmacı, inceleyici, çalışan ve test uzmanı alt ajanlar kullanılabilir. Bağımsız işlerde spawn_subagent kullan. "
+                        "Göreve ilgili dosyaları ve beklenen çıktıyı ekle. Düzenleyen çalışan için write_paths dosya kapsamını belirt. "
+                        "İzinler ve bütçe ana çalışmadan daraltılır; sonuçları doğrula. send_message ile görev sözleşmelerini paylaş. "
                         "Son yanıtı vermeden önce açtığın tüm alt ajanları wait_subagent ile bekle veya cancel_subagent ile durdur."
                     )
                 if continuation:
@@ -406,6 +454,17 @@ class CodingBridge:
                     status = "cancelled"
                     final = "Çalışma kullanıcı tarafından durduruldu."
                     terminal_events.clear()
+                elif status == "completed":
+                    if options.get("auto_quality_gates") and control.mode not in {"ask", "plan"}:
+                        for gate in control.quality_gates:
+                            if gate["enabled"]:
+                                await tool_filter.run_quality_gate(gate["id"])
+                    completion = await tool_filter.completion_gate_async()
+                    if not completion["passed"]:
+                        status = "blocked"
+                        final = (final + "\n\nTamamlanma engellendi:\n" + "\n".join(completion["reasons"])).strip()
+                        terminal_events.clear()
+                        control.set_state("blocked", final)
             except asyncio.CancelledError:
                 status, final = "cancelled", "Çalışma kullanıcı tarafından durduruldu."
             except Exception as error:

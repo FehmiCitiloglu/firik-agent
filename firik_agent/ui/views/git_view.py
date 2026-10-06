@@ -950,7 +950,8 @@ class GitView(ctk.CTkFrame):
             self._status(f"{status.get('branch', 'HEAD')} · {len(status.get('staged', []))} staged · {len(status.get('modified', []))} değiştirilmiş · {len(status.get('untracked', []))} takipsiz · {len(conflicts)} çatışma")
             self._load_selected_diff()
 
-        self._request("status", lambda: GitService.get_status(path), ready, "Çalışma ağacı okunuyor…")
+        self._request("status", lambda: self.service.git_state.refresh(path) if hasattr(self.service, "git_state")
+                      else GitService.get_status(path), ready, "Çalışma ağacı okunuyor…")
 
     def _change_action(self, tool_id: str) -> None:
         rows = self.changes_table.selected()

@@ -235,7 +235,12 @@ def test_reasoning_stream_follows_tail_and_wheel_stays_inside_textbox(chat):
     pump(root)
     before = box.yview()[0]
     # Use native Tk events so both Text and CTk's global bindings participate.
-    if sys.platform in ("darwin", "win32"):
+    # Tk 9 uses MouseWheel on X11 too; older Tk uses button events there.
+    native_mousewheel = sys.platform in ("darwin", "win32") or (
+        bool(root.tk.call("bind", "Text", "<MouseWheel>"))
+        and not root.tk.call("bind", "Text", "<Button-5>")
+    )
+    if native_mousewheel:
         delta = 1 if sys.platform == "darwin" else 120
         box._textbox.event_generate("<MouseWheel>", delta=-delta)
     else:
@@ -244,7 +249,7 @@ def test_reasoning_stream_follows_tail_and_wheel_stays_inside_textbox(chat):
     assert box.yview()[0] > before
     assert canvas.yview() == outer_position
     before = box.yview()[0]
-    if sys.platform in ("darwin", "win32"):
+    if native_mousewheel:
         box._textbox.event_generate("<MouseWheel>", delta=delta)
     else:
         box._textbox.event_generate("<Button-4>")

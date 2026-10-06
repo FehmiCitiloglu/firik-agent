@@ -440,15 +440,12 @@ class FirikProvider(BaseProvider):
                     data = resp.json()
                     models = []
                     for item in data.get("data", []):
+                        if not isinstance(item, dict) or not item.get("id"):
+                            continue
                         m_id = item.get("id", "")
-                        models.append(
-                            ModelInfo(
-                                id=m_id,
-                                name=f"{m_id} ({item.get('owned_by', 'firik')})",
-                                context_window=128000,
-                                supports_tools=True,
-                            )
-                        )
+                        metadata = {**item, "source": "provider"}
+                        self.model_metadata[m_id] = metadata
+                        models.append(self.model_info(metadata))
                     if models:
                         return models
         except Exception as e:

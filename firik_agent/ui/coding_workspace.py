@@ -10,16 +10,90 @@ from tkinter import filedialog, messagebox, simpledialog
 import customtkinter as ctk
 from firik_agent.ui.components.effort_selector import EffortSelector
 
-from firik_agent.core.events import AgentEventType
 from firik_agent.projects.workspace import workspace_path
 from firik_agent.projects.indexer import is_sensitive_file, sanitize_secrets
 from firik_agent.ui.components.coding_conversation import CodingConversation, CodingInput
 from firik_agent.ui.components.coding_explorer import CodingExplorer
-from firik_agent.ui.coding_strings import MODES, MODE_NAMES, STATUS_NAMES, PERMISSION_NAMES, WELCOME
+from firik_agent.ui.coding_strings import MODES, MODE_NAMES, LEGACY_MODES, STATUS_NAMES, PERMISSION_NAMES, POLICY_NAMES, POLICY_VALUES, WELCOME, WORKSPACE_VIEWS
+from firik_agent.projects.cockpit import CockpitState
+from firik_agent.projects.composer import parse_composer
+from firik_agent.projects.git_service import GitService
 from firik_agent.ui.editor import EDITORS
 from firik_agent.ui.file_drop import register_file_drop
 from firik_agent.ui.coding_history import CodingHistoryMixin, restore_state_history
 from firik_agent.ui.views.git_view import GitView
+
+
+class CodingWorkspaceTabs(ctk.CTkFrame):
+    """Keyboard-addressable views whose navigation wraps in narrow panes."""
+
+    def __init__(self, master, *, on_change=None, numbered=False, **kwargs):
+        super().__init__(master, fg_color="transparent", **kwargs)
+        self.on_change, self.numbered = on_change, numbered
+        self._tab_dict, self.buttons = {}, {}
+        self._current = ""
+        self._columns = 0
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        self.navigation = ctk.CTkFrame(self, fg_color="transparent")
+        self.navigation.grid(row=0, column=0, sticky="ew", padx=2, pady=(0, 4))
+        self.body = ctk.CTkFrame(self, fg_color="transparent")
+        self.body.grid(row=1, column=0, sticky="nsew")
+        self.body.grid_columnconfigure(0, weight=1)
+        self.body.grid_rowconfigure(0, weight=1)
+        self.body.grid_propagate(False)
+        self.navigation.bind("<Configure>", self._layout, add="+")
+
+    def add(self, name):
+        tab = ctk.CTkFrame(self.body, fg_color=("gray97", "#101a2b"))
+        self._tab_dict[name] = tab
+        index = len(self.buttons) + 1
+        label = f"{index} {name}" if self.numbered else name
+        self.buttons[name] = ctk.CTkButton(self.navigation, text=label, width=90, height=28,
+            corner_radius=5, anchor="w", font=ctk.CTkFont(size=11),
+            command=lambda value=name: self.set(value))
+        self._columns = 0
+        self._layout()
+        if not self._current:
+            self.set(name, notify=False)
+        return tab
+
+    def tab(self, name):
+        return self._tab_dict[self._canonical(name)]
+
+    @staticmethod
+    def _canonical(name):
+        return "Etkinlik" if name == "İşlemler" else name
+
+    def set(self, name, *, notify=True):
+        name = self._canonical(name)
+        if name not in self._tab_dict:
+            return
+        self._current = name
+        for value, tab in self._tab_dict.items():
+            if value == name:
+                tab.grid(row=0, column=0, sticky="nsew")
+            else:
+                tab.grid_remove()
+            self.buttons[value].configure(fg_color=("#d5eeed", "#164955") if value == name else "transparent",
+                text_color=("#123b43", "#e6fffc") if value == name else ("gray25", "#cbd5e1"),
+                border_width=1 if value == name else 0)
+        if notify and self.on_change:
+            self.on_change(name)
+
+    def get(self):
+        return self._current
+
+    def _layout(self, event=None):
+        width = event.width if event else max(300, self.navigation.winfo_width())
+        columns = max(1, min(len(self.buttons), width // 102))
+        if columns == self._columns:
+            return
+        for column in range(max(self._columns, columns)):
+            self.navigation.grid_columnconfigure(column, weight=1 if column < columns else 0)
+        self._columns = columns
+        for index, button in enumerate(self.buttons.values()):
+            button.grid(row=index // columns, column=index % columns, sticky="ew", padx=2, pady=2)
 
 
 class CodingWorkspaceMixin(CodingHistoryMixin):
@@ -39,16 +113,20 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 "activities": [], "changes": [], "before": None, "snapshot": None,
                 "inspection_warning": "", "selected_change": None, "run_id": 0,
                 "mode": prefs.get("mode", "approved"), "preferences": prefs,
+                "policy": dict(prefs.get("policy", {})),
                 "permissions": {"allow_reads": True, "allow_deletes": True, "allow_edits": True,
                                 "allow_terminal": True, "allow_tests": True, "allow_mcp": False,
+                                "allow_subagents": True,
                                 **prefs.get("permissions", {})},
                 "context_paths": prefs.get("context_paths", []), "documents": [], "plan": [],
                 "context_report": [], "capabilities": {}, "usage": {}, "task_id": None,
                 "last_prompt": "", "paused": False, "pending_approvals": {},
                 "record": record, "stopped": False, "future": None, "agent_paths": {},
+                "cockpit": CockpitState(),
             }
             if record:
-                restore_state_history(state, record)
+                restore_state_history(state, record, self.service.coding_store.list_events(
+                    record.id, project_id=project_id, limit=1000, include_deltas=False))
                 if record.status == "interrupted":
                     state["inspection_warning"] = "Önceki çalışma kesildi. Devam etmeden önce proje ve dosyalar yeniden incelenecek."
             self._coding_states[project_id] = state
@@ -68,20 +146,24 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         prefs = state["preferences"]
         container.grid_columnconfigure(0, weight=1)
         container.grid_rowconfigure(0, weight=1)
-        panes = tk.PanedWindow(container, orient="horizontal", sashwidth=6, borderwidth=0,
-                               background="#243247" if ctk.get_appearance_mode() == "Dark" else "#d4d4d4")
+        panes = tk.PanedWindow(container, orient="horizontal", sashwidth=7, borderwidth=0,
+                               background="#26354b" if ctk.get_appearance_mode() == "Dark" else "#d8e2ed")
         panes.grid(row=0, column=0, sticky="nsew")
         self.coding_panes = panes
-        self.coding_explorer = CodingExplorer(panes, self.service, project_id,
-            on_open=lambda path, editor: self._open_coding_editor(path) if editor else self._open_coding_reference(path),
-            on_context=self._add_coding_path, on_preferences=self._save_coding_preferences)
-        left = self.coding_explorer
+        left = ctk.CTkFrame(panes, fg_color=("gray92", "#161f2e"))
         mid = ctk.CTkFrame(panes, fg_color=("gray92", "#161f2e"))
         right = ctk.CTkFrame(panes, fg_color=("gray92", "#161f2e"))
         self.coding_left, self.coding_mid, self.coding_right = left, mid, right
-        panes.add(left, minsize=170, width=prefs.get("left_width", 220), stretch="never")
-        panes.add(mid, minsize=340, stretch="always")
-        panes.add(right, minsize=180, width=prefs.get("right_width", 230), stretch="never")
+        panes.add(left, minsize=180, width=prefs.get("left_width", 220), stretch="never")
+        panes.add(mid, minsize=330, stretch="always")
+        panes.add(right, minsize=250, width=prefs.get("right_width", 300), stretch="never")
+        left.grid_columnconfigure(0, weight=1)
+        left.grid_rowconfigure(1, weight=1)
+        ctk.CTkLabel(left, text="PROJE / BAĞLAM", anchor="w", font=ctk.CTkFont(size=11, weight="bold")).grid(row=0, column=0, sticky="ew", padx=10, pady=6)
+        self.coding_explorer = CodingExplorer(left, self.service, project_id,
+            on_open=lambda path, editor: self._open_coding_editor(path) if editor else self._open_coding_reference(path),
+            on_context=self._add_coding_path, on_preferences=self._save_coding_preferences, on_action=self._coding_explorer_action)
+        self.coding_explorer.grid(row=1, column=0, sticky="nsew")
         mid.grid_columnconfigure(0, weight=1)
         mid.grid_rowconfigure(1, weight=1)
         head = ctk.CTkFrame(mid, fg_color="transparent")
@@ -90,11 +172,12 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         title = ctk.CTkFrame(head, fg_color="transparent")
         title.grid(row=0, column=0, sticky="ew")
         title.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(title, text="Firik Kodlama Ajanı", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=0, sticky="w")
-        self.coding_mode_combo = ctk.CTkComboBox(title, values=list(MODES), width=155,
+        ctk.CTkLabel(title, text=f"Ajan Çalışma Alanı · {project.name}", anchor="w",
+                     font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=0, sticky="ew")
+        self.coding_mode_combo = ctk.CTkComboBox(title, values=list(MODES), width=115,
                                                state="readonly", command=self._coding_mode_selected)
-        self.coding_mode_combo.set(MODE_NAMES.get(state["mode"], "Onaylı Uygulama"))
-        self.coding_mode_combo.grid(row=0, column=1)
+        self.coding_mode_combo.set(MODE_NAMES.get(state["mode"], "Güvenli"))
+        self.coding_mode_combo.grid(row=0, column=1, padx=(4, 0))
         models = ctk.CTkFrame(head, fg_color="transparent")
         models.grid(row=1, column=0, sticky="ew", pady=5)
         models.grid_columnconfigure(0, weight=1)
@@ -104,32 +187,26 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             width=120, state="readonly", command=self._on_coding_model_selected)
         self.coding_model_combo.set(selected_model)
         self.coding_model_combo.grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        self.coding_editor_combo = ctk.CTkComboBox(models, values=EDITORS, width=110, state="readonly", command=self._on_coding_editor_selected)
+        self.coding_editor_combo = ctk.CTkComboBox(models, values=EDITORS, width=100, state="readonly", command=self._on_coding_editor_selected)
         self.coding_editor_combo.set(self.service.config.get("coding_editor", {}).get("name", "VS Code"))
         self.coding_editor_combo.grid(row=0, column=1, sticky="ew", padx=4)
-        self.coding_open_project_btn = ctk.CTkButton(models, text="Projeyi Aç", width=90, command=self._open_coding_editor)
+        self.coding_open_project_btn = ctk.CTkButton(models, text="IDE'de Aç", width=75, fg_color="transparent", border_width=1, command=self._open_coding_editor)
         self.coding_open_project_btn.grid(row=0, column=2)
-        self.coding_effort_selector = EffortSelector(right, self.service, self._on_coding_effort_selected)
-        self.coding_effort_selector.grid(row=1, column=0, sticky="ew", padx=8, pady=4)
-        settings = self.project_service.db.get_settings(self.current_project_id)
-        state["session"].reasoning_effort = settings.coding_preferences.get("reasoning_effort")
-        self._refresh_coding_effort()
-        self._load_coding_models()
         toolbar = ctk.CTkFrame(head, fg_color="transparent")
         toolbar.grid(row=2, column=0, sticky="ew")
-        for label, callback in (("Gezgin", lambda: self._toggle_coding_pane("left")),
-                                ("Kontrol", lambda: self._toggle_coding_pane("right")),
-                                ("Ara", self._search_coding_chat), ("Dışa Aktar", self._export_coding),
-                                ("Dosya Ekle", self._attach_coding_files), ("⋯", self._coding_palette)):
-            ctk.CTkButton(toolbar, text=label, width=55 if label != "Dışa Aktar" else 70, height=24, command=callback).pack(side="left", padx=2)
-        self.coding_status_label = ctk.CTkLabel(head, text=state["status"], height=20, anchor="w",
+        for label, callback in (("Proje", lambda: self._toggle_coding_pane("left")),
+                                ("İnceleyici", lambda: self._toggle_coding_pane("right")),
+                                ("Bağlam +", self._attach_coding_files), ("Komutlar", self._coding_palette)):
+            ctk.CTkButton(toolbar, text=label, width=62, height=25, fg_color="transparent", border_width=1,
+                          command=callback).pack(side="left", padx=2)
+        self.coding_status_label = ctk.CTkLabel(head, text=state["status"], height=22, anchor="w",
                                                wraplength=500, font=ctk.CTkFont(size=11))
         self.coding_status_label.grid(row=3, column=0, sticky="ew")
-        self.coding_pending_btn = ctk.CTkButton(head, text="Onay Bekleniyor · İşlemi İncele", height=25,
-                                               command=self._inspect_coding_approvals)
-        self.coding_tabs = ctk.CTkTabview(mid, height=180)
+        self.coding_pending_btn = ctk.CTkButton(head, text="⚠ Onay Bekleniyor · İşlemi İncele", height=27,
+                                               fg_color=("#b45309", "#92400e"), command=self._inspect_coding_approvals)
+        self.coding_tabs = CodingWorkspaceTabs(mid, numbered=True, on_change=self._coding_view_changed)
         self.coding_tabs.grid(row=1, column=0, sticky="nsew", padx=4)
-        for name in ("Sohbet", "Değişiklikler", "İşlemler", "Dosyalar", "Git", "Plan"):
+        for name in WORKSPACE_VIEWS:
             tab = self.coding_tabs.add(name)
             tab.grid_columnconfigure(0, weight=1)
             tab.grid_rowconfigure(0, weight=1)
@@ -148,89 +225,128 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         self.coding_changes_summary.grid(row=0, column=0, sticky="ew")
         self.coding_refresh_changes_btn = ctk.CTkButton(header, text="Yenile", width=60, command=self._refresh_coding_changes_async)
         self.coding_refresh_changes_btn.grid(row=0, column=1)
-        list_frame = ctk.CTkFrame(changes, height=35)
-        list_frame.grid(row=1, column=0, sticky="ew")
-        list_frame.grid_propagate(False)
-        list_frame.grid_rowconfigure(0, weight=1)
-        list_frame.grid_columnconfigure(0, weight=1)
-        self.coding_changes_list = ctk.CTkScrollableFrame(list_frame, height=35)
-        self.coding_changes_list.grid(row=0, column=0, sticky="nsew")
+        self.coding_changes_list = ctk.CTkScrollableFrame(changes, height=28)
+        # The native scrollbar otherwise contributes its default 200px height
+        # even when the requested viewport is small or has no file rows.
+        self.coding_changes_list._scrollbar.configure(height=28)
+        self.coding_changes_list.grid(row=1, column=0, sticky="ew")
         self.coding_diff_box = ctk.CTkTextbox(changes, wrap="none", height=100, font=ctk.CTkFont(family="monospace", size=12))
         self.coding_diff_box.grid(row=2, column=0, sticky="nsew")
         for tag, color in (("added", "#10b981"), ("removed", "#f87171"), ("header", "#38bdf8")):
             self.coding_diff_box.tag_config(tag, foreground=color)
         footer = ctk.CTkFrame(changes, fg_color="transparent")
+        self.coding_change_footer = footer
         footer.grid(row=3, column=0, sticky="ew")
-        self.coding_open_file_btn = ctk.CTkButton(footer, text="Editörde Aç", width=90, command=self._open_selected_coding_file)
-        self.coding_open_file_btn.pack(side="left", padx=2)
-        ctk.CTkButton(footer, text="Yan Yana", width=85, command=self._coding_side_diff).pack(side="left", padx=2)
-        self.coding_undo_btn = ctk.CTkButton(footer, text="Ajan Değişikliğini Geri Al", width=160, command=self._undo_coding_change)
-        self.coding_undo_btn.pack(side="right", padx=2)
-        self.coding_activity_list = ctk.CTkScrollableFrame(self.coding_tabs.tab("İşlemler"))
+        footer.grid_columnconfigure(0, weight=1)
+        self.coding_open_file_btn = ctk.CTkButton(footer, text="IDE'de Aç", width=80, command=self._open_selected_coding_file)
+        self.coding_open_file_btn.grid(row=0, column=0, sticky="w", padx=2, pady=2)
+        ctk.CTkButton(footer, text="Yan Yana", width=80, command=self._coding_side_diff).grid(row=0, column=1, padx=2, pady=2)
+        ctk.CTkButton(footer, text="Ajana Sor", width=80, command=self._ask_coding_change).grid(row=0, column=2, padx=2, pady=2)
+        self.coding_undo_btn = ctk.CTkButton(footer, text="Ajan Düzenlemesini Geri Al", width=160, fg_color="transparent", border_width=1,
+                                            command=self._undo_coding_change)
+        self.coding_undo_btn.grid(row=1, column=0, columnspan=2, sticky="ew", padx=2, pady=2)
+        footer.bind("<Configure>", self._layout_coding_change_actions, add="+")
+        self.coding_activity_list = ctk.CTkScrollableFrame(self.coding_tabs.tab("Etkinlik"))
         self.coding_activity_list.grid(row=0, column=0, sticky="nsew")
         self.coding_files_list = ctk.CTkScrollableFrame(self.coding_tabs.tab("Dosyalar"))
         self.coding_files_list.grid(row=0, column=0, sticky="nsew")
-        self.coding_plan_box = ctk.CTkTextbox(self.coding_tabs.tab("Plan"), wrap="word")
+        self.coding_plan_box = ctk.CTkTextbox(self.coding_tabs.tab("Plan"), wrap="word", font=ctk.CTkFont(size=13))
         self.coding_plan_box.grid(row=0, column=0, sticky="nsew")
         ctk.CTkButton(self.coding_tabs.tab("Plan"), text="Planı Onayla ve Uygula", command=self._approve_coding_plan).grid(row=1, column=0, pady=4)
-        ctk.CTkButton(self.coding_tabs.tab("Git"), text="Git Çalışma Alanını Aç", command=lambda: self._switch_workspace_tab("git")).grid(row=0, column=0)
+        self.coding_embedded_git = None
+        self.coding_git_host = self.coding_tabs.tab("Git")
         input_area = ctk.CTkFrame(mid, fg_color="transparent")
         input_area.grid(row=2, column=0, sticky="ew", padx=8, pady=3)
         input_area.grid_columnconfigure(0, weight=1)
-        self.coding_input = CodingInput(input_area, height=48, wrap="word", font=ctk.CTkFont(size=prefs.get("font_size", 13)))
+        self.coding_input = CodingInput(input_area, height=52, wrap="word", font=ctk.CTkFont(size=prefs.get("font_size", 13)))
         self.coding_input.grid(row=0, column=0, sticky="ew", padx=(0, 5))
         self.coding_drop_available = register_file_drop(self.coding_input._textbox, self._drop_coding_files)
         for key in ("<Return>", "<KP_Enter>"):
-            self.coding_input.bind(key, self._handle_coding_return, add="+")
+            self.coding_input.bind(key, self._coding_composer_return, add="+")
         def newline(event):
             self.coding_input.insert("insert", "\n")
             return "break"
         self.coding_input.bind("<Shift-Return>", newline, add="+")
-        self.coding_send_btn = ctk.CTkButton(input_area, text="Gönder", width=75, command=self._send_coding_prompt)
+        self.coding_send_btn = ctk.CTkButton(input_area, text="Çalıştır", width=75, command=self._send_coding_prompt)
         self.coding_send_btn.grid(row=0, column=1)
-        ctk.CTkLabel(input_area, text="Enter: gönder · Shift+Enter: yeni satır · Ctrl+K: komutlar", height=18, font=ctk.CTkFont(size=10)).grid(row=1, column=0, columnspan=2, sticky="w")
+        primary = "Cmd" if self.tk.call("tk", "windowingsystem") == "aqua" else "Ctrl"
+        self._mount_coding_composer(input_area, project_id)
+        self.coding_composer_hint = ctk.CTkLabel(input_area, text=f"@ bağlam · / komut · Enter: çalıştır · Shift+Enter: satır · {primary}+K: palet", height=18,
+                     anchor="w", font=ctk.CTkFont(size=10))
+        self.coding_composer_hint.grid(row=2, column=0, columnspan=2, sticky="ew")
         right.grid_columnconfigure(0, weight=1)
-        right.grid_rowconfigure(0, weight=1)
-        controls = ctk.CTkScrollableFrame(right, width=200)
+        right.grid_rowconfigure(1, weight=1)
+        inspector_head = ctk.CTkFrame(right, fg_color="transparent")
+        inspector_head.grid(row=0, column=0, sticky="ew", padx=8, pady=6)
+        ctk.CTkLabel(inspector_head, text="AJAN / GÖREV İNCELEYİCİSİ", anchor="w",
+                     font=ctk.CTkFont(size=11, weight="bold")).pack(fill="x")
+        lifecycle = ctk.CTkFrame(inspector_head, fg_color="transparent")
+        lifecycle.pack(fill="x", pady=(5, 0))
+        for index, (text, action) in enumerate((("Ⅱ Duraklat", "pause"), ("▶ Devam", "resume"), ("■ Durdur", "cancel"))):
+            lifecycle.grid_columnconfigure(index, weight=1)
+            ctk.CTkButton(lifecycle, text=text, width=65, height=27, font=ctk.CTkFont(size=11),
+                fg_color=("#b91c1c", "#991b1b") if action == "cancel" else "transparent",
+                border_width=0 if action == "cancel" else 1,
+                command=lambda value=action: self._control_coding(value)).grid(row=0, column=index, sticky="ew", padx=2)
+        self.coding_inspector_host = ctk.CTkFrame(right, fg_color="transparent")
+        self.coding_inspector_host.grid(row=1, column=0, sticky="nsew", padx=4)
+        self.coding_inspector_host.grid_columnconfigure(0, weight=1)
+        self.coding_inspector_host.grid_rowconfigure(0, weight=1)
+        self.coding_inspector_tabs = CodingWorkspaceTabs(self.coding_inspector_host, on_change=self._coding_inspector_changed)
+        self.coding_inspector_tabs.grid(row=0, column=0, sticky="nsew")
+        task_tab = self.coding_inspector_tabs.add("Görev")
+        task_tab.grid_columnconfigure(0, weight=1)
+        task_tab.grid_rowconfigure(0, weight=1)
+        controls = ctk.CTkScrollableFrame(task_tab)
         controls.grid(row=0, column=0, sticky="nsew")
-        ctk.CTkLabel(controls, text="Ajan kontrol merkezi", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
         self.coding_subagents_var = tk.BooleanVar(value=prefs.get("subagents_enabled", False))
-        ctk.CTkCheckBox(controls, text="Araştırma / inceleme\nalt ajanları", variable=self.coding_subagents_var,
-            command=lambda: self._save_coding_preferences({"subagents_enabled": self.coding_subagents_var.get()}),
-            height=36).pack(fill="x", pady=4)
-        self.coding_task_label = ctk.CTkLabel(controls, text="", anchor="w", justify="left", wraplength=200)
-        self.coding_task_label.pack(fill="x", pady=4)
-        self.coding_context_label = ctk.CTkLabel(controls, text="", anchor="w", justify="left", wraplength=200)
-        self.coding_context_label.pack(fill="x", pady=4)
-        self.coding_usage_label = ctk.CTkLabel(controls, text="", anchor="w", justify="left", wraplength=200)
-        self.coding_usage_label.pack(fill="x", pady=4)
-        for text, action in (("Duraklat", "pause"), ("Devam Et", "resume"), ("Durdur", "cancel")):
-            ctk.CTkButton(controls, text=text, command=lambda a=action: self._control_coding(a)).pack(fill="x", pady=3)
-        ctk.CTkButton(controls, text="Planı İncele", command=lambda: self.coding_tabs.set("Plan")).pack(fill="x", pady=3)
-        ctk.CTkButton(controls, text="Değişiklikleri İncele", command=lambda: self.coding_tabs.set("Değişiklikler")).pack(fill="x", pady=3)
-        ctk.CTkButton(controls, text="İzinler / MCP / Beceriler", command=self._coding_permissions).pack(fill="x", pady=3)
-        ctk.CTkButton(controls, text="Yazı Boyutu", command=self._coding_font_size).pack(fill="x", pady=3)
+        ctk.CTkCheckBox(controls, text="Araştırma / inceleme\nalt ajanlarını kullan", variable=self.coding_subagents_var,
+            command=lambda: self._save_coding_preferences({"subagents_enabled": self.coding_subagents_var.get()}), height=36).pack(fill="x", pady=4)
+        self.coding_task_label = ctk.CTkLabel(controls, text="", anchor="w", justify="left", wraplength=235)
+        self.coding_task_label.pack(fill="x", pady=6)
+        self.coding_context_label = ctk.CTkLabel(controls, text="", anchor="w", justify="left", wraplength=235)
+        self.coding_context_label.pack(fill="x", pady=6)
+        self.coding_usage_label = ctk.CTkLabel(controls, text="", anchor="w", justify="left", wraplength=235)
+        self.coding_usage_label.pack(fill="x", pady=6)
+        self.coding_effort_selector = EffortSelector(controls, self.service, self._on_coding_effort_selected)
+        self.coding_effort_selector.pack(fill="x", pady=5)
+        settings = self.project_service.db.get_settings(self.current_project_id)
+        state["session"].reasoning_effort = settings.coding_preferences.get("reasoning_effort")
+        self._refresh_coding_effort()
+        self._load_coding_models()
+        for text, callback in (("Planı İncele", lambda: self.coding_tabs.set("Plan")),
+                               ("Değişiklikleri İncele", lambda: self.coding_tabs.set("Değişiklikler")),
+                               ("İzinler / MCP / Beceriler", self._coding_permissions)):
+            ctk.CTkButton(controls, text=text, fg_color="transparent", border_width=1, command=callback).pack(fill="x", pady=3)
         self.coding_approval_frame = ctk.CTkFrame(controls, fg_color="transparent")
         self.coding_approval_frame.pack(fill="x", pady=6)
+        self._mount_coding_evidence()
+        self.coding_inspector_tabs.set(prefs.get("inspector_view", "Ajanlar"), notify=False)
+        self.coding_tabs.set(prefs.get("workspace_view", "Etkinlik"))
         self._refresh_coding_changes()
         self._refresh_coding_activity()
         self._refresh_coding_files_async()
         self._refresh_coding_control()
         self._refresh_coding_display()
+        self._refresh_coding_evidence()
         def layout(event=None):
-            if not panes.winfo_exists() or self.coding_panes is not panes or not self.coding_status_label.winfo_exists():
+            if (not panes.winfo_exists() or self.coding_panes is not panes or not mid.winfo_exists()
+                    or not self.coding_status_label.winfo_exists()):
                 return
-            compact = container.winfo_width() < 1040
-            if container.winfo_height() < 460:
-                self.coding_status_label.grid_remove()
+            compact = container.winfo_width() < 1140
+            if container.winfo_height() < 500:
+                self.coding_composer_hint.grid_remove()
             else:
-                self.coding_status_label.grid()
-            for side, widget in (("left", left), ("right", right)):
+                self.coding_composer_hint.grid()
+            self.coding_status_label.configure(wraplength=max(250, mid.winfo_width() - 20))
+            for side, widget, minimum, default in (("left", left, 180, 220), ("right", right, 250, 300)):
                 shown = str(widget) in tuple(map(str, panes.panes()))
                 desired = prefs.get(f"show_{side}", True) and (not compact or state.get("manual_side") == side)
                 if desired and not shown:
-                    panes.add(widget, minsize=170, width=prefs.get(f"{side}_width", 220),
-                              before=mid if side == "left" else None, stretch="never")
+                    options = dict(minsize=minimum, width=prefs.get(f"{side}_width", default), stretch="never")
+                    if side == "left":
+                        options["before"] = mid
+                    panes.add(widget, **options)
                 elif shown and not desired:
                     panes.forget(widget)
         container.bind("<Configure>", layout, add="+")
@@ -238,13 +354,216 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         def save_sizes(event):
             if self.current_project_id != project_id:
                 return
-            self._save_coding_preferences({"left_width": max(170, left.winfo_width()),
-                                           "right_width": max(180, right.winfo_width())})
+            visible = tuple(map(str, panes.panes()))
+            sizes = {f"{side}_width": max(minimum, widget.winfo_width())
+                     for side, widget, minimum in (("left", left, 180), ("right", right, 250)) if str(widget) in visible}
+            if sizes:
+                self._save_coding_preferences(sizes)
         panes.bind("<ButtonRelease-1>", save_sizes)
-        # Widget-owned bindings disappear when this view is destroyed.
-        for key, callback in (("<Control-k>", self._coding_palette), ("<Control-f>", self._search_coding_chat),
-                              ("<Escape>", lambda: self._control_coding("cancel"))):
-            self.coding_input.bind(key, lambda event, fn=callback: (fn(), "break")[1], add="+")
+        self._bind_coding_shortcuts(panes, project_id)
+
+    def _layout_coding_change_actions(self, event):
+        if event.widget not in (self.coding_change_footer, self.coding_change_footer._canvas):
+            return
+        wide = event.width >= 550
+        self.coding_undo_btn.grid(row=0 if wide else 1, column=3 if wide else 0,
+                                  columnspan=1 if wide else 2, sticky="ew", padx=2, pady=2)
+        if hasattr(self, "coding_review_checkpoint_btn"):
+            self.coding_review_checkpoint_btn.grid(row=0 if wide else 1, column=4 if wide else 2,
+                                                   sticky="ew", padx=2, pady=2)
+
+    def _coding_view_changed(self, name):
+        self._save_coding_preferences({"workspace_view": name})
+        if name == "Git" and self.coding_embedded_git is None:
+            project = self.project_service.db.get_project(self.current_project_id)
+            self.coding_embedded_git = GitView(self.coding_git_host, self.service, project.local_path,
+                on_ask_agent=self._coding_quick_action, on_open_file=self._open_coding_reference)
+            self.coding_embedded_git.grid(row=0, column=0, sticky="nsew")
+        if hasattr(self, "coding_activity_list"):
+            self._refresh_coding_evidence()
+
+    def _coding_inspector_changed(self, name):
+        self._save_coding_preferences({"inspector_view": name})
+
+    def _coding_quick_action(self, prompt):
+        self.coding_input.delete(0, "end")
+        self.coding_input.insert(0, prompt)
+        self.coding_input.focus_set()
+
+    def _coding_explorer_action(self, action, path):
+        state = self._coding_state()
+        if action in {"add_context", "remove_context", "exclude", "include"}:
+            state["context_paths"] = list(state["preferences"].get("context_paths", []))
+            self._refresh_coding_control()
+        elif action == "ask":
+            quoted = json.dumps(path, ensure_ascii=False) if any(char.isspace() for char in path) else path
+            self._coding_quick_action(f"@file:{quoted} Bu dosyanın görevini ve ilgili bağımlılıklarını açıkla.")
+        elif action == "diff":
+            self.coding_tabs.set("Değişiklikler")
+            if any(change["path"] == path for change in state["changes"]):
+                self._show_coding_change(path)
+                return
+            state["selected_change"] = path
+            project_id, generation = self.current_project_id, state["run_id"]
+            project = self.project_service.db.get_project(project_id)
+            async def load():
+                return await asyncio.to_thread(GitService.get_diff, project.local_path, file_path=path)
+            def ready(diff):
+                if not self._coding_visible(project_id) or state["run_id"] != generation or state["selected_change"] != path:
+                    return
+                lines = [line for line in diff.splitlines() if not line.startswith(("+++", "---"))]
+                change = {"path": path, "status": "modified", "diff": diff or "Bu dosyada kaydedilmiş ajan veya Git farkı yok.",
+                          "origin": "Git çalışma ağacı", "added": sum(line.startswith("+") for line in lines),
+                          "removed": sum(line.startswith("-") for line in lines), "can_undo": False}
+                state["changes"].append(change)
+                self._refresh_coding_changes()
+            self.service.runtime.submit(load(), on_done=lambda diff: self.service._dispatch(ready, diff),
+                on_error=lambda error: self.service._dispatch(ready, str(error)))
+
+    def _mount_coding_composer(self, parent, project_id):
+        owner = self.coding_input
+        dark = ctk.get_appearance_mode() == "Dark"
+        self.coding_suggestion_list = tk.Listbox(parent, height=3, exportselection=False,
+            background="#101a2b" if dark else "#f8fafc", foreground="#e6eef8" if dark else "#172b43",
+            selectbackground="#164955" if dark else "#c8eee9", selectforeground="#e6fffc" if dark else "#123b43",
+            font=("Arial", 11), borderwidth=0, highlightthickness=1, activestyle="dotbox")
+        self.coding_suggestion_list.grid(row=1, column=0, columnspan=2, sticky="ew", pady=3)
+        self.coding_suggestion_list.grid_remove()
+        self._coding_suggestions = []
+        owner._suggestion_job = None
+        owner._suggestion_generation = 0
+        def changed(event=None):
+            if owner._suggestion_job is not None:
+                owner.after_cancel(owner._suggestion_job)
+            owner._suggestion_job = owner.after(160, lambda: self._load_coding_composer_suggestions(owner, project_id))
+        owner.bind("<KeyRelease>", changed, add="+")
+        owner.bind("<Tab>", self._accept_coding_suggestion, add="+")
+        def select(event):
+            if not self._coding_suggestions:
+                return None
+            self.coding_suggestion_list.focus_set()
+            self.coding_suggestion_list.selection_set(0)
+            self.coding_suggestion_list.activate(0)
+            return "break"
+        owner.bind("<Down>", select, add="+")
+        self.coding_suggestion_list.bind("<Return>", self._accept_coding_suggestion)
+        self.coding_suggestion_list.bind("<Tab>", self._accept_coding_suggestion)
+        self.coding_suggestion_list.bind("<Double-Button-1>", self._accept_coding_suggestion)
+        def hide(event=None):
+            if self._coding_suggestions:
+                self._coding_suggestions = []
+                self.coding_suggestion_list.grid_remove()
+                owner.focus_set()
+                return "break"
+            return None
+        owner.bind("<Escape>", hide, add="+")
+        self.coding_suggestion_list.bind("<Escape>", hide)
+        def destroyed(event):
+            if event.widget is owner and owner._suggestion_job is not None:
+                try:
+                    owner.after_cancel(owner._suggestion_job)
+                except tk.TclError:
+                    pass
+                owner._suggestion_job = None
+            if event.widget is owner:
+                owner._suggestion_generation += 1
+        tk.Misc.bind(owner, "<Destroy>", destroyed, add="+")
+        modifier = "Command" if self.tk.call("tk", "windowingsystem") == "aqua" else "Control"
+        owner.bind(f"<{modifier}-space>", lambda event: (self._load_coding_composer_suggestions(owner, project_id), "break")[1], add="+")
+
+    def _coding_composer_fragment(self, owner):
+        prefix = owner.get("1.0", "insert")
+        match = re.search(r'(?<!\w)(@(?:file|folder):"[^"\n]*|@[^\s]*|/[a-z]*)$', prefix)
+        return match.group(1) if match else ""
+
+    def _load_coding_composer_suggestions(self, owner, project_id):
+        owner._suggestion_job = None
+        owner._suggestion_generation += 1
+        generation = owner._suggestion_generation
+        if not owner.winfo_exists() or self.coding_input is not owner:
+            return
+        fragment = self._coding_composer_fragment(owner)
+        if not fragment:
+            self._coding_suggestions = []
+            self.coding_suggestion_list.grid_remove()
+            return
+        state = self._coding_state()
+        context = {"agents": list(state["cockpit"].agents.values()), "terminals": state["cockpit"].terminal}
+        skills = state.get("skill_catalogue", [])
+        mcp = [dict(name=tool.name) for tool in self.service.mcp_manager.tool_registry.list_tools()]
+        def ready(values):
+            if (not self._coding_visible(project_id) or self.coding_input is not owner
+                    or owner._suggestion_generation != generation or self._coding_composer_fragment(owner) != fragment):
+                return
+            self._coding_suggestions = values
+            self.coding_suggestion_list.delete(0, "end")
+            for item in values:
+                self.coding_suggestion_list.insert("end", item["label"])
+            if values:
+                self.coding_suggestion_list.grid()
+                self.coding_suggestion_list.selection_set(0)
+                self.coding_suggestion_list.activate(0)
+            else:
+                self.coding_suggestion_list.grid_remove()
+        self.service.suggest_coding_composer_async(project_id, fragment, on_success=ready, on_error=lambda error: ready([]),
+            composer_context=context, available_skills=skills, mcp_tools=mcp, limit=12)
+
+    def _accept_coding_suggestion(self, event=None):
+        if not self._coding_suggestions:
+            return None
+        index = (self.coding_suggestion_list.curselection() or (0,))[0]
+        fragment = self._coding_composer_fragment(self.coding_input)
+        if not fragment:
+            return None
+        self.coding_input.delete(f"insert-{len(fragment)}c", "insert")
+        self.coding_input.insert("insert", self._coding_suggestions[index]["insert"])
+        self._coding_suggestions = []
+        self.coding_suggestion_list.grid_remove()
+        self.coding_input.focus_set()
+        return "break"
+
+    def _coding_composer_return(self, event=None):
+        return self._accept_coding_suggestion(event) or self._handle_coding_return(event)
+
+    def _ask_coding_change(self):
+        path = self._coding_state().get("selected_change")
+        if path:
+            self._coding_quick_action(f"{path} dosyasındaki değişiklikleri gerekçeleri ve doğrulama sonuçlarıyla açıkla.")
+
+    def _bind_coding_shortcuts(self, owner, project_id):
+        """Bind to descendant focus, then remove only this view's bindings."""
+        target = self.winfo_toplevel()
+        modifier = "Command" if self.tk.call("tk", "windowingsystem") == "aqua" else "Control"
+        self.coding_shortcut_modifier = modifier
+        bindings = []
+        actions = [(f"<{modifier}-Key-{index}>", lambda value=name: self.coding_tabs.set(value))
+                   for index, name in enumerate(WORKSPACE_VIEWS, 1)]
+        actions.extend(((f"<{modifier}-k>", self._coding_palette),
+                        (f"<{modifier}-f>", self._search_coding_chat),
+                        (f"<{modifier}-Return>", self._send_coding_prompt),
+                        (f"<{modifier}-period>", lambda: self._control_coding("cancel")),
+                        (f"<{modifier}-Shift-A>", self._coding_create_agent)))
+        for sequence, callback in actions:
+            def invoke(event, fn=callback):
+                if not self._coding_visible(project_id) or self.coding_panes is not owner:
+                    return None
+                # Dialog bindings belong to their own window, not this workspace.
+                if event.widget.winfo_toplevel() is not target:
+                    return None
+                fn()
+                return "break"
+            binding = target.bind(sequence, invoke, add="+")
+            bindings.append((sequence, binding))
+        def release(event):
+            if event.widget is not owner:
+                return
+            for sequence, binding in bindings:
+                try:
+                    target.unbind(sequence, binding)
+                except tk.TclError:
+                    pass
+        owner.bind("<Destroy>", release, add="+")
+        self.coding_input.bind("<Escape>", lambda event: (self._control_coding("cancel"), "break")[1], add="+")
 
     def _refresh_coding_effort(self):
         state = self._coding_state()
@@ -261,7 +580,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
     def _refresh_coding_display(self, streaming=False):
         state = self._coding_state()
         self.coding_chat_box.set_messages(state["messages"], state["text"], streaming=streaming)
-        self.coding_send_btn.configure(state="disabled" if state["busy"] else "normal", text="Bekleyin…" if state["busy"] else "Gönder")
+        self.coding_send_btn.configure(state="disabled" if state["busy"] else "normal", text="Çalışıyor…" if state["busy"] else "Çalıştır")
         self._refresh_coding_effort()
         self.coding_model_combo.configure(state="disabled" if state["busy"] else "readonly")
         self.coding_mode_combo.configure(state="disabled" if state["busy"] else "readonly")
@@ -269,6 +588,8 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
 
     def _refresh_coding_control(self):
         state = self._coding_state()
+        if hasattr(self, "coding_explorer") and self.coding_explorer.winfo_exists():
+            self.coding_explorer.mark_paths(context_paths=state["context_paths"], touched_paths=list(state["agent_paths"]))
         task = self.project_service.db.get_task(state["task_id"]) if state["task_id"] else None
         title = task.title if task else state["last_prompt"][:160] or "Görev seçilmedi"
         self.coding_task_label.configure(text=f"Aktif görev\n{title}\n{state['status']}\n{state['inspection_warning']}")
@@ -338,11 +659,31 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         ctk.CTkButton(footer, text="Bu İşleme İzin Ver", command=lambda: decide(True)).pack(side="right", padx=4)
         ctk.CTkButton(footer, text="Reddet", command=lambda: decide(False)).pack(side="right", padx=4)
 
+    def _dispatch_coding_composer(self, composer):
+        """Route explicit commands to their real evidence view before inference."""
+        command = composer.get("command")
+        view = {"plan": "Plan", "test": "Testler", "review": "Değişiklikler",
+                "fix": "Etkinlik", "skill": "Etkinlik", "mcp": "Etkinlik"}.get(command)
+        if view:
+            self.coding_tabs.set(view)
+        if command == "agent":
+            # The explicit delegation command opts into the existing guarded
+            # spawning tools; it does not change inherited permissions/budgets.
+            self._save_coding_preferences({"subagents_enabled": True})
+            self.coding_subagents_var.set(True)
+            self._show_coding_inspector("Ajanlar")
+
     def _run_coding_prompt(self, prompt, prepared=None):
         project_id = self.current_project_id
         state = self._coding_state()
         if state["busy"]:
             return
+        composer = parse_composer(prompt)
+        self._dispatch_coding_composer(composer)
+        if composer.get("mode"):
+            state["mode"] = composer["mode"]
+            self.coding_mode_combo.set(MODE_NAMES[state["mode"]])
+            self._save_coding_preferences({"mode": state["mode"]})
         state.update(busy=True, stopped=False, paused=False, last_prompt=prompt, before=None,
                      changes=[], activities=[], pending_approvals={}, inspection_warning="", agent_paths={}, record=None,
                      usage={}, usage_requests={}, model_iteration=0)
@@ -355,6 +696,10 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         state["status"] = "Güncel proje bağlamı hazırlanıyor…"
         session = state["session"]
         session.model = self.project_service.db.get_settings(project_id).coding_model or self.service.default_model
+        state.setdefault("cockpit", CockpitState()).start(model=session.model,
+            provider=state["preferences"].get("provider", self.service.provider), task=prompt,
+            run_id=str(state["run_id"]))
+        state["cockpit"].plan = list(state["plan"])
         project = self.project_service.db.get_project(project_id)
         if prepared:
             state["task_id"] = prepared.get("task").id if prepared.get("task") else None
@@ -369,6 +714,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                     self._refresh_coding_activity()
                     self._refresh_coding_changes()
                     self._refresh_coding_control()
+                    self._refresh_coding_evidence()
         refresh(True)
 
         def finish(text="", error=None):
@@ -393,10 +739,15 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 state["busy"] = False
                 state["pending_approvals"] = {}
                 errors = sum(a["status"] == "Hata" for a in state["activities"])
-                state["status"] = "Durduruldu" if state["stopped"] else "Çalışma hata ile sona erdi" if error else f"Tamamlandı · {len(state['changes'])} dosya değişti" + (f" · {errors} araç hatası" if errors else "")
+                outcome = ("cancelled" if state["stopped"] else "failed" if error else "blocked"
+                           if state["cockpit"].agents.get("orchestrator", {}).get("status") == "blocked" else "completed")
+                state["status"] = ("Durduruldu" if outcome == "cancelled" else "Çalışma hata ile sona erdi" if outcome == "failed"
+                    else "Engellendi · Tamamlanmamış işlem veya doğrulama var" if outcome == "blocked"
+                    else f"Tamamlandı · {len(state['changes'])} dosya değişti" + (f" · {errors} araç hatası" if errors else ""))
                 for activity in state["activities"]:
                     if activity["status"] == "Çalışıyor":
                         activity["status"] = "Kesildi"
+                state["cockpit"].finish(status=outcome, changes=state["changes"])
                 refresh(True)
             self.service.inspect_workspace_async(project.local_path, inspected,
                 lambda e: inspected(inspection_error=e), before=state["before"])
@@ -406,6 +757,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 return
             if event.metadata.get("project_id", project_id) != project_id or event.metadata.get("task_id", state["task_id"]) != state["task_id"]:
                 return
+            state["cockpit"].apply(event)
             kind = event.type.value
             if kind in {"context_compaction_started", "context_compacted"}:
                 state["status"] = event.content or "Bağlam hazırlanıyor…"
@@ -484,8 +836,13 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 path = event.metadata.get("path")
                 if path:
                     state["agent_paths"][path] = event.metadata
+                    if visible():
+                        self.coding_explorer.mark_paths(touched_paths=list(state["agent_paths"]))
             elif kind == "task_state":
                 state["status"] = STATUS_NAMES.get(event.metadata.get("state", event.metadata.get("status")), event.content or state["status"])
+                refresh(True)
+            elif kind in {"verification", "tool_call_arguments", "mcp_connecting", "mcp_connected", "mcp_error",
+                          "quality_gate", "checkpoint.created", "checkpoint_created", "policy_updated", "agent.message", "skill.activated"}:
                 refresh(True)
             elif kind == "error":
                 finish(error=event.content or "Model hatası")
@@ -503,14 +860,21 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             refresh(True)
             options = {"project_id": project_id, "task_id": state["task_id"], "mode": state["mode"],
                        "permissions": dict(state["permissions"]), "visibility_report": state["context_report"],
+                       "policy": dict(state.get("policy", {})),
                        "mcp_servers": state["preferences"].get("mcp_servers", []),
                        "mcp_tools": state["preferences"].get("mcp_tools", []),
                        "capabilities": state["capabilities"]}
             options["subagents_enabled"] = state["preferences"].get("subagents_enabled", False)
             options["provider"] = state["preferences"].get("provider", self.service.provider)
             options["previous_plan"] = state["plan"]
+            options["context_items"] = state.get("context_items", [])
+            options["selected_skills"] = state.get("selected_skills", [])
+            options["excluded_paths"] = state["preferences"].get("excluded_files", state["preferences"].get("never_include_files", []))
+            options["quality_gates"] = state["preferences"].get("quality_gates")
+            options["auto_quality_gates"] = bool(state["preferences"].get("auto_quality_gates", False))
+            options["subagent_limits"] = dict(state["preferences"].get("subagent_limits", {}))
             try:
-                state["future"] = self.service.chat_agent_stream_async(session_id=session.session_id, prompt=prompt,
+                state["future"] = self.service.chat_agent_stream_async(session_id=session.session_id, prompt=state.get("prepared_prompt", prompt),
                     cwd=project.local_path, on_event=on_event, on_done=finish, on_error=lambda e: finish(error=e), coding_options=options)
             except Exception as error:
                 finish(error=str(error))
@@ -523,8 +887,15 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 return
             session.system_prompt = data["system_prompt"]
             state["context_report"] = data.get("visibility_report", [])
+            state["prepared_prompt"] = data.get("user_prompt", prompt)
+            state["context_items"] = data.get("context_items", [])
+            state["context_inspector"] = data.get("context_inspector", {})
+            state["index_status"] = data.get("index_status", {})
+            state["composer"] = data.get("composer", composer)
+            state["cockpit"].context = data.get("context_inspector", {"visibility_report": state["context_report"]})
             state["capabilities"] = data.get("capabilities", {})
             state["skill_catalogue"] = data.get("skill_catalogue", [])
+            state["selected_skills"] = data.get("selected_skills", [])
             self.service.inspect_workspace_async(project.local_path, start, lambda e: start(error=e))
 
         # Preparing context is bounded but can involve index/search/Git; keep it off Tk.
@@ -561,7 +932,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         if state["busy"]:
             self.coding_mode_combo.set(MODE_NAMES[state["mode"]])
             return
-        state["mode"] = MODES[label]
+        state["mode"] = MODES.get(label, LEGACY_MODES.get(label, state["mode"]))
         self._save_coding_preferences({"mode": state["mode"]})
 
     def _control_coding(self, action):
@@ -594,8 +965,8 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         if not state["plan"]:
             messagebox.showinfo("Plan", "Önce Planla modunda uygulanabilir bir plan oluşturun.")
             return
-        self._coding_mode_selected("Onaylı Uygulama")
-        self.coding_mode_combo.set("Onaylı Uygulama")
+        self._coding_mode_selected("Yardımlı")
+        self.coding_mode_combo.set("Yardımlı")
         self._run_coding_prompt("Gösterilen planı onaylıyorum. Planı izinlerim çerçevesinde uygula; gereken işlemler için ayrı onay iste.\n" + json.dumps(state["plan"], ensure_ascii=False))
 
     def _edit_coding_message(self, message):
@@ -673,31 +1044,114 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         else:
             self._coding_state()["manual_side"] = side
             # Compact windows show one auxiliary panel at a time.
-            if panes.winfo_width() < 1040:
+            if panes.winfo_width() < 1140:
                 other = self.coding_right if side == "left" else self.coding_left
                 if str(other) in tuple(map(str, panes.panes())):
                     panes.forget(other)
-            kwargs = {"minsize": 170, "width": 200, "stretch": "never"}
+            minimum = 180 if side == "left" else 250
+            kwargs = {"minsize": minimum, "width": self._coding_state()["preferences"].get(f"{side}_width", 220 if side == "left" else 300), "stretch": "never"}
             if side == "left":
                 kwargs["before"] = self.coding_mid
             panes.add(widget, **kwargs)
         self._save_coding_preferences({f"show_{side}": not shown})
 
     def _coding_palette(self):
+        existing = getattr(self, "coding_palette_dialog", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            existing.search.focus_set()
+            return existing
         dialog = ctk.CTkToplevel(self)
         dialog.title("Komut Paleti")
-        dialog.geometry("380x490")
+        dialog.geometry("520x490")
         dialog.transient(self.winfo_toplevel())
-        for title, callback in (("Sohbete Geç", lambda: self.coding_input.focus_set()),
-                                ("Yeni Oturum", self._new_coding_session),
-                                ("Oturum Geçmişi", self._coding_sessions),
-                                ("Proje Dosyalarında Ara", lambda: self.coding_explorer.query.focus_set()),
-                                ("Önceki İsteği Düzenle", lambda: self._edit_coding_message({"content": self._coding_state()["last_prompt"]})),
-                                ("Yanıtı Durdur", lambda: self._control_coding("cancel")),
-                                ("İzinleri Düzenle", self._coding_permissions),
-                                ("Görevleri Aç", lambda: self._switch_workspace_tab("tasks")),
-                                ("Projeyi Editörde Aç", self._open_coding_editor)):
-            ctk.CTkButton(dialog, text=title, command=lambda fn=callback: (dialog.destroy(), fn())).pack(fill="x", padx=12, pady=6)
+        dialog.grid_columnconfigure(0, weight=1)
+        dialog.grid_rowconfigure(1, weight=1)
+        self.coding_palette_dialog = dialog
+        modifier = "Cmd" if self.tk.call("tk", "windowingsystem") == "aqua" else "Ctrl"
+        commands = [(f"{name} Görünümünü Aç · {modifier}+{index}", lambda value=name: self.coding_tabs.set(value))
+                    for index, name in enumerate(WORKSPACE_VIEWS, 1)]
+        commands += [
+            (f"Yeni Ajan Oluştur · {modifier}+Shift+A", self._coding_create_agent),
+            ("Ajanı Seç / İncele", lambda: (self._show_coding_inspector("Ajanlar"), self._refresh_coding_agents())),
+            ("Ajanı Yönlendir", self._coding_steer),
+            ("Modeli Değiştir", lambda: self.coding_model_combo.focus_set()),
+            ("Terminal Komutu Çalıştır", self._coding_run_command),
+            ("Test / Kalite Kapılarını Çalıştır", self._coding_run_quality_gates),
+            ("Bağlama Dosya Ekle", self._attach_coding_files),
+            ("Bağlamı İncele", self._coding_context_inspector),
+            ("Kontrol Noktası Oluştur / Geri Yükle", self._coding_checkpoints),
+            ("İzinler / MCP / Beceriler", self._coding_permissions),
+            ("Ajanı Duraklat", lambda: self._control_coding("pause")),
+            ("Ajanı Devam Ettir", lambda: self._control_coding("resume")),
+            (f"Ajanı Durdur · {modifier}+.", lambda: self._control_coding("cancel")),
+            ("Yeni Oturum", self._new_coding_session),
+            ("Oturum Geçmişi", self._coding_sessions),
+            ("Konuşmayı Dışa Aktar", self._export_coding),
+            ("Proje Dosyalarında Ara", self._focus_coding_file_search),
+            ("Konuşmada Ara", self._search_coding_chat),
+            ("Önceki İsteği Düzenle", lambda: self._edit_coding_message({"content": self._coding_state()["last_prompt"]})),
+            ("Görevleri Aç", lambda: self._switch_workspace_tab("tasks")),
+            ("Projeyi IDE'de Aç", self._open_coding_editor),
+            ("Görünüm / Yazı Boyutu", self._coding_font_size),
+            ("Proje Panelini Aç / Kapat", lambda: self._toggle_coding_pane("left")),
+            ("İnceleyiciyi Aç / Kapat", lambda: self._toggle_coding_pane("right")),
+        ]
+        query = tk.StringVar(master=dialog)
+        dialog.search = ctk.CTkEntry(dialog, placeholder_text="Komut ara…", textvariable=query, height=34)
+        dialog.search.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
+        dark = ctk.get_appearance_mode() == "Dark"
+        dialog.results = tk.Listbox(dialog, borderwidth=0, highlightthickness=1, activestyle="dotbox",
+            background="#101a2b" if dark else "#f8fafc", foreground="#e6eef8" if dark else "#172b43",
+            selectbackground="#164955" if dark else "#c8eee9", selectforeground="#e6fffc" if dark else "#123b43",
+            font=("Arial", 12), exportselection=False)
+        dialog.results.grid(row=1, column=0, sticky="nsew", padx=12)
+        ctk.CTkLabel(dialog, text="↑↓ seç · Enter çalıştır · Esc kapat", anchor="w").grid(row=2, column=0, sticky="ew", padx=12, pady=8)
+        matches = []
+        def filter_commands(*args):
+            matches[:] = [(label, callback) for label, callback in commands if query.get().casefold().strip() in label.casefold()]
+            dialog.results.delete(0, "end")
+            for label, _ in matches:
+                dialog.results.insert("end", label)
+            if matches:
+                dialog.results.selection_set(0)
+                dialog.results.activate(0)
+        def execute(event=None):
+            selection = dialog.results.curselection()
+            if selection and matches:
+                callback = matches[selection[0]][1]
+                dialog.destroy()
+                callback()
+            return "break"
+        def move(event):
+            if matches:
+                index = (dialog.results.curselection() or (0,))[0]
+                index = max(0, min(len(matches) - 1, index + (1 if event.keysym == "Down" else -1)))
+                dialog.results.selection_clear(0, "end")
+                dialog.results.selection_set(index)
+                dialog.results.activate(index)
+                dialog.results.see(index)
+            return "break"
+        query.trace_add("write", filter_commands)
+        for widget in (dialog.search, dialog.results):
+            widget.bind("<Return>", execute)
+            widget.bind("<Up>", move)
+            widget.bind("<Down>", move)
+        dialog.results.bind("<Double-Button-1>", execute)
+        dialog.bind("<Escape>", lambda event: dialog.destroy())
+        filter_commands()
+        dialog.after(80, dialog.search.focus_set)
+        return dialog
+
+    def _show_coding_inspector(self, view):
+        if str(self.coding_right) not in tuple(map(str, self.coding_panes.panes())):
+            self._toggle_coding_pane("right")
+        self.coding_inspector_tabs.set(view)
+
+    def _focus_coding_file_search(self):
+        if str(self.coding_left) not in tuple(map(str, self.coding_panes.panes())):
+            self._toggle_coding_pane("left")
+        self.coding_explorer.query.focus_set()
 
     def _coding_font_size(self):
         value = simpledialog.askinteger("Yazı Boyutu", "Kodlama alanı yazı boyutu (11–22):", minvalue=11, maxvalue=22, initialvalue=self._coding_state()["preferences"].get("font_size", 13), parent=self)
@@ -733,7 +1187,25 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             var = tk.BooleanVar(value=state["permissions"].get(key, False))
             permission_vars[key] = var
             ctk.CTkCheckBox(scroll, text=label, variable=var).pack(anchor="w", pady=4)
-        ctk.CTkLabel(scroll, text="Terminal/test ve MCP çağrıları işlem başına onay ister.", wraplength=420).pack(anchor="w", pady=8)
+        ctk.CTkLabel(scroll, text="Özel izin politikası", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", pady=(14, 4))
+        custom_policy = tk.BooleanVar(value=bool(state.get("policy")))
+        ctk.CTkCheckBox(scroll, text="Özel çalışma modunda bu politikayı kullan", variable=custom_policy).pack(anchor="w", pady=4)
+        from firik_agent.projects.coding_runtime import CodingRunControl
+        defaults = CodingRunControl(state["session"].session_id, self.current_project_id, mode="custom",
+            permissions={key: True for key in PERMISSION_NAMES}, policy=state.get("policy", {})).policy_snapshot()
+        policy_combos = {}
+        policy_labels = {value: label for label, value in POLICY_VALUES.items()}
+        for key, label in POLICY_NAMES.items():
+            row = ctk.CTkFrame(scroll, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=label, anchor="w").pack(side="left", fill="x", expand=True)
+            immutable = key in {"secrets", "shell.sudo", "git.forcePush"}
+            combo = ctk.CTkComboBox(row, values=list(POLICY_VALUES), width=115,
+                                  state="disabled" if immutable else "readonly", command=lambda value: custom_policy.set(True))
+            combo.set(policy_labels[defaults[key]])
+            combo.pack(side="right")
+            policy_combos[key] = combo
+        ctk.CTkLabel(scroll, text="Shell sandbox'ı bulunmadığı için terminal/test, Git yazma ve MCP işlemleri ayrı onay ister. Gizli bilgiler, yönetici yetkisi ve force push kapalıdır.", wraplength=420, justify="left").pack(anchor="w", pady=8)
         selected_servers, selected_tools = {}, {}
         prefs = state["preferences"]
         for server in self.service.get_mcp_servers():
@@ -758,7 +1230,12 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             ctk.CTkCheckBox(scroll, text=f"Beceri: {name}", variable=var).pack(anchor="w", pady=3)
         def save():
             state["permissions"] = {key: var.get() for key, var in permission_vars.items()}
+            state["policy"] = {key: POLICY_VALUES[combo.get()] for key, combo in policy_combos.items()} if custom_policy.get() else {}
+            if custom_policy.get():
+                self._coding_mode_selected("Özel")
+                self.coding_mode_combo.set("Özel")
             self._save_coding_preferences({"permissions": state["permissions"],
+                "policy": state["policy"],
                 "provider": provider_combo.get(),
                 "mcp_servers": [key for key, var in selected_servers.items() if var.get()],
                 "mcp_tools": [key for key, var in selected_tools.items() if var.get()],

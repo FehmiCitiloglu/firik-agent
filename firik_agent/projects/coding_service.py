@@ -1,15 +1,16 @@
 """Coding agent orchestration, session recording, Ask Project, and Universal Search."""
 from __future__ import annotations
 
-import datetime
 import json
 import logging
-import time
+import re
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import uuid
 
 from firik_agent.projects.context_builder import ProjectContextBuilder
+from firik_agent.projects.context_inspector import inspect_request_context
+from firik_agent.projects.composer import parse_composer, composer_suggestions
 from firik_agent.projects.db import ProjectDatabase
 from firik_agent.projects.git_service import GitService
 from firik_agent.projects.explorer import ProjectExplorer
@@ -18,10 +19,6 @@ from firik_agent.projects.model_capabilities import model_capabilities, context_
 from firik_agent.projects.skill_selection import skill_catalogue, select_skill_instructions
 from firik_agent.projects.models import (
     CodingSession,
-    Feature,
-    Project,
-    Task,
-    TaskStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,6 +30,39 @@ class ProjectCodingService:
     def __init__(self, db: ProjectDatabase):
         self.db = db
 
+    def suggest_composer(self, project_id: str, query: str, *,
+                         composer_context: Optional[Dict[str, Any]] = None,
+                         available_skills: Optional[List[Any]] = None,
+                         mcp_tools: Optional[List[Any]] = None, limit: int = 12) -> List[Dict[str, str]]:
+        """Metadata-only project-scoped autocomplete; callers schedule it off Tk."""
+        project = self.db.get_project(project_id)
+        if project is None:
+            raise ValueError("Proje bulunamadı.")
+        preferences = self.db.get_settings(project_id).coding_preferences
+        exclusions = [str(path).replace("\\", "/").rstrip("/") for path in preferences.get("excluded_files", [])]
+        paths = [item["file_path"] for item in self.db.get_all_code_indexes(project_id)]
+        if not paths and query.startswith("@"):
+            paths = [path.relative_to(Path(project.local_path).resolve()).as_posix()
+                     for path in CodebaseIndexer(project.local_path).scan_files(max_files=300)]
+        paths = [path for path in paths if not any(excluded == "." or path == excluded or path.startswith(excluded + "/") for excluded in exclusions)]
+        files = [{"path": path} for path in paths]
+        folders = set()
+        for path in paths:
+            folders.update(parent.as_posix() for parent in Path(path).parents if parent.as_posix() != ".")
+        files += [{"path": path, "is_dir": True} for path in sorted(folders)]
+        context = dict(composer_context or {})
+        scoped = lambda rows: [row for row in rows if isinstance(row, dict) and row.get("project_id", project_id) == project_id]
+        sessions = self.db.list_sessions(project_id)
+        terminals = scoped(context.get("terminals", [])) + [{"id": run.run_id or run.id, "name": run.title, "project_id": project_id}
+                                                             for run in sessions if run.commands_executed]
+        commits = scoped(context.get("commits", []))
+        if query.startswith("@commit") and not commits:
+            commits = GitService.get_recent_commits(project.local_path, limit=12)
+        return composer_suggestions(query, files=files,
+            memories=[memory for memory in self.db.list_memories(project_id) if memory.status in {"approved", "pinned"}],
+            agents=scoped(context.get("agents", [])), terminals=terminals, commits=commits,
+            skills=available_skills or [], mcp_tools=mcp_tools or [], limit=limit)
+
     def prepare_coding_prompt(
         self, project_id: str, user_request: str, *, task_id: Optional[str] = None,
         session_id: Optional[str] = None, relevant_paths: Optional[List[str]] = None,
@@ -40,6 +70,9 @@ class ProjectCodingService:
         selected_skills: Optional[List[Any]] = None, available_skills: Optional[List[Any]] = None,
         session_carry: Optional[Dict[str, Any]] = None, total_token_budget: int = 6000,
         permissions: Optional[Dict[str, Any]] = None,
+        pinned_paths: Optional[List[str]] = None, always_include_paths: Optional[List[str]] = None,
+        excluded_paths: Optional[List[str]] = None, summarized_paths: Optional[List[str]] = None,
+        composer_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Re-read project rules, task, files, Git, and continuity for every turn."""
         project = self.db.get_project(project_id)
@@ -57,6 +90,29 @@ class ProjectCodingService:
         if "task_id" in carry and carry["task_id"] != task_id:
             raise ValueError("Oturum özeti bu göreve ait değil.")
         settings = self.db.get_settings(project_id)
+        preferences = getattr(settings, "coding_preferences", {})
+        parsed = parse_composer(user_request)
+        reference_paths = [item["value"] for item in parsed["references"] if item["kind"] in {"file", "folder"}]
+        pinned = list(pinned_paths if pinned_paths is not None else preferences.get("pinned_files", []))
+        always = list(always_include_paths if always_include_paths is not None else preferences.get("always_include_files", []))
+        excluded = list(excluded_paths if excluded_paths is not None else preferences.get("excluded_files", []))
+        summarized = list(summarized_paths if summarized_paths is not None else preferences.get("summarized_files", []))
+        normalized_paths = {}
+        def normalize_path(value):
+            value = str(value)
+            if value in normalized_paths:
+                return normalized_paths[value]
+            try:
+                normalized = safe_project_path(project.local_path, value).relative_to(Path(project.local_path).resolve()).as_posix()
+            except (ValueError, OSError):
+                normalized = value.replace("\\", "/").rstrip("/")
+            normalized_paths[value] = normalized
+            return normalized
+        def covered(path, selections):
+            path = normalize_path(path)
+            return any(selection == "." or path == selection or path.startswith(selection + "/") for selection in map(normalize_path, selections))
+        def excluded_file(path):
+            return covered(path, excluded)
         allow_read = settings.permissions.get("read_files", "allow") not in {"never", "deny"}
         if permissions is not None:
             allow_read = allow_read and permissions.get("allow_reads", True) is True
@@ -68,12 +124,21 @@ class ProjectCodingService:
         capabilities = model_capabilities(model_metadata)
         budget = context_budget(capabilities, local_budget=total_token_budget)
         indexer = CodebaseIndexer(project.local_path)
-        indexed = self.db.get_all_code_indexes(project_id)
-        query = user_request + (" " + task.title + " " + task.description if task else "")
+        all_indexed = self.db.get_all_code_indexes(project_id)
+        indexed = [item for item in all_indexed if not excluded_file(item["file_path"])]
+        query = parsed["user_prompt"] + (" " + task.title + " " + task.description if task else "")
         matches = indexer.search_codebase(query, indexed, limit=8) if allow_read else []
         # The content fallback is bounded and also discovers files created after indexing.
-        content_matches = indexer.search_content(query, indexed or None, limit=6, max_files=300) if allow_read else []
-        paths = list(relevant_paths or []) + (list(task.related_files) if task else [])
+        # Supply a filtered path list even without a persisted index: exclusions
+        # take effect before content search reads anything.
+        search_index = indexed
+        if allow_read and not all_indexed:
+            search_index = [{"file_path": path.relative_to(indexer.root).as_posix()}
+                            for path in indexer.scan_files(max_files=300)
+                            if not excluded_file(path.relative_to(indexer.root).as_posix())]
+        content_matches = indexer.search_content(query, search_index, limit=6, max_files=300) if allow_read and search_index else []
+        selected = list(relevant_paths or []) + reference_paths
+        paths = always + pinned + selected + (list(task.related_files) if task else [])
         if feature:
             paths += feature.related_files
         paths += [match["file_path"] for match in matches + content_matches]
@@ -84,7 +149,6 @@ class ProjectCodingService:
                 unavailable.append(str(path))
                 unavailable_report.append({"path": str(path), "reason": sanitize_secrets(reason)})
         if allow_read:
-            preferences = getattr(settings, "coding_preferences", {})
             explorer = ProjectExplorer(project.local_path, indexed_data=indexed,
                                        ignored_dirs=preferences.get("ignored_dirs"),
                                        show_hidden=preferences.get("show_hidden", False))
@@ -100,6 +164,8 @@ class ProjectCodingService:
                     visited += 1
                     limited = limited or explorer.limited
                     for item in children:
+                        if excluded_file(item["path"]):
+                            continue
                         if item["is_dir"]:
                             pending.append(item["path"])
                         elif Path(item["path"]).suffix.lower() not in IGNORED_EXTENSIONS:
@@ -123,6 +189,9 @@ class ProjectCodingService:
                 return ordered[:24], limited or len(ordered) > 12
             expanded = []
             for relative in paths:
+                if excluded_file(relative):
+                    report_unavailable(relative, "Kullanıcı bu dosyayı veya klasörü AI bağlamından hariç tuttu.")
+                    continue
                 try:
                     path = safe_project_path(project.local_path, relative)
                     if path.is_dir():
@@ -149,12 +218,19 @@ class ProjectCodingService:
                 candidate = dependency.replace(".", "/")
                 for suffix in (".py", "/__init__.py"):
                     if candidate + suffix in lookup:
-                        paths.append(candidate + suffix)
+                        if not excluded_file(candidate + suffix):
+                            paths.append(candidate + suffix)
         relevant_files: Dict[str, str] = {}
+        file_metadata: Dict[str, Dict[str, Any]] = {}
         if allow_read:
             for relative in dict.fromkeys(paths):
+                if excluded_file(relative):
+                    report_unavailable(relative, "Kullanıcı bu dosyayı veya klasörü AI bağlamından hariç tuttu.")
+                    continue
                 if len(relevant_files) >= 12:
-                    break
+                    if covered(relative, always + pinned + selected):
+                        report_unavailable(relative, "Kaynak bağlamı 12 dosya sınırına ulaştı; dosya bu isteğe eklenmedi.")
+                    continue
                 try:
                     path = safe_project_path(project.local_path, relative)
                     rel = path.relative_to(indexer.root).as_posix()
@@ -162,9 +238,20 @@ class ProjectCodingService:
                     match_line = next((m.get("line") for m in content_matches if m["file_path"] == rel), None)
                     lines = text.splitlines()
                     first = max(0, (match_line or 1) - 25)
+                    is_summary = covered(rel, summarized)
+                    count = 30 if is_summary else 100
                     excerpt = "\n".join(f"{number}: {line}" for number, line in enumerate(
-                        lines[first:first + 100], first + 1))
+                        lines[first:first + count], first + 1))
+                    if is_summary:
+                        excerpt = "[Yerel sıkıştırma: en fazla 30 kaynak satırı; model tarafından üretilmiş özet değildir.]\n" + excerpt
                     relevant_files[rel] = excerpt[:10000]
+                    source = "always" if covered(rel, always) else "pinned" if covered(rel, pinned) else "selected" if covered(rel, selected) else "task" if task and covered(rel, task.related_files) else "retrieved" if any(item["file_path"] == rel for item in matches + content_matches) else "dependency"
+                    reasons = {"always": "Kullanıcı her isteğe eklenmesini seçti", "pinned": "Kullanıcı kaynak bağlamını sabitledi",
+                               "selected": "Kullanıcı bu dosyayı veya klasörü seçti", "task": "Aktif görevin ilgili dosyası",
+                               "retrieved": "Görev sorgusunda dosya, sembol veya içerik eşleşmesi", "dependency": "İlgili dosyanın indekslenmiş bağımlılığı"}
+                    file_metadata[rel] = {"source": source, "reason": reasons[source], "pinned": covered(rel, pinned),
+                                          "always_include": covered(rel, always), "summarized": is_summary,
+                                          "line_start": first + 1, "line_end": min(len(lines), first + count)}
                 except ValueError as error:
                     report_unavailable(relative, str(error))
                 except OSError:
@@ -172,18 +259,61 @@ class ProjectCodingService:
         definitions = list(available_skills or [])
         selected_values = list(selected_skills or [])
         selected_names = [value for value in selected_values if isinstance(value, str)]
+        selected_names += [item["value"] for item in parsed["references"] if item["kind"] == "skill"]
+        if parsed["command"] == "skill" and parsed["arguments"]:
+            selected_names.append(parsed["arguments"].split()[0])
         selected_definitions = [value for value in selected_values if not isinstance(value, str)]
         definitions += selected_definitions
         selected_names += [value.get("name", "") if isinstance(value, dict) else getattr(value, "name", "")
                            for value in selected_definitions]
         loaded_skills = select_skill_instructions(definitions, selected_names)
+        prepared_documents = [document for document in documents or []
+                              if not excluded_file(document.get("file_path", "") if isinstance(document, dict) else getattr(document, "file_path", ""))]
+        scoped_context = dict(composer_context or {})
+        approved_memories = [memory for memory in self.db.list_memories(project_id)
+                             if memory.project_id == project_id and memory.status in {"approved", "pinned"}]
+        reference_report = []
+        for reference in parsed["references"]:
+            kind, value = reference["kind"], reference["value"]
+            resolved = None
+            if kind == "memory":
+                memory = next((item for item in approved_memories if item.id == value), None)
+                if memory:
+                    resolved = {"project_id": project_id, "title": "Seçili hafıza: " + value, "content": memory.content}
+            elif kind in {"agent", "terminal", "commit"}:
+                rows = scoped_context.get(kind + "s", [])
+                row = next((item for item in rows if isinstance(item, dict)
+                            and item.get("project_id", project_id) == project_id
+                            and (item.get("id") == value or item.get("hash") == value)), None)
+                if row:
+                    resolved = {"project_id": project_id, "title": kind + ": " + value,
+                                "content": json.dumps(row, ensure_ascii=False, default=str)[:12000]}
+                elif kind == "terminal":
+                    session = next((entry for entry in sessions if entry.id == value or entry.run_id == value), None)
+                    if session:
+                        resolved = {"project_id": project_id, "title": "Terminal: " + value,
+                                    "content": json.dumps({"commands": session.commands_executed[-12:], "tests": session.tests_executed[-12:]}, ensure_ascii=False)[:12000]}
+                elif kind == "commit" and allow_read and re.fullmatch(r"[0-9a-fA-F]{7,40}", value):
+                    code, output, _ = GitService._run_git(project.local_path, ["show", "--no-patch", "--format=fuller", value, "--"], timeout=10)
+                    if code == 0:
+                        resolved = {"project_id": project_id, "title": "Commit: " + value, "content": output[:12000]}
+            if resolved:
+                prepared_documents.append(resolved)
+            if kind not in {"file", "folder", "skill", "mcp"}:
+                reference_report.append({**reference, "resolved": resolved is not None,
+                                         "reason": "Proje kapsamındaki kayıt eklendi" if resolved else "Bu proje kapsamında referans kaydı bulunamadı"})
+        diff = GitService.get_diff(project.local_path, staged=False, max_lines=180) if allow_read else ""
+        if excluded:
+            sections = re.split(r"(?m)(?=^diff --git )", diff)
+            diff = "".join(section for section in sections if not any(excluded_file(path.strip('"'))
+                           for path in re.findall(r"(?m)^(?:---|\+\+\+) [ab]/(.+)$", section)))
         builder = ProjectContextBuilder(
             project=project, settings=settings, instructions=self.db.list_instructions(project_id),
             memories=self.db.list_memories(project_id), current_feature=feature, current_task=task,
             adrs=self.db.list_adrs(project_id), relevant_files=relevant_files,
-            git_diff=GitService.get_diff(project.local_path, staged=False, max_lines=180) if allow_read else "",
+            git_diff=diff,
             last_session=last_session, total_token_budget=budget["token_budget"],
-            documents=documents or [], selected_skills=loaded_skills, session_carry=carry,
+            documents=prepared_documents, selected_skills=loaded_skills, session_carry=carry, file_metadata=file_metadata,
         )
         base_role = (
             "Sen Firik Kodlama Ajanısın. Kullanıcının seçtiği çalışma modu ve araç izinlerine uy. "
@@ -194,9 +324,19 @@ class ProjectCodingService:
         )
         system_prompt = builder.assemble_system_prompt(base_role)
         budget["estimated_tokens_used"] = (len(system_prompt) + 3) // 4
+        visibility = builder.get_visibility_report()
+        context_items = builder.get_context_items()
+        inspector = inspect_request_context([{"role": "system", "content": system_prompt},
+                                             {"role": "user", "content": parsed["user_prompt"]}], [], capabilities,
+                                            visibility_report=visibility, context_items=context_items)
         return {"project": project, "task": task, "feature": feature,
-                "system_prompt": system_prompt, "user_prompt": sanitize_secrets(user_request),
-                "visibility_report": builder.get_visibility_report(), "model": settings.coding_model,
+                "system_prompt": system_prompt, "user_prompt": parsed["user_prompt"],
+                "visibility_report": visibility, "model": settings.coding_model,
+                "context_items": context_items, "context_inspector": inspector,
+                "composer": {**parsed, "reference_report": reference_report},
+                "index_status": {"files": len(all_indexed), "symbols": sum(len(item.get("symbols", [])) for item in all_indexed),
+                                 "dependency_edges": sum(len(item.get("imports", [])) for item in all_indexed),
+                                 "semantic_index_available": False, "source": "persisted_index"},
                 "capabilities": capabilities, "context_budget": budget,
                 "relevant_files": list(relevant_files), "unavailable_files": unavailable,
                 "unavailable_report": unavailable_report,
@@ -301,8 +441,6 @@ class ProjectCodingService:
 
         adrs = self.db.list_adrs(project_id)
         matched_adrs = [a for a in adrs if any(w in (a.title + a.context + a.decision).lower() for w in question.lower().split() if len(w) > 3)][:2]
-
-        commits = GitService.get_recent_commits(project.local_path, limit=8)
 
         # Build citations
         citations = []

@@ -10,6 +10,8 @@ FIRIK portalında **Platform**, **LLM Çıkarım** ve **Model Çıkarımı** far
 
 ## Kurulum
 
+Masaüstü uygulamasındaki **Kodlama Ajanı**, dosya gezgini, plan, etkinlik, terminal, test, Git ve ajan inceleyicisini tek çalışma alanında toplar. Gerçek araç yürütümü proje izinlerinden geçer; kontrol noktaları, değişiklik incelemesi, doğrulama kanıtı ve oturum geçmişi kalıcı kaydedilir. Çoklu ajan sınırları, bağlam/model bilgisinin kaynakları ve 52 gereksinimin uygulama durumu [Kodlama cockpit dokümanında](docs/CODING_COCKPIT.md) açıklanır.
+
 Python 3.10+:
 
 ### ⚡ Tek Komutla Hızlı Kurulum (Otomatik .venv ve paketler)

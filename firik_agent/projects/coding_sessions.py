@@ -24,9 +24,9 @@ if TYPE_CHECKING:
 REDACTED = "[SECRET_FILTERED]"
 ACTIVE_STATUSES = frozenset({
     "queued", "running", "understanding", "planning", "waiting_approval",
-    "applying", "verifying", "correcting", "stopping", "awaiting_approval", "paused",
+    "applying", "implementing", "verifying", "correcting", "stopping", "awaiting_approval", "paused",
 })
-TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "interrupted"})
+TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "interrupted", "blocked"})
 _SECRET_KEY = re.compile(
     r"(?i)^(?:[a-z0-9]+[_-])*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|authorization|auth|"
     r"password|passwd|secret|secret[_-]?key|client[_-]?secret|private[_-]?key|credential|credentials)$"
@@ -286,13 +286,23 @@ class CodingSessionStore:
             finally:
                 conn.close()
 
-    def list_events(self, run_id: str, *, project_id: Optional[str] = None) -> list[CodingRunEvent]:
+    def list_events(self, run_id: str, *, project_id: Optional[str] = None,
+                    limit: Optional[int] = None, include_deltas: bool = True) -> list[CodingRunEvent]:
         run = self.get_run(run_id, project_id=project_id)
         if run is None:
             return []
         conn = self.db._get_connection()
         try:
-            rows = conn.execute("SELECT * FROM coding_run_events WHERE run_id=? ORDER BY sequence", (run_id,)).fetchall()
+            query = "SELECT * FROM coding_run_events WHERE run_id=?"
+            args: list[Any] = [run_id]
+            if not include_deltas:
+                query += " AND event_type NOT IN ('text_delta', 'reasoning_delta', 'tool_call_arguments')"
+            query += " ORDER BY sequence" + (" DESC LIMIT ?" if limit is not None else "")
+            if limit is not None:
+                args.append(max(1, min(int(limit), 10000)))
+            rows = conn.execute(query, args).fetchall()
+            if limit is not None:
+                rows.reverse()
             return [CodingRunEvent.model_validate({**dict(row), "data": redact_sensitive(json.loads(row["data"]), self._known_secrets)})
                     for row in rows]
         finally:

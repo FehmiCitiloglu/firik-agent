@@ -89,6 +89,8 @@ class OpenAIProvider(BaseProvider):
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
         payload.update(self.reasoning_options())
+        if stream:
+            payload["stream_options"] = {"include_usage": True}
         return payload
 
     async def chat(
@@ -185,11 +187,15 @@ class OpenAIProvider(BaseProvider):
                             continue
 
                         choices = data.get("choices", [])
+                        usage = data.get("usage")
+                        if isinstance(usage, dict) and usage:
+                            yield StreamChunk(usage=usage)
                         if not choices:
                             continue
 
                         delta = choices[0].get("delta", {})
                         content_delta = delta.get("content")
+                        reasoning_delta = delta.get("reasoning") or delta.get("reasoning_content")
 
                         raw_tool_calls = delta.get("tool_calls")
                         if raw_tool_calls:
@@ -224,8 +230,8 @@ class OpenAIProvider(BaseProvider):
                             ]
                             yield StreamChunk(tool_calls=assembled, is_done=True)
                         else:
-                            if content_delta:
-                                yield StreamChunk(delta_content=content_delta)
+                            if content_delta or reasoning_delta:
+                                yield StreamChunk(delta_content=content_delta, delta_reasoning=reasoning_delta)
 
     async def list_models(self) -> List[ModelInfo]:
         try:
@@ -234,19 +240,13 @@ class OpenAIProvider(BaseProvider):
                 resp = await client.get(url, headers=self._get_headers())
                 if resp.status_code == 200:
                     data = resp.json()
-                    return [
-                        ModelInfo(
-                            id=m.get("id", ""),
-                            name=m.get("id", ""),
-                            context_window=128000,
-                            supports_tools=True,
-                        )
-                        for m in data.get("data", [])
-                    ]
+                    rows = data.get("data", []) if isinstance(data, dict) else []
+                    self.model_metadata = {str(row["id"]): {**row, "source": "provider"}
+                                           for row in rows if isinstance(row, dict) and row.get("id")}
+                    return [self.model_info(row) for row in self.model_metadata.values()]
         except Exception as e:
             logger.debug("Failed listing models from %s: %s", self.base_url, e)
 
-        return [
-            ModelInfo(id="gpt-4o", name="GPT-4o", context_window=128000, supports_tools=True),
-            ModelInfo(id="gpt-4o-mini", name="GPT-4o Mini", context_window=128000, supports_tools=True),
-        ]
+        # Configured model remains selectable during an outage; it is not a
+        # successful discovery or evidence of capabilities.
+        return [self.model_info({"id": self.current_model})] if self.current_model else []
