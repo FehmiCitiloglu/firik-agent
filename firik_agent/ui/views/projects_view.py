@@ -699,7 +699,7 @@ class ProjectsView(CodingEvidenceMixin, CodingWorkspaceMixin, ctk.CTkFrame):
         visible_nav = [self.tab_buttons[key] for key in ("overview", "coding", "git")]
         visible_nav += list(self.workspace_groups.values()) + [self.tab_buttons["settings"]]
         def layout_tabs(event):
-            columns = max(1, event.width // 134)
+            columns = max(1, event.width // 165)
             for index, button in enumerate(visible_nav):
                 button.grid(row=index // columns, column=index % columns, padx=2, pady=2, sticky="ew")
         sub_nav.bind("<Configure>", layout_tabs)
