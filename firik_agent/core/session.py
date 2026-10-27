@@ -144,6 +144,7 @@ class SessionToolFilter:
                 name=name,
                 content=f"Error: Tool '{name}' is not enabled for this chat session.",
                 is_error=True,
+                metadata={"failure_kind": "permission_denied", "request_phase": "tool_not_dispatched"},
             )
 
         return await self._registry_for(name).execute(tool_call)

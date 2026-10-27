@@ -22,6 +22,7 @@ def restore_state_history(state, record, events=None):
     state["last_prompt"] = record.user_request
     state["status"] = STATUS_NAMES.get(record.status, "Kayıtlı çalışma")
     state["usage"] = deepcopy(record.usage)
+    state["harness_metrics"] = deepcopy(record.usage.get("harness_metrics", {}))
     context = deepcopy(record.context_report)
     state["context_report"] = context if isinstance(context, list) else list(context.values()) if all(isinstance(v, dict) for v in context.values()) else []
     state["decisions"] = deepcopy(record.decisions)
@@ -123,7 +124,7 @@ class CodingHistoryMixin:
         self.service._coding_session_projects[session.session_id] = self.current_project_id
         state.update(session=session, record=None, busy=False, messages=[{"role": "system", "content": WELCOME}], text=WELCOME,
                      status="Hazır", task_id=None, plan=[], activities=[], changes=[], record_journal=[], agent_paths={},
-                     context_report=[], usage={}, decisions=[], tests=[], change_counts={}, test_counts={}, before=None,
+                     context_report=[], usage={}, harness_metrics={}, decisions=[], tests=[], change_counts={}, test_counts={}, before=None,
                      snapshot=None, selected_change=None, inspection_warning="", pending_approvals={}, last_prompt="",
                      paused=False, stopped=False, future=None, documents=[])
         state["run_id"] += 1

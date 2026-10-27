@@ -1100,6 +1100,9 @@ async def run_repl(agent: Agent) -> None:
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in {"benchmark", "harness"}:
+        from firik_agent.benchmarks.cli import main as benchmark_main
+        raise SystemExit(benchmark_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "api":
         from firik_agent.api.cli import main as api_main
         raise SystemExit(api_main(sys.argv[2:]))
@@ -1111,7 +1114,7 @@ def main():
         raise SystemExit(cu_main(sys.argv[2:]))
     parser = argparse.ArgumentParser(
         description="Firik Agent CLI",
-        epilog="MCP commands: firik-agent mcp --help | Computer Use: firik-agent computer-use doctor | Direct API: firik-agent api --help",
+        epilog="Harness Lab: firik-agent harness doctor | firik-agent harness bench --suite offline-smoke | MCP: firik-agent mcp --help | Computer Use: firik-agent computer-use doctor | API: firik-agent api --help",
     )
 
     parser.add_argument("--prompt", "-p", type=str, help="Single-shot prompt to execute")

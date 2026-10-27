@@ -4,8 +4,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
+from uuid import uuid4
 
 from firik_agent.core.types import Message
 
@@ -84,7 +86,8 @@ class ContextCompactor:
         trigger = overhead + max(0, budget - overhead) * self.threshold
         return bool(self.enabled and estimate_tokens(system + state.view(history), schemas) >= trigger)
 
-    async def compact(self, state, history, system, schemas, budget, provider, checkpoint=None) -> dict:
+    async def compact(self, state, history, system, schemas, budget, provider, checkpoint=None,
+                      on_request_event: Callable[[str, dict[str, Any]], None] | None = None) -> dict:
         state.validate(history)
         before = estimate_tokens(system + state.view(history), schemas)
         overhead = estimate_tokens(system, schemas)
@@ -133,6 +136,13 @@ class ContextCompactor:
                     break
             if end is None:
                 raise ValueError("Tek bir araç işlemi özetleme bütçesini aşıyor; araç çıktısını küçültün veya daha geniş bağlamlı model seçin.")
+            request_info = {"request_id": uuid4().hex, "request_kind": "compaction",
+                            "model": getattr(provider, "current_model", ""),
+                            "provider": getattr(provider, "name", ""), "summary_chunk": chunks + 1}
+            started = time.monotonic()
+            status, error_type, usage = "completed", None, {}
+            if on_request_event:
+                on_request_event("model_request_started", request_info)
             task = asyncio.ensure_future(provider.chat(messages=request, tools=None, temperature=0, max_tokens=reserve))
             try:
                 deadline = asyncio.get_running_loop().time() + self.timeout
@@ -143,10 +153,21 @@ class ContextCompactor:
                     if asyncio.get_running_loop().time() >= deadline and not task.done():
                         raise TimeoutError("Bağlam özetleme zaman aşımına uğradı.")
                 response = task.result()
+                usage = dict(getattr(response, "usage", None) or {})
+            except BaseException as error:
+                status = "cancelled" if isinstance(error, asyncio.CancelledError) else "failed"
+                error_type = type(error).__name__
+                raise
             finally:
                 if not task.done():
                     task.cancel()
                     await asyncio.gather(task, return_exceptions=True)
+                if on_request_event:
+                    on_request_event("model_request_finished", {**request_info, "status": status,
+                        "usage": usage, "usage_complete": status == "completed" and bool(usage),
+                        "error_type": error_type, "metrics": {
+                            "latency_ms": max(0, time.monotonic() - started) * 1000,
+                            "ttft_ms": None, "retry_count": 0}})
             if checkpoint:
                 await checkpoint()
             if response.tool_calls or not isinstance(response.content, str) or not response.content.strip():

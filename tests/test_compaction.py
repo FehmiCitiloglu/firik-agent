@@ -122,7 +122,12 @@ async def test_agent_stream_emits_compaction_then_continues():
     session.messages = archive()
     events = [e async for e in agent.run_stream("Son istek", session=session)]
     types = [e.type.value for e in events]
-    assert types[:3] == ["context_compaction_started", "context_compacted", "model_request_started"]
+    assert types[0] == "context_compaction_started"
+    compacted = types.index("context_compacted")
+    assert any(e.type.value == "model_request_started" and e.metadata.get("request_kind") == "compaction"
+               for e in events[:compacted])
+    assert any(e.type.value == "model_request_started" and e.metadata.get("request_kind") == "model"
+               for e in events[compacted + 1:])
     assert "done" in types and "error" not in types
     assert provider.streams[0]["messages"][-1].content == "Son istek"
     assert provider.streams[0]["max_tokens"] == session.max_tokens

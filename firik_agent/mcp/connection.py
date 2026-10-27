@@ -396,8 +396,10 @@ class MCPConnectionManager:
                 async def handler(**kwargs):
                     res = await c.call_tool(orig_name, kwargs)
                     if res.isError:
-                        err_texts = [item.text for item in res.content if item.text]
-                        return f"MCP Tool Error: {' '.join(err_texts)}"
+                        return ToolResult(tool_call_id="", name=orig_name, is_error=True,
+                            content="MCP tool reported an error; inspect server state before repeating the operation.",
+                            metadata={"failure_kind": "tool_outcome_unknown", "request_phase": "tool_dispatched",
+                                      "requires_reconciliation": True, "retry_eligible": False})
                     parts: List[ContentPart] = []
                     texts: List[str] = []
                     for item in res.content:

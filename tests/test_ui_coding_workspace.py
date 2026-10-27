@@ -134,6 +134,22 @@ def test_panel_preferences_and_long_conversation_are_bounded(workspace):
     assert view.coding_input._font.cget("size") == 17
 
 
+def test_hidden_conversation_renders_latest_text_when_opened(workspace):
+    app, view, project, streams = workspace
+    view.coding_tabs.set("Etkinlik")
+    settle(app)
+    view.coding_chat_box.set_messages([{"role": "assistant", "content": "Önceki içerik " * 300}])
+    settle(app)
+    view.coding_chat_box.set_messages([{"role": "assistant", "content": "Güncel içerik " * 300}])
+    settle(app)
+    view.coding_tabs.set("Sohbet")
+    settle(app, 0.3)
+    body = view.coding_chat_box.cards[0][1]
+    displayed = "\n".join(block.get("1.0", "end-1c") for block in body.blocks)
+    assert "Güncel içerik" in displayed
+    assert "Önceki içerik" not in displayed
+
+
 def test_native_drop_line_references_and_compact_approval_review(workspace, monkeypatch):
     import customtkinter as ctk
     app, view, project, streams = workspace

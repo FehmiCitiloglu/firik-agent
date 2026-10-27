@@ -112,7 +112,7 @@ async def test_environment_is_sent_before_first_response_and_refreshed(tmp_path,
 
     async def stream(messages, **kwargs):
         if mode == "stream_fallback":
-            raise RuntimeError("stream unsupported")
+            raise NotImplementedError("stream unsupported")
         requests.append(messages)
         yield StreamChunk(delta_content="ok")
 

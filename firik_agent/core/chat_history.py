@@ -105,6 +105,8 @@ class ChatHistoryStore:
             return
         if messages[-1]["role"] != "assistant" or messages[-1].get("tool_calls"):
             return
+        if messages[-1].get("execution", {}).get("status") in {"interrupted", "cancelled"}:
+            return
         last_user = max(index for index, row in enumerate(messages) if row["role"] == "user")
         turn = messages[last_user + 1:]
         text = "\n\n".join(row["content"] for row in turn
@@ -164,21 +166,8 @@ class ChatHistoryStore:
                 session.compaction.reset()
         # An interrupted run may leave unanswered tool calls. Close those before
         # sending the restored context to a provider, without re-executing tools.
-        pending = {}
-        repaired = []
-        for message in session.messages:
-            if message.role != "tool" and pending:
-                repaired.extend(Message(role="tool", tool_call_id=call.id, name=call.function.name,
-                                        content="İşlem kesildi; kaydedilmiş sonuç bulunmuyor.") for call in pending.values())
-                pending.clear()
-            repaired.append(message)
-            if message.tool_calls:
-                pending.update((call.id, call) for call in message.tool_calls)
-            if message.role == "tool":
-                pending.pop(message.tool_call_id, None)
-        repaired.extend(Message(role="tool", tool_call_id=call.id, name=call.function.name,
-                                content="İşlem kesildi; kaydedilmiş sonuç bulunmuyor.") for call in pending.values())
-        session.messages = repaired
+        from firik_agent.projects.coding_runtime import repair_tool_history
+        repair_tool_history(session.messages)
         # Prompt-only or offline UI records still provide usable chat context.
         user_count = sum(message.role == "user" for message in session.messages)
         display_user_count = 0

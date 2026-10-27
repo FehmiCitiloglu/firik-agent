@@ -1,5 +1,4 @@
 from __future__ import annotations
-import json
 import logging
 from typing import Any, AsyncIterator, Dict, List, Optional
 import httpx
@@ -8,8 +7,6 @@ from firik_agent.core.types import (
     Message,
     ModelInfo,
     StreamChunk,
-    ToolCall,
-    ToolCallFunction,
 )
 from firik_agent.providers.base import BaseProvider
 
@@ -253,55 +250,8 @@ class FirikProvider(BaseProvider):
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
     ) -> Message:
-        payload = self._prepare_payload(
-            messages=messages,
-            tools=tools,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=False,
-        )
-
-        url = f"{self.base_url}/chat/completions"
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(url, json=payload, headers=self._get_headers())
-            if resp.status_code != 200:
-                self._handle_error_response(resp)
-
-            data = resp.json()
-
-        choices = data.get("choices", [])
-        if not choices:
-            return Message(role="assistant", content="")
-
-        msg_data = choices[0].get("message", {})
-        content = msg_data.get("content")
-        reasoning = (
-            msg_data.get("reasoning")
-            or msg_data.get("reasoning_content")
-            or None
-        )
-
-        tool_calls = None
-        if "tool_calls" in msg_data and msg_data["tool_calls"]:
-            tool_calls = []
-            for tc in msg_data["tool_calls"]:
-                tool_calls.append(
-                    ToolCall(
-                        id=tc.get("id", ""),
-                        type="function",
-                        function=ToolCallFunction(
-                            name=tc.get("function", {}).get("name", ""),
-                            arguments=tc.get("function", {}).get("arguments", ""),
-                        ),
-                    )
-                )
-
-        return Message(
-            role="assistant",
-            content=content,
-            reasoning=reasoning,
-            tool_calls=tool_calls,
-        )
+        from firik_agent.providers._chat import chat, prepare_payload
+        return await chat(self, prepare_payload(self, messages, tools, temperature, max_tokens, stream=False))
 
     async def chat_stream(
         self,
@@ -310,125 +260,13 @@ class FirikProvider(BaseProvider):
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
     ) -> AsyncIterator[StreamChunk]:
-        payload = self._prepare_payload(
-            messages=messages,
-            tools=tools,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-        )
-
-        url = f"{self.base_url}/chat/completions"
-        headers = self._get_headers()
-
-        tool_calls_accumulator: Dict[int, Dict[str, Any]] = {}
-
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            async with client.stream("POST", url, json=payload, headers=headers) as response:
-                if response.status_code != 200:
-                    body = await response.aread()
-                    error_msg = f"HTTP {response.status_code}: {body.decode('utf-8', errors='replace')}"
-                    raise RuntimeError(f"Firik API Error: {error_msg}")
-
-                buffer = ""
-                async for chunk in response.aiter_text():
-                    buffer += chunk
-                    lines = buffer.split("\n")
-                    buffer = lines.pop()
-
-                    for line in lines:
-                        line = line.strip()
-                        if not line or not line.startswith("data:"):
-                            continue
-
-                        data_str = line[len("data:") :].strip()
-                        if data_str == "[DONE]":
-                            yield StreamChunk(is_done=True)
-                            continue
-
-                        try:
-                            data = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
-
-                        usage = data.get("usage")
-                        choices = data.get("choices", [])
-                        if not choices:
-                            if usage:
-                                yield StreamChunk(usage=usage)
-                            continue
-
-                        delta = choices[0].get("delta", {})
-
-                        # Check for text delta
-                        content_delta = delta.get("content")
-
-                        # Check for reasoning/thinking delta (supported by FIRIK deepseek/glm)
-                        reasoning_delta = (
-                            delta.get("reasoning")
-                            or delta.get("reasoning_content")
-                        )
-
-                        # Check for streaming tool calls
-                        raw_tool_calls = delta.get("tool_calls")
-                        if raw_tool_calls:
-                            for tc_delta in raw_tool_calls:
-                                idx = tc_delta.get("index", 0)
-                                if idx not in tool_calls_accumulator:
-                                    tool_calls_accumulator[idx] = {
-                                        "id": tc_delta.get("id", ""),
-                                        "name": "",
-                                        "arguments": "",
-                                    }
-
-                                if tc_delta.get("id"):
-                                    tool_calls_accumulator[idx]["id"] = tc_delta["id"]
-
-                                fn = tc_delta.get("function", {})
-                                if fn.get("name"):
-                                    tool_calls_accumulator[idx]["name"] += fn["name"]
-                                if fn.get("arguments"):
-                                    tool_calls_accumulator[idx]["arguments"] += fn["arguments"]
-
-                        finish_reason = choices[0].get("finish_reason")
-                        if finish_reason == "tool_calls" and tool_calls_accumulator:
-                            assembled_tools = [
-                                ToolCall(
-                                    id=v["id"] or f"call_{i}",
-                                    type="function",
-                                    function=ToolCallFunction(
-                                        name=v["name"],
-                                        arguments=v["arguments"],
-                                    ),
-                                )
-                                for i, v in tool_calls_accumulator.items()
-                            ]
-                            yield StreamChunk(
-                                tool_calls=assembled_tools,
-                                is_done=True,
-                                usage=usage,
-                            )
-                        else:
-                            if content_delta or reasoning_delta:
-                                yield StreamChunk(
-                                    delta_content=content_delta,
-                                    delta_reasoning=reasoning_delta,
-                                    usage=usage,
-                                )
+        from firik_agent.providers._chat import chat_stream, prepare_payload
+        async for chunk in chat_stream(self, prepare_payload(self, messages, tools, temperature, max_tokens, stream=True)):
+            yield chunk
 
     def _handle_error_response(self, response: httpx.Response) -> None:
-        try:
-            error_data = response.json()
-            err = error_data.get("error", {})
-            err_type = err.get("type", "unknown_error")
-            err_msg = err.get("message", response.text)
-        except Exception:
-            err_type = "http_error"
-            err_msg = response.text
-
-        msg = f"Firik API error ({response.status_code}, {err_type}): {err_msg}"
-        logger.error(msg)
-        raise RuntimeError(msg)
+        from firik_agent.core.failures import provider_failure
+        raise provider_failure(response, provider=self.name) from None
 
     async def list_models(self) -> List[ModelInfo]:
         """Query models from API or return known catalogue."""
@@ -449,7 +287,7 @@ class FirikProvider(BaseProvider):
                     if models:
                         return models
         except Exception as e:
-            logger.debug("Could not fetch remote models from %s: %s", self.base_url, e)
+            logger.debug("Could not fetch remote models: %s", type(e).__name__)
 
         # Fallback to local catalog
         if self.is_gateway:

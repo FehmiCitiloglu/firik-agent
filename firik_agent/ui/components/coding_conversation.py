@@ -104,6 +104,28 @@ class CodingConversation(ctk.CTkFrame):
         # Bound the visible tail. The complete message stays in persistence/export.
         if len(content) > 24000:
             content = "… Uzun yanıtın son bölümü gösteriliyor; tam metin dışa aktarılabilir.\n\n" + content[-24000:]
+        if len(content) > 2000 and (not body.winfo_ismapped() or body.winfo_width() < 160):
+            # A new/hidden workspace tab has only a placeholder width. Building
+            # wrapped native Text widgets there makes a long paragraph occupy
+            # thousands of display lines and can trap Aqua Tk in geometry work
+            # during window resizing. Keep the card/source and render when the
+            # body actually maps with its conversation width.
+            body.source = content
+            body.coding_pending_text = content
+            if body._render_job is not None:
+                body.after_cancel(body._render_job)
+                body._render_job = None
+            if not getattr(body, "coding_map_render_bound", False):
+                body.coding_map_render_bound = True
+                def render_mapped(event=None):
+                    pending = getattr(body, "coding_pending_text", None)
+                    if pending is not None and body.winfo_ismapped() and body.winfo_width() >= 160:
+                        body.coding_pending_text = None
+                        body.set_text(pending, streaming=True)
+                body.bind("<Map>", render_mapped, add="+")
+                body.bind("<Configure>", render_mapped, add="+")
+            return
+        body.coding_pending_text = None
         body.set_text(content, streaming=streaming)
 
     def insert(self, index, text, *args):

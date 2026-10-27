@@ -66,7 +66,8 @@ def common_options(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser(prog: str = "firik") -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog=prog, description="FIRIK API terminal istemcisi — agent başlatmadan doğrudan işlemler")
+    parser = argparse.ArgumentParser(prog=prog, description="FIRIK API terminal istemcisi — agent başlatmadan doğrudan işlemler",
+                                     epilog="Harness Lab: firik harness doctor | firik harness bench --suite offline-smoke (API anahtarı gerekmez)")
     common_options(parser)
     commands = parser.add_subparsers(dest="command")
 
@@ -384,6 +385,9 @@ async def run(argv: Sequence[str], *, api_key: str | None = None, base_url: str 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args_list = sys.argv[1:] if argv is None else list(argv)
+    if args_list and args_list[0] in {"benchmark", "harness"}:
+        from firik_agent.benchmarks.cli import main as benchmark_main
+        return benchmark_main(args_list[1:])
     if args_list and args_list[0] == "mcp":
         from firik_agent.mcp.cli import main as mcp_main
         return mcp_main(args_list[1:])

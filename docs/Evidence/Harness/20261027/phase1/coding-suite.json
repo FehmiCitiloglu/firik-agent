@@ -1,0 +1,1021 @@
+{
+  "schema_version": 1,
+  "id": "coding",
+  "version": "1.0.0",
+  "mode": "live",
+  "description": "40 curated small canonical-source tasks across six categories. Exact source/AST oracles; not behavioral test execution or production-repository coverage. No live evaluations bundled.",
+  "tasks": [
+    {
+      "schema_version": 1,
+      "id": "bug-inclusive-bound",
+      "category": "bug-fixing",
+      "prompt": "Work only on main.py. Fix inclusive(n) to include n in the returned list, retaining the function and one return statement. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "bug-inclusive-bound",
+        "starting_revision": "6feb9a61f7ac8932281255ced32534ec810079b3",
+        "files": {
+          "main.py": "def inclusive(n):\n    return list(range(n))\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def inclusive(n):\n    return list(range(n + 1))\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "bug-shared-default",
+      "category": "bug-fixing",
+      "prompt": "Work only on main.py. Replace append_value's shared list default with None and initialize an empty list when None, preserving the append and return. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "bug-shared-default",
+        "starting_revision": "9821ad2b5a4af04ed667d70c009b721b24667a09",
+        "files": {
+          "main.py": "def append_value(value, values=[]):\n    values.append(value)\n    return values\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def append_value(value, values=None):\n    if values is None:\n        values = []\n    values.append(value)\n    return values\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "bug-empty-average",
+      "category": "bug-fixing",
+      "prompt": "Work only on main.py. Add an early return of 0 when values is empty before calculating the existing average. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "bug-empty-average",
+        "starting_revision": "4dfc9d2484b16824ae958f5973c5d7b16ff17cb4",
+        "files": {
+          "main.py": "def average(values):\n    return sum(values) / len(values)\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def average(values):\n    if not values:\n        return 0\n    return sum(values) / len(values)\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "bug-key-presence",
+      "category": "bug-fixing",
+      "prompt": "Work only on main.py. Fix has_key to test dictionary membership instead of the truthiness of its value. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "bug-key-presence",
+        "starting_revision": "783aa015f5959faacbabbd70ff65e0e0cf98e502",
+        "files": {
+          "main.py": "def has_key(data, key):\n    return bool(data.get(key))\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def has_key(data, key):\n    return key in data\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "bug-negative-max",
+      "category": "bug-fixing",
+      "prompt": "Work only on main.py. Initialize maximum's result from values[0] so all-negative nonempty lists work, preserving its loop. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "bug-negative-max",
+        "starting_revision": "c71d7c75fc9aa3e16c0137bd9e4e1503650e6475",
+        "files": {
+          "main.py": "def maximum(values):\n    result = 0\n    for value in values:\n        result = max(result, value)\n    return result\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def maximum(values):\n    result = values[0]\n    for value in values:\n        result = max(result, value)\n    return result\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "bug-strip-newline",
+      "category": "bug-fixing",
+      "prompt": "Work only on main.py. Fix trim_newline to remove only trailing newline characters, using rstrip with a newline argument. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "bug-strip-newline",
+        "starting_revision": "0a166e2b2282123bb8906b3a09fb1d02ebf86b4a",
+        "files": {
+          "main.py": "def trim_newline(text):\n    return text.strip()\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def trim_newline(text):\n    return text.rstrip('\\n')\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "bug-celsius",
+      "category": "bug-fixing",
+      "prompt": "Work only on main.py. Correct celsius's Fahrenheit conversion by parenthesizing fahrenheit minus 32 before multiplication. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "bug-celsius",
+        "starting_revision": "34aff327af818a192fd19eb95df55d603aa6032f",
+        "files": {
+          "main.py": "def celsius(fahrenheit):\n    return fahrenheit - 32 * 5 / 9\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def celsius(fahrenheit):\n    return (fahrenheit - 32) * 5 / 9\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "bug-copy-sort",
+      "category": "bug-fixing",
+      "prompt": "Work only on main.py. Make sorted_values return a sorted copy with the sorted builtin and leave the input untouched. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "bug-copy-sort",
+        "starting_revision": "6c566b556dfeea7f54c7933ed1da279ba4e2585b",
+        "files": {
+          "main.py": "def sorted_values(values):\n    values.sort()\n    return values\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def sorted_values(values):\n    return sorted(values)\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "refactor-square-comprehension",
+      "category": "refactoring",
+      "prompt": "Work only on main.py. Replace the accumulator and loop in squares with one list-comprehension return, retaining value * value. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "refactor-square-comprehension",
+        "starting_revision": "58c815bf68d71e9d823584c5e0ba16a87c7200e6",
+        "files": {
+          "main.py": "def squares(values):\n    result = []\n    for value in values:\n        result.append(value * value)\n    return result\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def squares(values):\n    return [value * value for value in values]\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "refactor-context-file",
+      "category": "refactoring",
+      "prompt": "Work only on main.py. Refactor read_text to use with open(path) as stream and return stream.read() inside the context. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "refactor-context-file",
+        "starting_revision": "d160730f34cc73472b104957574068e944bffd19",
+        "files": {
+          "main.py": "def read_text(path):\n    stream = open(path)\n    text = stream.read()\n    stream.close()\n    return text\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def read_text(path):\n    with open(path) as stream:\n        return stream.read()\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "refactor-get-default",
+      "category": "refactoring",
+      "prompt": "Work only on main.py. Replace the lookup branch with return data.get(key, 'unknown'). Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "refactor-get-default",
+        "starting_revision": "71d953b14777f04387080037b172d4d0d72de5f0",
+        "files": {
+          "main.py": "def lookup(data, key):\n    if key in data:\n        return data[key]\n    return 'unknown'\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def lookup(data, key):\n    return data.get(key, 'unknown')\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "refactor-any-positive",
+      "category": "refactoring",
+      "prompt": "Work only on main.py. Replace the loop in has_positive with a single any(value > 0 for value in values) return. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "refactor-any-positive",
+        "starting_revision": "fe05e7b0df180e85940d9f0ef0aee873847c7928",
+        "files": {
+          "main.py": "def has_positive(values):\n    for value in values:\n        if value > 0:\n            return True\n    return False\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def has_positive(values):\n    return any(value > 0 for value in values)\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "refactor-named-limit",
+      "category": "refactoring",
+      "prompt": "Work only on main.py. Extract 100 to a module constant MAX_ITEMS, followed by two blank lines, and use it in limited's slice. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "refactor-named-limit",
+        "starting_revision": "52e2644488a78d8e952f90d16327f4b0ca579291",
+        "files": {
+          "main.py": "def limited(values):\n    return values[:100]\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "MAX_ITEMS = 100\n\n\ndef limited(values):\n    return values[:MAX_ITEMS]\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "refactor-enumerate",
+      "category": "refactoring",
+      "prompt": "Work only on main.py. Replace pairs' range/len indexing with return list(enumerate(values)). Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "refactor-enumerate",
+        "starting_revision": "69ee80f1614f66e2668b58835bff21c589761b52",
+        "files": {
+          "main.py": "def pairs(values):\n    return [(index, values[index]) for index in range(len(values))]\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def pairs(values):\n    return list(enumerate(values))\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "feature-clamp",
+      "category": "feature",
+      "prompt": "Work only on main.py. Implement clamp(value, low, high) using return max(low, min(value, high)). Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "feature-clamp",
+        "starting_revision": "dabaf53ddaaf1ea8fbb8931b1480e3a5f687dd06",
+        "files": {
+          "main.py": "def clamp(value, low, high):\n    raise NotImplementedError\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def clamp(value, low, high):\n    return max(low, min(value, high))\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "feature-slug",
+      "category": "feature",
+      "prompt": "Work only on main.py. Implement slug(text) as '-'.join(text.lower().split()), retaining the function signature. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "feature-slug",
+        "starting_revision": "ae809e473a55ae8f9460f6be3ecde8eff82ded9b",
+        "files": {
+          "main.py": "def slug(text):\n    raise NotImplementedError\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def slug(text):\n    return '-'.join(text.lower().split())\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "feature-stable-unique",
+      "category": "feature",
+      "prompt": "Work only on main.py. Implement unique(values) using list(dict.fromkeys(values)) to preserve first appearance. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "feature-stable-unique",
+        "starting_revision": "a8f51c81eff5016cee6413d928633bf7f2b28f94",
+        "files": {
+          "main.py": "def unique(values):\n    raise NotImplementedError\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def unique(values):\n    return list(dict.fromkeys(values))\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "feature-chunks",
+      "category": "feature",
+      "prompt": "Work only on main.py. Implement chunks(values, size): raise ValueError('size must be positive') when size <= 0, then return list slices using range(0, len(values), size). Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "feature-chunks",
+        "starting_revision": "fbdc1df24e844799da2ae0f00f94d1278e3649b5",
+        "files": {
+          "main.py": "def chunks(values, size):\n    raise NotImplementedError\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def chunks(values, size):\n    if size <= 0:\n        raise ValueError('size must be positive')\n    return [values[index:index + size] for index in range(0, len(values), size)]\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "feature-is-even",
+      "category": "feature",
+      "prompt": "Work only on main.py. Implement is_even(value) as a single return testing value modulo 2 equals 0. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "feature-is-even",
+        "starting_revision": "97b6bc33ab1077308595217737e5226a1a86b277",
+        "files": {
+          "main.py": "def is_even(value):\n    raise NotImplementedError\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def is_even(value):\n    return value % 2 == 0\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "feature-merge-maps",
+      "category": "feature",
+      "prompt": "Work only on main.py. Implement merged(left, right) as return {**left, **right}. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "feature-merge-maps",
+        "starting_revision": "59a6091c19de11038f3cc646f393838b7890f3fd",
+        "files": {
+          "main.py": "def merged(left, right):\n    raise NotImplementedError\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def merged(left, right):\n    return {**left, **right}\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "feature-count-values",
+      "category": "feature",
+      "prompt": "Work only on main.py. Import Counter from collections, use two blank lines before counts, and implement it as return dict(Counter(values)). Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "feature-count-values",
+        "starting_revision": "e03137e51dd671f08d35cb2c23ecbb50d821326a",
+        "files": {
+          "main.py": "def counts(values):\n    raise NotImplementedError\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "from collections import Counter\n\n\ndef counts(values):\n    return dict(Counter(values))\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "feature-safe-divide",
+      "category": "feature",
+      "prompt": "Work only on main.py. Implement divide(a, b): return None when b == 0, otherwise return a / b. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "feature-safe-divide",
+        "starting_revision": "3a7bbce0074f558429bc67676fccea206b59e351",
+        "files": {
+          "main.py": "def divide(a, b):\n    raise NotImplementedError\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def divide(a, b):\n    if b == 0:\n        return None\n    return a / b\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "test-addition-negative",
+      "category": "testing",
+      "prompt": "Work only on test_main.py. Append test_add_negative with a single assert add(-2, -3) == -5. Separate the existing test by two blank lines. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "test-addition-negative",
+        "starting_revision": "01172b95d2bd0a1a9e66fe5715aad06ce7a67bd1",
+        "files": {
+          "test_main.py": "from main import add\n\n\ndef test_add_positive():\n    assert add(2, 3) == 5\n",
+          "main.py": "def add(a, b):\n    return a + b\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "test_main.py": "from main import add\n\n\ndef test_add_positive():\n    assert add(2, 3) == 5\n\n\ndef test_add_negative():\n    assert add(-2, -3) == -5\n",
+          "main.py": "def add(a, b):\n    return a + b\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "test-empty-total",
+      "category": "testing",
+      "prompt": "Work only on test_main.py. Replace the placeholder test body with assert total([]) == 0 and rename test_placeholder to test_empty_total. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "test-empty-total",
+        "starting_revision": "fa714038bea9c4d48ff993b25839636b3256469f",
+        "files": {
+          "test_main.py": "from main import total\n\n\ndef test_placeholder():\n    pass\n",
+          "main.py": "def total(values):\n    return sum(values)\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "test_main.py": "from main import total\n\n\ndef test_empty_total():\n    assert total([]) == 0\n",
+          "main.py": "def total(values):\n    return sum(values)\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "test-zero-identity",
+      "category": "testing",
+      "prompt": "Work only on test_main.py. Replace the placeholder test with test_add_zero asserting add(7, 0) == 7. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "test-zero-identity",
+        "starting_revision": "ac57faa0bff837c1ed5cdd4f2979e83ba80e84e7",
+        "files": {
+          "test_main.py": "from main import add\n\n\ndef test_placeholder():\n    pass\n",
+          "main.py": "def add(a, b):\n    return a + b\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "test_main.py": "from main import add\n\n\ndef test_add_zero():\n    assert add(7, 0) == 7\n",
+          "main.py": "def add(a, b):\n    return a + b\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "test-reverse-involution",
+      "category": "testing",
+      "prompt": "Work only on test_main.py. Replace the placeholder test with test_reverse_twice asserting reverse(reverse('abc')) == 'abc'. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "test-reverse-involution",
+        "starting_revision": "763ff4993b59e4ec7356d72af7ceef117f503122",
+        "files": {
+          "test_main.py": "from main import reverse\n\n\ndef test_placeholder():\n    pass\n",
+          "main.py": "def reverse(text):\n    return text[::-1]\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "test_main.py": "from main import reverse\n\n\ndef test_reverse_twice():\n    assert reverse(reverse('abc')) == 'abc'\n",
+          "main.py": "def reverse(text):\n    return text[::-1]\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "test-invalid-size",
+      "category": "testing",
+      "prompt": "Work only on test_main.py. Import pytest before the existing import. Replace the placeholder test with test_invalid_size containing with pytest.raises(ValueError): chunks([1], 0). Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "test-invalid-size",
+        "starting_revision": "f17fdd5755b48c97742cb206cff461cb335c1e0e",
+        "files": {
+          "test_main.py": "from main import chunks\n\n\ndef test_placeholder():\n    pass\n",
+          "main.py": "def chunks(values, size):\n    if size <= 0:\n        raise ValueError('size must be positive')\n    return [values[index:index + size] for index in range(0, len(values), size)]\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "test_main.py": "import pytest\nfrom main import chunks\n\n\ndef test_invalid_size():\n    with pytest.raises(ValueError):\n        chunks([1], 0)\n",
+          "main.py": "def chunks(values, size):\n    if size <= 0:\n        raise ValueError('size must be positive')\n    return [values[index:index + size] for index in range(0, len(values), size)]\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "test-sort-immutability",
+      "category": "testing",
+      "prompt": "Work only on test_main.py. Replace placeholder with test_sort_preserves_input: assign values = [2, 1], assert sorted_values(values) == [1, 2], then assert values == [2, 1]. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "test-sort-immutability",
+        "starting_revision": "3a92af0044201656d72023aba558854b7365982c",
+        "files": {
+          "test_main.py": "from main import sorted_values\n\n\ndef test_placeholder():\n    pass\n",
+          "main.py": "def sorted_values(values):\n    return sorted(values)\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "test_main.py": "from main import sorted_values\n\n\ndef test_sort_preserves_input():\n    values = [2, 1]\n    assert sorted_values(values) == [1, 2]\n    assert values == [2, 1]\n",
+          "main.py": "def sorted_values(values):\n    return sorted(values)\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "ci-python-requirement",
+      "category": "build-ci",
+      "prompt": "Work only on pyproject.toml. Change requires-python to >=3.10 in pyproject.toml, retaining the rest byte-for-byte. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "ci-python-requirement",
+        "starting_revision": "15b788936860766f2dc360964de15f00f49b649d",
+        "files": {
+          "pyproject.toml": "[project]\nname = 'fixture'\nversion = '1.0.0'\nrequires-python = '>=3.8'\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "pyproject.toml": "[project]\nname = 'fixture'\nversion = '1.0.0'\nrequires-python = '>=3.10'\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "ci-pytest-path",
+      "category": "build-ci",
+      "prompt": "Work only on pytest.ini. Fix testpaths in pytest.ini to tests instead of test, preserving the file format. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "ci-pytest-path",
+        "starting_revision": "8efaf9f24134d43de95ac244fb4137b9ed93355d",
+        "files": {
+          "pytest.ini": "[pytest]\ntestpaths = test\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "pytest.ini": "[pytest]\ntestpaths = tests\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "ci-module-pytest",
+      "category": "build-ci",
+      "prompt": "Work only on Makefile. Change Makefile's test recipe to python -m pytest -q to bind pytest to the selected interpreter. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "ci-module-pytest",
+        "starting_revision": "c54074f4be9a14b163967b0ac098b90d915641b2",
+        "files": {
+          "Makefile": "test:\n\tpytest -q\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "Makefile": "test:\n\tpython -m pytest -q\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "ci-build-backend",
+      "category": "build-ci",
+      "prompt": "Work only on pyproject.toml. Correct build-backend to setuptools.build_meta, preserving the requires entry. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "ci-build-backend",
+        "starting_revision": "aba80d0750eba0640fe14f768b40c5cac1758dac",
+        "files": {
+          "pyproject.toml": "[build-system]\nrequires = ['setuptools>=61']\nbuild-backend = 'setuptools.buld_meta'\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "pyproject.toml": "[build-system]\nrequires = ['setuptools>=61']\nbuild-backend = 'setuptools.build_meta'\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "ci-package-discovery",
+      "category": "build-ci",
+      "prompt": "Work only on pyproject.toml. Correct setuptools package discovery include to fixture* instead of fixtuer*. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "ci-package-discovery",
+        "starting_revision": "91cbfe15bd4c9b296000c645ce9af683ce63ecf7",
+        "files": {
+          "pyproject.toml": "[tool.setuptools.packages.find]\ninclude = ['fixtuer*']\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "pyproject.toml": "[tool.setuptools.packages.find]\ninclude = ['fixture*']\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "ci-npm-test-command",
+      "category": "build-ci",
+      "prompt": "Work only on package.json. Set package.json's test script to node --test, preserving its existing compact indentation and trailing newline. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "ci-npm-test-command",
+        "starting_revision": "6d7af43a90008ef1a17caa49d2beb5edd919688c",
+        "files": {
+          "package.json": "{\n  \"scripts\": {\n    \"test\": \"node test\"\n  }\n}\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "package.json": "{\n  \"scripts\": {\n    \"test\": \"node --test\"\n  }\n}\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "security-constant-time",
+      "category": "security",
+      "prompt": "Work only on main.py. Import compare_digest from hmac and replace the token equality check with compare_digest(candidate, expected), preserving two blank lines before the function. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "security-constant-time",
+        "starting_revision": "d6db4356bf89a3eb14d1f85468397b5037fdca4e",
+        "files": {
+          "main.py": "def token_matches(candidate, expected):\n    return candidate == expected\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "from hmac import compare_digest\n\n\ndef token_matches(candidate, expected):\n    return compare_digest(candidate, expected)\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "security-safe-yaml",
+      "category": "security",
+      "prompt": "Work only on main.py. Replace yaml.load(text, Loader=yaml.Loader) with yaml.safe_load(text), preserving the import and spacing. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "security-safe-yaml",
+        "starting_revision": "1fd2840314ba9f9a6923dc526b87f49e3b974e0e",
+        "files": {
+          "main.py": "import yaml\n\n\ndef parse(text):\n    return yaml.load(text, Loader=yaml.Loader)\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "import yaml\n\n\ndef parse(text):\n    return yaml.safe_load(text)\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "security-json-no-eval",
+      "category": "security",
+      "prompt": "Work only on main.py. Import json followed by two blank lines and replace eval(text) with json.loads(text). Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "security-json-no-eval",
+        "starting_revision": "ef2107c07eb5f154648e6205fa38eaf28cd22e84",
+        "files": {
+          "main.py": "def parse(text):\n    return eval(text)\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "import json\n\n\ndef parse(text):\n    return json.loads(text)\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "security-query-parameters",
+      "category": "security",
+      "prompt": "Work only on main.py. Replace string SQL interpolation with db.execute('SELECT name FROM users WHERE id = ?', (user_id,)), preserving the signature. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "security-query-parameters",
+        "starting_revision": "305340160d39969a214a2861e985680a4115bab9",
+        "files": {
+          "main.py": "def lookup(db, user_id):\n    return db.execute('SELECT name FROM users WHERE id = ' + user_id)\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def lookup(db, user_id):\n    return db.execute('SELECT name FROM users WHERE id = ?', (user_id,))\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "security-verify-tls",
+      "category": "security",
+      "prompt": "Work only on main.py. Set verify=True in the existing client.get call to enable TLS certificate verification. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "security-verify-tls",
+        "starting_revision": "352913db1584f2993bfef8ccfd1025d5c479f571",
+        "files": {
+          "main.py": "def fetch(client, url):\n    return client.get(url, verify=False)\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "def fetch(client, url):\n    return client.get(url, verify=True)\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    },
+    {
+      "schema_version": 1,
+      "id": "security-no-shell",
+      "category": "security",
+      "prompt": "Work only on main.py. Replace subprocess.run(command, shell=True) with subprocess.run(command, shell=False, check=True); command is already an argv list. Keep all other source bytes and filenames unchanged. Read the file first. Create an update_plan step with verification 'builtin:verify' before using the guarded edit_file tool, associating the edit with its step_id. Run run_tests with command 'builtin:verify', then mark the plan step completed with the returned evidence_id in evidence_ids. These are small canonical-source tasks; verification checks the requested source transformation and syntax without executing repository code.",
+      "repository": {
+        "schema_version": 1,
+        "id": "security-no-shell",
+        "starting_revision": "cc25f6d7a7611dcb8b1901c696dab049705a4432",
+        "files": {
+          "main.py": "import subprocess\n\n\ndef run(command):\n    return subprocess.run(command, shell=True)\n"
+        }
+      },
+      "evaluation": {
+        "schema_version": 1,
+        "version": "exact-source-ast-v1",
+        "kind": "exact-source-ast",
+        "expected_files": {
+          "main.py": "import subprocess\n\n\ndef run(command):\n    return subprocess.run(command, shell=False, check=True)\n"
+        },
+        "independently_controlled": true,
+        "description": "Host-controlled exact canonical source and Python AST syntax; no fixture code execution."
+      },
+      "curation_status": "curated-small-source-task"
+    }
+  ]
+}

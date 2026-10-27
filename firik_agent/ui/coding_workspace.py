@@ -21,6 +21,7 @@ from firik_agent.projects.git_service import GitService
 from firik_agent.ui.editor import EDITORS
 from firik_agent.ui.file_drop import register_file_drop
 from firik_agent.ui.coding_history import CodingHistoryMixin, restore_state_history
+from firik_agent.ui.coding_evidence import update_accounting_state
 from firik_agent.ui.views.git_view import GitView
 
 
@@ -686,7 +687,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             self._save_coding_preferences({"mode": state["mode"]})
         state.update(busy=True, stopped=False, paused=False, last_prompt=prompt, before=None,
                      changes=[], activities=[], pending_approvals={}, inspection_warning="", agent_paths={}, record=None,
-                     usage={}, usage_requests={}, model_iteration=0)
+                     usage={}, harness_metrics={}, usage_requests={}, model_iteration=0)
         state["run_id"] += 1
         generation = state["run_id"]
         state["messages"].append({"role": "user", "content": prompt})
@@ -758,6 +759,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             if event.metadata.get("project_id", project_id) != project_id or event.metadata.get("task_id", state["task_id"]) != state["task_id"]:
                 return
             state["cockpit"].apply(event)
+            update_accounting_state(state, event)
             kind = event.type.value
             if kind in {"context_compaction_started", "context_compacted"}:
                 state["status"] = event.content or "Bağlam hazırlanıyor…"
@@ -767,15 +769,6 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                     return
                 from firik_agent.ui.subagent_activity import update_subagent_activity
                 update_subagent_activity(state["activities"], event.metadata, event.content or "")
-                if event.metadata.get("child_event_type") == "model_usage":
-                    key = (event.metadata["agent_id"], event.metadata.get("request_iteration", 1))
-                    state["usage_requests"][key] = event.metadata.get("child_metadata", {}).get("usage", {})
-                    totals = {}
-                    for usage in state["usage_requests"].values():
-                        for name, value in usage.items():
-                            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                                totals[name] = totals.get(name, 0) + value
-                    state["usage"] = totals
                 refresh(True)
             elif kind == "text_delta" and event.content:
                 content = sanitize_secrets(event.content)
@@ -818,19 +811,11 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 state["plan"] = event.metadata.get("plan", event.metadata.get("steps", []))
                 refresh(True)
             elif kind == "model_request_started":
-                state["model_iteration"] = event.metadata.get("iteration", state["model_iteration"] + 1)
+                if event.metadata.get("request_kind") != "compaction":
+                    state["model_iteration"] = event.metadata.get("iteration", state["model_iteration"] + 1)
                 state["status"] = "Model isteği gönderiliyor…"
                 refresh(True)
-            elif kind == "model_usage":
-                state["usage_requests"][state["model_iteration"]] = event.metadata.get("usage", {})
-                totals = {}
-                for usage in state["usage_requests"].values():
-                    for key, value in usage.items():
-                        if isinstance(value, (int, float)) and not isinstance(value, bool):
-                            totals[key] = totals.get(key, 0) + value
-                        else:
-                            totals[key] = value
-                state["usage"] = totals
+            elif kind in {"model_usage", "model_request_finished"}:
                 refresh(True)
             elif kind == "file_changed":
                 path = event.metadata.get("path")

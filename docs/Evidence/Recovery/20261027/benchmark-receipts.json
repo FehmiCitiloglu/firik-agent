@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "validation_date": "2026-10-27",
+  "experiments": [
+    {
+      "command": ".venv/bin/python -m firik_agent.benchmarks bench --suite offline-smoke --repeat 3 --output docs/Evidence/Recovery/20261027/baseline",
+      "exit_code": 0,
+      "objective_checks": "60/60",
+      "source_sha256": "3da2bb25cfcba6f38c1bf4faa9ed1326db178927e8d175424b13d729988e4c12",
+      "source_stable": true,
+      "report": "baseline/report.json"
+    },
+    {
+      "command": ".venv/bin/python -m firik_agent.benchmarks bench --suite offline-smoke --repeat 3 --output docs/Evidence/Recovery/20261027/candidate",
+      "exit_code": 0,
+      "objective_checks": "60/60",
+      "source_sha256": "1f33caf817f21d6930d541a46efd04e56448237623214c2839b6ca5d001935b4",
+      "source_stable": true,
+      "report": "candidate/report.json"
+    },
+    {
+      "command": ".venv/bin/python scripts/phase2_recovery_report.py docs/Evidence/Recovery/20261027/baseline/report.json docs/Evidence/Recovery/20261027/candidate/report.json docs/Evidence/Recovery/20261027/comparison",
+      "exit_code": 0,
+      "report": "comparison/report.json"
+    },
+    {
+      "command": ".venv/bin/python scripts/phase2_scripted_benchmark.py docs/Evidence/Recovery/20261027/scripted --repeat 3",
+      "exit_code": 0,
+      "objective_checks": "60/60 across two profiles",
+      "source_stable": true,
+      "report": "scripted/report.json"
+    }
+  ],
+  "tests": {
+    "command": ".venv/bin/python -m pytest -q tests/test_phase2_recovery_report.py tests/test_phase2_scripted_benchmark.py --junitxml=docs/Evidence/Recovery/20261027/benchmark-tests.xml",
+    "exit_code": 0,
+    "passed": 8,
+    "failed": 0,
+    "receipt": "benchmark-tests.xml"
+  },
+  "archived_capture": "pre-final-fixes/",
+  "limitations": [
+    "Offline-only scripted and source/AST evaluation.",
+    "Supplemental disabled/adaptive experiment uses the same candidate source, not historical legacy source.",
+    "Synthetic or unknown usage; monetary cost change unmeasured.",
+    "Concurrent local tests confound isolated latency inference."
+  ]
+}

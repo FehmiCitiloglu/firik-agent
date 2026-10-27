@@ -10,6 +10,10 @@ FIRIK portalında **Platform**, **LLM Çıkarım** ve **Model Çıkarımı** far
 
 ## Kurulum
 
+Çevrimdışı **Harness Benchmark Lab**, gerçek Kodlama Ajanı döngüsünü geçici Git/SQLite projelerinde deterministik sağlayıcı yanıtlarıyla sınar: `firik harness doctor` ve `firik harness bench --suite offline-smoke --repeat 3 --output /tmp/firik-benchmark`. API anahtarı gerekmez. 20 hata/izin senaryosu, açık izin isteyen 40 görevlik kodlama kataloğu, eşleştirilmiş A/B karşılaştırması ve masaüstünde rapor özeti içerir. JSON/Markdown raporu, istek/araç/hata ölçümleri ve bilinmeyen token/maliyet kapsamını içerir; canlı model performansı iddia etmez. [Yöntem ve sınırlar](docs/HARNESS_BENCHMARKS.md), [başlangıç denetimi](docs/HARNESS_AUDIT.md).
+
+**Adaptive Recovery (Phase 2)**, akışlı ve normal model isteklerinde güvenli olduğu kanıtlanan hatalara sınırlı kurtarma uygular; kısmi yanıtları ve sonucu belirsiz yan etkileri otomatik tekrarlamaz. Kodlama görevinin tamamlanma sınıfı güncel doğrulama kanıtı ve mevcut kalite kapılarıyla belirlenir. [Yapılandırma, olaylar ve sınırlar](docs/ADAPTIVE_RECOVERY.md).
+
 Masaüstü uygulamasındaki **Kodlama Ajanı**, dosya gezgini, plan, etkinlik, terminal, test, Git ve ajan inceleyicisini tek çalışma alanında toplar. Gerçek araç yürütümü proje izinlerinden geçer; kontrol noktaları, değişiklik incelemesi, doğrulama kanıtı ve oturum geçmişi kalıcı kaydedilir. Çoklu ajan sınırları, bağlam/model bilgisinin kaynakları ve 52 gereksinimin uygulama durumu [Kodlama cockpit dokümanında](docs/CODING_COCKPIT.md) açıklanır.
 
 Python 3.10+:
@@ -164,7 +168,7 @@ Sohbet ekranındaki aranabilir **Sohbetler** listesinden eski bir konuşmayı a�
 
 Model yanıtları Markdown olarak gösterilir: başlıklar, kalın/italik metin, listeler, alıntılar, bağlantılar, tablolar ve kod blokları biçimlendirilir. Metin seçilebilir; kod bloklarındaki **Kodu kopyala** düğmesi yalnızca kodu kopyalar. Geniş kod ve tablolar yatay kaydırılır. Mesaj kopyalama, dışa aktarma ve sohbet geçmişi orijinal Markdown metnini korur.
 
-Kullanıcı mesajı gönderildiğinde bir kez, model yanıtı tamamlandığında (veya durdurulduğunda) yeniden kayıt yapılır. Akış sırasında kelime başına veya zamanlayıcıyla kayıt yapılmaz. Uygulama normal şekilde kapatılırken yarım kalan yanıtlar da korunur; eski araç çağrıları tekrar çalıştırılmaz. Mesajlar, ekli görseller, işlem ayrıntıları ve model ayarları yerel `chats.db` dosyasında tutulur: kaynak koddan çalıştırıldığında `~/.firik/`, paketlenmiş uygulamada kullanıcıya ait `firik/config.yaml` dosyasının bulunduğu dizin.
+Kullanıcı mesajı gönderildiğinde bir kez, model yanıtı tamamlandığında (veya durdurulduğunda) yeniden kayıt yapılır. Akış sırasında kelime başına veya zamanlayıcıyla kayıt yapılmaz. Araç çağrılarında deneme kimliği yürütümden önce, sonuç ve belirsizlik durumu yürütümden sonra ayrıca kaydedilir. Uygulama normal şekilde kapatılırken yarım kalan yanıtlar da korunur; eski araç çağrıları tekrar çalıştırılmaz. Mesajlar, ekli görseller, işlem ayrıntıları ve model ayarları yerel `chats.db` dosyasında tutulur: kaynak koddan çalıştırıldığında `~/.firik/`, paketlenmiş uygulamada kullanıcıya ait `firik/config.yaml` dosyasının bulunduğu dizin.
 
 **Computer-use MCP** varsayılan olarak eklenir ve yeni sohbetlerde seçilir. Yerleşik sunucu uygulama içinde çalışır; harici Python veya MCP sunucusu kurulumu gerekmez. MCP yöneticisinden kapatılabilir veya kaldırılabilir; bu tercih sonraki açılışlarda korunur. **MCP** düğmesiyle yalnızca ilgili sohbetten de çıkarılabilir. Ekran, klavye ve fare işlemleri mevcut işletim sistemi izinlerini kullanır.
 

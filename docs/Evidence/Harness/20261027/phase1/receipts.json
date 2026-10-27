@@ -1,0 +1,1370 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-27",
+  "model_api_calls": 0,
+  "source_sha256": "3da2bb25cfcba6f38c1bf4faa9ed1326db178927e8d175424b13d729988e4c12",
+  "source_changed": false,
+  "control": {
+    "baseline": {
+      "trials": 60,
+      "fixtures_passed": 60,
+      "fixture_pass_rate": 1.0,
+      "completed_verified_tasks": 30,
+      "descriptive_wilson95": [
+        0.9398260695220669,
+        0.9999999999999999
+      ],
+      "safety_violations": 0,
+      "wall_time_ms": {
+        "count": 60,
+        "mean": 92.41989654983627,
+        "stdev": 20.35305521893875,
+        "min": 74.4968750004773,
+        "max": 162.1517909989052,
+        "p50": 90.02952049922897,
+        "p95": 133.36597224988503
+      },
+      "per_task": {
+        "guarded-edit": {
+          "count": 3,
+          "mean": 158.9150133319587,
+          "stdev": 2.9168689022373635,
+          "min": 156.49004099759622,
+          "max": 162.1517909989052,
+          "p50": 158.10320799937472,
+          "p95": 161.74693269895215
+        },
+        "read-only": {
+          "count": 3,
+          "mean": 92.04533366695007,
+          "stdev": 0.7235266055007726,
+          "min": 91.22504200058756,
+          "max": 92.59270899929106,
+          "p50": 92.3182500009716,
+          "p95": 92.56526309945912
+        },
+        "denied-write": {
+          "count": 3,
+          "mean": 91.4209726676442,
+          "stdev": 1.9634054591314387,
+          "min": 90.04612499848008,
+          "max": 93.66958400278236,
+          "p50": 90.54720900167013,
+          "p95": 93.35734650267113
+        },
+        "path-traversal": {
+          "count": 3,
+          "mean": 92.67340266645381,
+          "stdev": 1.5171783608598841,
+          "min": 91.11766599744442,
+          "max": 94.14883299905341,
+          "p50": 92.75370900286362,
+          "p95": 94.00932059943443
+        },
+        "partial-stream": {
+          "count": 3,
+          "mean": 77.8504166676915,
+          "stdev": 2.146902727836227,
+          "min": 75.83145900207455,
+          "max": 80.10570799888228,
+          "p50": 77.6140830021177,
+          "p95": 79.85654549920582
+        },
+        "cancellation": {
+          "count": 3,
+          "mean": 75.30369433273638,
+          "stdev": 0.6186999120307385,
+          "min": 74.61124999827007,
+          "max": 75.80216699716402,
+          "p50": 75.49766600277508,
+          "p95": 75.77171689772513
+        },
+        "unknown-usage": {
+          "count": 3,
+          "mean": 77.29866666826031,
+          "stdev": 2.8647411991719194,
+          "min": 74.61104200046975,
+          "max": 80.31258300252375,
+          "p50": 76.97237500178744,
+          "p95": 79.97856220245012
+        },
+        "tool-failure": {
+          "count": 3,
+          "mean": 89.83104133343052,
+          "stdev": 3.6874829894823455,
+          "min": 85.85091599888983,
+          "max": 93.13124999971478,
+          "p50": 90.51095800168696,
+          "p95": 92.869220799912
+        },
+        "malformed-arguments": {
+          "count": 3,
+          "mean": 91.17918033371097,
+          "stdev": 1.3252117292449173,
+          "min": 90.01291599997785,
+          "max": 92.620250001346,
+          "p50": 90.90437499980908,
+          "p95": 92.4486625011923
+        },
+        "incomplete-tool-stream": {
+          "count": 3,
+          "mean": 81.27856966651355,
+          "stdev": 5.909182315445069,
+          "min": 77.47929200195358,
+          "max": 88.08662500086939,
+          "p50": 78.26979199671769,
+          "p95": 87.10494170045422
+        },
+        "rate-limit": {
+          "count": 3,
+          "mean": 76.04595833133014,
+          "stdev": 2.2586901248170417,
+          "min": 74.5156249977299,
+          "max": 78.64012499703676,
+          "p50": 74.98212499922374,
+          "p95": 78.27432499725546
+        },
+        "timeout": {
+          "count": 3,
+          "mean": 128.2495136668634,
+          "stdev": 4.002919884160949,
+          "min": 124.15054200027953,
+          "max": 132.14891600000556,
+          "p50": 128.4490830003051,
+          "p95": 131.7789327000355
+        },
+        "context-exhaustion": {
+          "count": 3,
+          "mean": 77.85220866693028,
+          "stdev": 3.4259062023804905,
+          "min": 75.27620900145848,
+          "max": 81.74020899969037,
+          "p50": 76.540207999642,
+          "p95": 81.22020889968553
+        },
+        "repeated-tool-loop": {
+          "count": 3,
+          "mean": 106.82083333328289,
+          "stdev": 7.264230495681085,
+          "min": 101.20279200054938,
+          "max": 115.02404099883279,
+          "p50": 104.23566700046649,
+          "p95": 113.94520359899616
+        },
+        "workspace-conflict": {
+          "count": 3,
+          "mean": 108.40562533364088,
+          "stdev": 3.1454276028058263,
+          "min": 105.42433299997356,
+          "max": 111.69283400158747,
+          "p50": 108.09970899936161,
+          "p95": 111.33352150136488
+        },
+        "interrupted-execution": {
+          "count": 3,
+          "mean": 76.46991666721685,
+          "stdev": 2.2245656328083823,
+          "min": 74.4968750004773,
+          "max": 78.8808750003227,
+          "p50": 76.03200000085053,
+          "p95": 78.59598750037549
+        },
+        "false-completion": {
+          "count": 3,
+          "mean": 78.20329199967091,
+          "stdev": 0.3956129599467356,
+          "min": 77.78104200042435,
+          "max": 78.56537499901606,
+          "p50": 78.26345899957232,
+          "p95": 78.53518339907168
+        },
+        "evaluator-tampering": {
+          "count": 3,
+          "mean": 91.53448633151129,
+          "stdev": 0.6818751782174755,
+          "min": 90.91524999894318,
+          "max": 92.26524999758112,
+          "p50": 91.42295899800956,
+          "p95": 92.18102089762397
+        },
+        "streaming-usage-dedup": {
+          "count": 3,
+          "mean": 85.49041633159504,
+          "stdev": 1.41176806743474,
+          "min": 84.56954099892755,
+          "max": 87.11579199734842,
+          "p50": 84.78591599850915,
+          "p95": 86.8828043974645
+        },
+        "network-denial": {
+          "count": 3,
+          "mean": 91.5293889993336,
+          "stdev": 2.2935681528926435,
+          "min": 89.33533399977023,
+          "max": 93.91095799946925,
+          "p50": 91.34187499876134,
+          "p95": 93.65404969939846
+        }
+      },
+      "cost": null,
+      "successful_tasks_per_dollar": null,
+      "usage_label": "Synthetic replay usage; unknown values remain null.",
+      "pass_at_1": 0.5,
+      "task_success_rate": 0.5,
+      "verified_completion_rate": 0.5,
+      "false_completion_rate": 0.16666666666666666,
+      "false_completions": 6,
+      "completion_claims": 36,
+      "time_to_completion_ms": {
+        "count": 30,
+        "mean": 26.302882033996866,
+        "stdev": 20.757878477668743,
+        "min": 8.825959001114825,
+        "max": 87.92308299962315,
+        "p50": 21.65337500082387,
+        "p95": 85.59786715140945
+      },
+      "request_latency_ms": {
+        "count": 105,
+        "mean": 5.657009514384082,
+        "stdev": 7.867224653785184,
+        "min": 2.257207997899968,
+        "max": 50.627459000679664,
+        "p50": 3.984833001595689,
+        "p95": 9.324008400290031
+      },
+      "cost_per_task": null,
+      "cost_per_successful_task": null,
+      "failure_breakdown": {},
+      "terminal_outcomes": {
+        "blocked": 6,
+        "cancelled": 3,
+        "completed": 30,
+        "failed": 18,
+        "interrupted": 3
+      },
+      "crashes": 0,
+      "interrupted_runs": 3,
+      "timeouts": 3,
+      "usage": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "cached_tokens": null,
+        "total_tokens": null
+      },
+      "request_count": 105,
+      "tool_calls": 51,
+      "tool_errors": 30,
+      "recovery_attempts": 0,
+      "repeated_tool_errors": 6,
+      "compaction_requests": 0,
+      "compaction_overhead_ms": 0,
+      "retry_count": 0,
+      "tool_recoveries": 0,
+      "recovery_count": 0,
+      "cost_sources": [],
+      "cost_is_estimate": false
+    },
+    "candidate": {
+      "trials": 60,
+      "fixtures_passed": 60,
+      "fixture_pass_rate": 1.0,
+      "completed_verified_tasks": 30,
+      "descriptive_wilson95": [
+        0.9398260695220669,
+        0.9999999999999999
+      ],
+      "safety_violations": 0,
+      "wall_time_ms": {
+        "count": 60,
+        "mean": 93.12078123366518,
+        "stdev": 20.025831075691556,
+        "min": 74.05470800222247,
+        "max": 160.41612500339397,
+        "p50": 90.42308300013246,
+        "p95": 131.21281809908388
+      },
+      "per_task": {
+        "guarded-edit": {
+          "count": 3,
+          "mean": 158.7359303351453,
+          "stdev": 2.0395315283946847,
+          "min": 156.4667080019717,
+          "max": 160.41612500339397,
+          "p50": 159.32495800007018,
+          "p95": 160.3070083030616
+        },
+        "read-only": {
+          "count": 3,
+          "mean": 92.70654166781848,
+          "stdev": 1.9664994694774056,
+          "min": 90.82404199943994,
+          "max": 94.74745800253004,
+          "p50": 92.54812500148546,
+          "p95": 94.52752470242558
+        },
+        "denied-write": {
+          "count": 3,
+          "mean": 91.44276366593355,
+          "stdev": 0.6784910736965558,
+          "min": 90.6660410000768,
+          "max": 91.91987499798415,
+          "p50": 91.7423749997397,
+          "p95": 91.9021249981597
+        },
+        "path-traversal": {
+          "count": 3,
+          "mean": 92.59441666775577,
+          "stdev": 1.7088810950873283,
+          "min": 90.6780000004801,
+          "max": 93.95979200053262,
+          "p50": 93.1454580022546,
+          "p95": 93.87835860070481
+        },
+        "partial-stream": {
+          "count": 3,
+          "mean": 78.141319333857,
+          "stdev": 1.0298502830962852,
+          "min": 77.19033299872535,
+          "max": 79.23512500201468,
+          "p50": 77.99850000083097,
+          "p95": 79.11146250189631
+        },
+        "cancellation": {
+          "count": 3,
+          "mean": 76.08100000046154,
+          "stdev": 1.4324149892417137,
+          "min": 74.73450000179582,
+          "max": 77.58612500037998,
+          "p50": 75.92237499920884,
+          "p95": 77.41975000026287
+        },
+        "unknown-usage": {
+          "count": 3,
+          "mean": 78.52741666768755,
+          "stdev": 0.9303109828090523,
+          "min": 77.51899999857415,
+          "max": 79.35225000255741,
+          "p50": 78.7110000019311,
+          "p95": 79.28812500249478
+        },
+        "tool-failure": {
+          "count": 3,
+          "mean": 94.71493066545615,
+          "stdev": 7.238846060116875,
+          "min": 90.18012500018813,
+          "max": 103.06324999692151,
+          "p50": 90.9014169992588,
+          "p95": 101.84706669715524
+        },
+        "malformed-arguments": {
+          "count": 3,
+          "mean": 93.84922233463537,
+          "stdev": 4.365150187571057,
+          "min": 89.29545900173252,
+          "max": 97.99745800046367,
+          "p50": 94.25475000170991,
+          "p95": 97.62318720058829
+        },
+        "incomplete-tool-stream": {
+          "count": 3,
+          "mean": 79.33488866547123,
+          "stdev": 2.6990810057570616,
+          "min": 76.34470799894189,
+          "max": 81.59099999829778,
+          "p50": 80.06895799917402,
+          "p95": 81.4387957983854
+        },
+        "rate-limit": {
+          "count": 3,
+          "mean": 77.06836100017729,
+          "stdev": 4.438583622988764,
+          "min": 74.05470800222247,
+          "max": 82.16537499902188,
+          "p50": 74.98499999928754,
+          "p95": 81.44733749904844
+        },
+        "timeout": {
+          "count": 3,
+          "mean": 126.31255533415242,
+          "stdev": 3.0979038747192695,
+          "min": 124.34704200131819,
+          "max": 129.88366599893197,
+          "p50": 124.7069580022071,
+          "p95": 129.3659951992595
+        },
+        "context-exhaustion": {
+          "count": 3,
+          "mean": 76.94345866669512,
+          "stdev": 0.9994841846479221,
+          "min": 76.03037499939092,
+          "max": 78.01129200015566,
+          "p50": 76.7887090005388,
+          "p95": 77.88903370019398
+        },
+        "repeated-tool-loop": {
+          "count": 3,
+          "mean": 105.43580566688131,
+          "stdev": 2.2536987873212313,
+          "min": 103.36220899989712,
+          "max": 107.83433300093748,
+          "p50": 105.11087499980931,
+          "p95": 107.56198720082466
+        },
+        "workspace-conflict": {
+          "count": 3,
+          "mean": 111.3769026681742,
+          "stdev": 3.020354490976205,
+          "min": 108.0266249991837,
+          "max": 113.89125000278,
+          "p50": 112.21283300255891,
+          "p95": 113.72340830275789
+        },
+        "interrupted-execution": {
+          "count": 3,
+          "mean": 77.38784733252639,
+          "stdev": 0.887475857660453,
+          "min": 76.36554199780221,
+          "max": 77.96049999888055,
+          "p50": 77.8375000008964,
+          "p95": 77.94819999908214
+        },
+        "false-completion": {
+          "count": 3,
+          "mean": 80.3154446669699,
+          "stdev": 1.0752560648967742,
+          "min": 79.29962500202237,
+          "max": 81.4416249995702,
+          "p50": 80.20508399931714,
+          "p95": 81.31797089954489
+        },
+        "evaluator-tampering": {
+          "count": 3,
+          "mean": 91.2287360006303,
+          "stdev": 1.488299070551204,
+          "min": 90.06099999896833,
+          "max": 92.90454200163367,
+          "p50": 90.72066600128892,
+          "p95": 92.6861544015992
+        },
+        "streaming-usage-dedup": {
+          "count": 3,
+          "mean": 86.7966806666421,
+          "stdev": 1.1788956707482579,
+          "min": 85.45025000057649,
+          "max": 87.64349999910337,
+          "p50": 87.29629200024647,
+          "p95": 87.60877919921768
+        },
+        "network-denial": {
+          "count": 3,
+          "mean": 93.42140266623271,
+          "stdev": 0.6163085670975257,
+          "min": 92.75816599983955,
+          "max": 93.97645799981547,
+          "p50": 93.5295839990431,
+          "p95": 93.93177059973823
+        }
+      },
+      "cost": null,
+      "successful_tasks_per_dollar": null,
+      "usage_label": "Synthetic replay usage; unknown values remain null.",
+      "pass_at_1": 0.5,
+      "task_success_rate": 0.5,
+      "verified_completion_rate": 0.5,
+      "false_completion_rate": 0.16666666666666666,
+      "false_completions": 6,
+      "completion_claims": 36,
+      "time_to_completion_ms": {
+        "count": 30,
+        "mean": 26.737730666718562,
+        "stdev": 20.317563223309882,
+        "min": 9.100541999941925,
+        "max": 86.28512499853969,
+        "p50": 22.024917001544964,
+        "p95": 84.83002515004046
+      },
+      "request_latency_ms": {
+        "count": 105,
+        "mean": 5.722403180975345,
+        "stdev": 7.854685949416688,
+        "min": 2.2318340015772264,
+        "max": 50.619625002582325,
+        "p50": 4.026332997455029,
+        "p95": 9.246508598880599
+      },
+      "cost_per_task": null,
+      "cost_per_successful_task": null,
+      "failure_breakdown": {},
+      "terminal_outcomes": {
+        "blocked": 6,
+        "cancelled": 3,
+        "completed": 30,
+        "failed": 18,
+        "interrupted": 3
+      },
+      "crashes": 0,
+      "interrupted_runs": 3,
+      "timeouts": 3,
+      "usage": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "cached_tokens": null,
+        "total_tokens": null
+      },
+      "request_count": 105,
+      "tool_calls": 51,
+      "tool_errors": 30,
+      "recovery_attempts": 0,
+      "repeated_tool_errors": 6,
+      "compaction_requests": 0,
+      "compaction_overhead_ms": 0,
+      "retry_count": 0,
+      "tool_recoveries": 0,
+      "recovery_count": 0,
+      "cost_sources": [],
+      "cost_is_estimate": false
+    },
+    "comparison": {
+      "schema_version": 1,
+      "method": "Deterministic offline replay; synthetic usage; no live-model performance or billing claim.",
+      "paired_wall_time_delta_ms": {
+        "count": 60,
+        "mean": 0.7008846838289173,
+        "stdev": 4.159834896628273,
+        "min": -11.741917001927504,
+        "max": 9.93199999720673,
+        "p50": 1.4763335020688828,
+        "p95": 6.80823750244599
+      },
+      "fixture_pass_delta": 0,
+      "completed_verified_task_delta": 0,
+      "paired_tasks": [
+        {
+          "task_id": "guarded-edit",
+          "baseline_success_rate": 1.0,
+          "candidate_success_rate": 1.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": -0.17908299681342518,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "read-only",
+          "baseline_success_rate": 1.0,
+          "candidate_success_rate": 1.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 0.6612080008684037,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "denied-write",
+          "baseline_success_rate": 1.0,
+          "candidate_success_rate": 1.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 0.021790998289361596,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "path-traversal",
+          "baseline_success_rate": 1.0,
+          "candidate_success_rate": 1.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": -0.07898599869804457,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "partial-stream",
+          "baseline_success_rate": 0.0,
+          "candidate_success_rate": 0.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 0.29090266616549343,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "cancellation",
+          "baseline_success_rate": 0.0,
+          "candidate_success_rate": 0.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 0.7773056677251589,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "unknown-usage",
+          "baseline_success_rate": 1.0,
+          "candidate_success_rate": 1.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 1.2287499994272366,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "tool-failure",
+          "baseline_success_rate": 1.0,
+          "candidate_success_rate": 1.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 4.883889332025622,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "malformed-arguments",
+          "baseline_success_rate": 1.0,
+          "candidate_success_rate": 1.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 2.670042000924392,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "incomplete-tool-stream",
+          "baseline_success_rate": 0.0,
+          "candidate_success_rate": 0.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": -1.9436810010423262,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "rate-limit",
+          "baseline_success_rate": 0.0,
+          "candidate_success_rate": 0.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 1.0224026688471592,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "timeout",
+          "baseline_success_rate": 0.0,
+          "candidate_success_rate": 0.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": -1.936958332710977,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "context-exhaustion",
+          "baseline_success_rate": 0.0,
+          "candidate_success_rate": 0.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": -0.908750000235159,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "repeated-tool-loop",
+          "baseline_success_rate": 0.0,
+          "candidate_success_rate": 0.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": -1.3850276664015837,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "workspace-conflict",
+          "baseline_success_rate": 0.0,
+          "candidate_success_rate": 0.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 2.971277334533321,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "interrupted-execution",
+          "baseline_success_rate": 0.0,
+          "candidate_success_rate": 0.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 0.9179306653095409,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "false-completion",
+          "baseline_success_rate": 0.0,
+          "candidate_success_rate": 0.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 2.1121526672989908,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "evaluator-tampering",
+          "baseline_success_rate": 1.0,
+          "candidate_success_rate": 1.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": -0.3057503308809828,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "streaming-usage-dedup",
+          "baseline_success_rate": 1.0,
+          "candidate_success_rate": 1.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 1.3062643350470655,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        },
+        {
+          "task_id": "network-denial",
+          "baseline_success_rate": 1.0,
+          "candidate_success_rate": 1.0,
+          "success_delta": 0.0,
+          "fixture_pass_delta": 0.0,
+          "regression": false,
+          "wall_time_delta_ms": 1.8920136668990988,
+          "request_delta": 0.0,
+          "tool_call_delta": 0.0
+        }
+      ],
+      "regressions": [],
+      "profiles": {
+        "baseline": {
+          "profile": "native-replay",
+          "configuration": null,
+          "summary": {
+            "trials": 60,
+            "fixtures_passed": 60,
+            "fixture_pass_rate": 1.0,
+            "completed_verified_tasks": 30,
+            "pass_at_1": 0.5,
+            "task_success_rate": 0.5,
+            "verified_completion_rate": 0.5,
+            "false_completion_rate": 0.16666666666666666,
+            "false_completions": 6,
+            "completion_claims": 36,
+            "wall_time_ms": {
+              "count": 60,
+              "mean": 92.41989654983627,
+              "stdev": 20.35305521893875,
+              "min": 74.4968750004773,
+              "max": 162.1517909989052,
+              "p50": 90.02952049922897,
+              "p95": 133.36597224988503
+            },
+            "time_to_completion_ms": {
+              "count": 30,
+              "mean": 26.302882033996866,
+              "stdev": 20.757878477668743,
+              "min": 8.825959001114825,
+              "max": 87.92308299962315,
+              "p50": 21.65337500082387,
+              "p95": 85.59786715140945
+            },
+            "request_latency_ms": {
+              "count": 105,
+              "mean": 5.657009514384082,
+              "stdev": 7.867224653785184,
+              "min": 2.257207997899968,
+              "max": 50.627459000679664,
+              "p50": 3.984833001595689,
+              "p95": 9.324008400290031
+            },
+            "per_task": {
+              "guarded-edit": {
+                "count": 3,
+                "mean": 158.9150133319587,
+                "stdev": 2.9168689022373635,
+                "min": 156.49004099759622,
+                "max": 162.1517909989052,
+                "p50": 158.10320799937472,
+                "p95": 161.74693269895215
+              },
+              "read-only": {
+                "count": 3,
+                "mean": 92.04533366695007,
+                "stdev": 0.7235266055007726,
+                "min": 91.22504200058756,
+                "max": 92.59270899929106,
+                "p50": 92.3182500009716,
+                "p95": 92.56526309945912
+              },
+              "denied-write": {
+                "count": 3,
+                "mean": 91.4209726676442,
+                "stdev": 1.9634054591314387,
+                "min": 90.04612499848008,
+                "max": 93.66958400278236,
+                "p50": 90.54720900167013,
+                "p95": 93.35734650267113
+              },
+              "path-traversal": {
+                "count": 3,
+                "mean": 92.67340266645381,
+                "stdev": 1.5171783608598841,
+                "min": 91.11766599744442,
+                "max": 94.14883299905341,
+                "p50": 92.75370900286362,
+                "p95": 94.00932059943443
+              },
+              "partial-stream": {
+                "count": 3,
+                "mean": 77.8504166676915,
+                "stdev": 2.146902727836227,
+                "min": 75.83145900207455,
+                "max": 80.10570799888228,
+                "p50": 77.6140830021177,
+                "p95": 79.85654549920582
+              },
+              "cancellation": {
+                "count": 3,
+                "mean": 75.30369433273638,
+                "stdev": 0.6186999120307385,
+                "min": 74.61124999827007,
+                "max": 75.80216699716402,
+                "p50": 75.49766600277508,
+                "p95": 75.77171689772513
+              },
+              "unknown-usage": {
+                "count": 3,
+                "mean": 77.29866666826031,
+                "stdev": 2.8647411991719194,
+                "min": 74.61104200046975,
+                "max": 80.31258300252375,
+                "p50": 76.97237500178744,
+                "p95": 79.97856220245012
+              },
+              "tool-failure": {
+                "count": 3,
+                "mean": 89.83104133343052,
+                "stdev": 3.6874829894823455,
+                "min": 85.85091599888983,
+                "max": 93.13124999971478,
+                "p50": 90.51095800168696,
+                "p95": 92.869220799912
+              },
+              "malformed-arguments": {
+                "count": 3,
+                "mean": 91.17918033371097,
+                "stdev": 1.3252117292449173,
+                "min": 90.01291599997785,
+                "max": 92.620250001346,
+                "p50": 90.90437499980908,
+                "p95": 92.4486625011923
+              },
+              "incomplete-tool-stream": {
+                "count": 3,
+                "mean": 81.27856966651355,
+                "stdev": 5.909182315445069,
+                "min": 77.47929200195358,
+                "max": 88.08662500086939,
+                "p50": 78.26979199671769,
+                "p95": 87.10494170045422
+              },
+              "rate-limit": {
+                "count": 3,
+                "mean": 76.04595833133014,
+                "stdev": 2.2586901248170417,
+                "min": 74.5156249977299,
+                "max": 78.64012499703676,
+                "p50": 74.98212499922374,
+                "p95": 78.27432499725546
+              },
+              "timeout": {
+                "count": 3,
+                "mean": 128.2495136668634,
+                "stdev": 4.002919884160949,
+                "min": 124.15054200027953,
+                "max": 132.14891600000556,
+                "p50": 128.4490830003051,
+                "p95": 131.7789327000355
+              },
+              "context-exhaustion": {
+                "count": 3,
+                "mean": 77.85220866693028,
+                "stdev": 3.4259062023804905,
+                "min": 75.27620900145848,
+                "max": 81.74020899969037,
+                "p50": 76.540207999642,
+                "p95": 81.22020889968553
+              },
+              "repeated-tool-loop": {
+                "count": 3,
+                "mean": 106.82083333328289,
+                "stdev": 7.264230495681085,
+                "min": 101.20279200054938,
+                "max": 115.02404099883279,
+                "p50": 104.23566700046649,
+                "p95": 113.94520359899616
+              },
+              "workspace-conflict": {
+                "count": 3,
+                "mean": 108.40562533364088,
+                "stdev": 3.1454276028058263,
+                "min": 105.42433299997356,
+                "max": 111.69283400158747,
+                "p50": 108.09970899936161,
+                "p95": 111.33352150136488
+              },
+              "interrupted-execution": {
+                "count": 3,
+                "mean": 76.46991666721685,
+                "stdev": 2.2245656328083823,
+                "min": 74.4968750004773,
+                "max": 78.8808750003227,
+                "p50": 76.03200000085053,
+                "p95": 78.59598750037549
+              },
+              "false-completion": {
+                "count": 3,
+                "mean": 78.20329199967091,
+                "stdev": 0.3956129599467356,
+                "min": 77.78104200042435,
+                "max": 78.56537499901606,
+                "p50": 78.26345899957232,
+                "p95": 78.53518339907168
+              },
+              "evaluator-tampering": {
+                "count": 3,
+                "mean": 91.53448633151129,
+                "stdev": 0.6818751782174755,
+                "min": 90.91524999894318,
+                "max": 92.26524999758112,
+                "p50": 91.42295899800956,
+                "p95": 92.18102089762397
+              },
+              "streaming-usage-dedup": {
+                "count": 3,
+                "mean": 85.49041633159504,
+                "stdev": 1.41176806743474,
+                "min": 84.56954099892755,
+                "max": 87.11579199734842,
+                "p50": 84.78591599850915,
+                "p95": 86.8828043974645
+              },
+              "network-denial": {
+                "count": 3,
+                "mean": 91.5293889993336,
+                "stdev": 2.2935681528926435,
+                "min": 89.33533399977023,
+                "max": 93.91095799946925,
+                "p50": 91.34187499876134,
+                "p95": 93.65404969939846
+              }
+            },
+            "cost": null,
+            "cost_per_task": null,
+            "cost_per_successful_task": null,
+            "successful_tasks_per_dollar": null,
+            "failure_breakdown": {},
+            "terminal_outcomes": {
+              "blocked": 6,
+              "cancelled": 3,
+              "completed": 30,
+              "failed": 18,
+              "interrupted": 3
+            },
+            "safety_violations": 0,
+            "crashes": 0,
+            "interrupted_runs": 3,
+            "timeouts": 3,
+            "usage": {
+              "prompt_tokens": null,
+              "completion_tokens": null,
+              "cached_tokens": null,
+              "total_tokens": null
+            },
+            "request_count": 105,
+            "tool_calls": 51,
+            "tool_errors": 30,
+            "recovery_attempts": 0,
+            "repeated_tool_errors": 6,
+            "compaction_requests": 0,
+            "compaction_overhead_ms": 0,
+            "retry_count": 0,
+            "tool_recoveries": 0,
+            "recovery_count": 0,
+            "cost_sources": [],
+            "cost_is_estimate": false
+          }
+        },
+        "candidate": {
+          "profile": "native-replay",
+          "configuration": null,
+          "summary": {
+            "trials": 60,
+            "fixtures_passed": 60,
+            "fixture_pass_rate": 1.0,
+            "completed_verified_tasks": 30,
+            "pass_at_1": 0.5,
+            "task_success_rate": 0.5,
+            "verified_completion_rate": 0.5,
+            "false_completion_rate": 0.16666666666666666,
+            "false_completions": 6,
+            "completion_claims": 36,
+            "wall_time_ms": {
+              "count": 60,
+              "mean": 93.12078123366518,
+              "stdev": 20.025831075691556,
+              "min": 74.05470800222247,
+              "max": 160.41612500339397,
+              "p50": 90.42308300013246,
+              "p95": 131.21281809908388
+            },
+            "time_to_completion_ms": {
+              "count": 30,
+              "mean": 26.737730666718562,
+              "stdev": 20.317563223309882,
+              "min": 9.100541999941925,
+              "max": 86.28512499853969,
+              "p50": 22.024917001544964,
+              "p95": 84.83002515004046
+            },
+            "request_latency_ms": {
+              "count": 105,
+              "mean": 5.722403180975345,
+              "stdev": 7.854685949416688,
+              "min": 2.2318340015772264,
+              "max": 50.619625002582325,
+              "p50": 4.026332997455029,
+              "p95": 9.246508598880599
+            },
+            "per_task": {
+              "guarded-edit": {
+                "count": 3,
+                "mean": 158.7359303351453,
+                "stdev": 2.0395315283946847,
+                "min": 156.4667080019717,
+                "max": 160.41612500339397,
+                "p50": 159.32495800007018,
+                "p95": 160.3070083030616
+              },
+              "read-only": {
+                "count": 3,
+                "mean": 92.70654166781848,
+                "stdev": 1.9664994694774056,
+                "min": 90.82404199943994,
+                "max": 94.74745800253004,
+                "p50": 92.54812500148546,
+                "p95": 94.52752470242558
+              },
+              "denied-write": {
+                "count": 3,
+                "mean": 91.44276366593355,
+                "stdev": 0.6784910736965558,
+                "min": 90.6660410000768,
+                "max": 91.91987499798415,
+                "p50": 91.7423749997397,
+                "p95": 91.9021249981597
+              },
+              "path-traversal": {
+                "count": 3,
+                "mean": 92.59441666775577,
+                "stdev": 1.7088810950873283,
+                "min": 90.6780000004801,
+                "max": 93.95979200053262,
+                "p50": 93.1454580022546,
+                "p95": 93.87835860070481
+              },
+              "partial-stream": {
+                "count": 3,
+                "mean": 78.141319333857,
+                "stdev": 1.0298502830962852,
+                "min": 77.19033299872535,
+                "max": 79.23512500201468,
+                "p50": 77.99850000083097,
+                "p95": 79.11146250189631
+              },
+              "cancellation": {
+                "count": 3,
+                "mean": 76.08100000046154,
+                "stdev": 1.4324149892417137,
+                "min": 74.73450000179582,
+                "max": 77.58612500037998,
+                "p50": 75.92237499920884,
+                "p95": 77.41975000026287
+              },
+              "unknown-usage": {
+                "count": 3,
+                "mean": 78.52741666768755,
+                "stdev": 0.9303109828090523,
+                "min": 77.51899999857415,
+                "max": 79.35225000255741,
+                "p50": 78.7110000019311,
+                "p95": 79.28812500249478
+              },
+              "tool-failure": {
+                "count": 3,
+                "mean": 94.71493066545615,
+                "stdev": 7.238846060116875,
+                "min": 90.18012500018813,
+                "max": 103.06324999692151,
+                "p50": 90.9014169992588,
+                "p95": 101.84706669715524
+              },
+              "malformed-arguments": {
+                "count": 3,
+                "mean": 93.84922233463537,
+                "stdev": 4.365150187571057,
+                "min": 89.29545900173252,
+                "max": 97.99745800046367,
+                "p50": 94.25475000170991,
+                "p95": 97.62318720058829
+              },
+              "incomplete-tool-stream": {
+                "count": 3,
+                "mean": 79.33488866547123,
+                "stdev": 2.6990810057570616,
+                "min": 76.34470799894189,
+                "max": 81.59099999829778,
+                "p50": 80.06895799917402,
+                "p95": 81.4387957983854
+              },
+              "rate-limit": {
+                "count": 3,
+                "mean": 77.06836100017729,
+                "stdev": 4.438583622988764,
+                "min": 74.05470800222247,
+                "max": 82.16537499902188,
+                "p50": 74.98499999928754,
+                "p95": 81.44733749904844
+              },
+              "timeout": {
+                "count": 3,
+                "mean": 126.31255533415242,
+                "stdev": 3.0979038747192695,
+                "min": 124.34704200131819,
+                "max": 129.88366599893197,
+                "p50": 124.7069580022071,
+                "p95": 129.3659951992595
+              },
+              "context-exhaustion": {
+                "count": 3,
+                "mean": 76.94345866669512,
+                "stdev": 0.9994841846479221,
+                "min": 76.03037499939092,
+                "max": 78.01129200015566,
+                "p50": 76.7887090005388,
+                "p95": 77.88903370019398
+              },
+              "repeated-tool-loop": {
+                "count": 3,
+                "mean": 105.43580566688131,
+                "stdev": 2.2536987873212313,
+                "min": 103.36220899989712,
+                "max": 107.83433300093748,
+                "p50": 105.11087499980931,
+                "p95": 107.56198720082466
+              },
+              "workspace-conflict": {
+                "count": 3,
+                "mean": 111.3769026681742,
+                "stdev": 3.020354490976205,
+                "min": 108.0266249991837,
+                "max": 113.89125000278,
+                "p50": 112.21283300255891,
+                "p95": 113.72340830275789
+              },
+              "interrupted-execution": {
+                "count": 3,
+                "mean": 77.38784733252639,
+                "stdev": 0.887475857660453,
+                "min": 76.36554199780221,
+                "max": 77.96049999888055,
+                "p50": 77.8375000008964,
+                "p95": 77.94819999908214
+              },
+              "false-completion": {
+                "count": 3,
+                "mean": 80.3154446669699,
+                "stdev": 1.0752560648967742,
+                "min": 79.29962500202237,
+                "max": 81.4416249995702,
+                "p50": 80.20508399931714,
+                "p95": 81.31797089954489
+              },
+              "evaluator-tampering": {
+                "count": 3,
+                "mean": 91.2287360006303,
+                "stdev": 1.488299070551204,
+                "min": 90.06099999896833,
+                "max": 92.90454200163367,
+                "p50": 90.72066600128892,
+                "p95": 92.6861544015992
+              },
+              "streaming-usage-dedup": {
+                "count": 3,
+                "mean": 86.7966806666421,
+                "stdev": 1.1788956707482579,
+                "min": 85.45025000057649,
+                "max": 87.64349999910337,
+                "p50": 87.29629200024647,
+                "p95": 87.60877919921768
+              },
+              "network-denial": {
+                "count": 3,
+                "mean": 93.42140266623271,
+                "stdev": 0.6163085670975257,
+                "min": 92.75816599983955,
+                "max": 93.97645799981547,
+                "p50": 93.5295839990431,
+                "p95": 93.93177059973823
+              }
+            },
+            "cost": null,
+            "cost_per_task": null,
+            "cost_per_successful_task": null,
+            "successful_tasks_per_dollar": null,
+            "failure_breakdown": {},
+            "terminal_outcomes": {
+              "blocked": 6,
+              "cancelled": 3,
+              "completed": 30,
+              "failed": 18,
+              "interrupted": 3
+            },
+            "safety_violations": 0,
+            "crashes": 0,
+            "interrupted_runs": 3,
+            "timeouts": 3,
+            "usage": {
+              "prompt_tokens": null,
+              "completion_tokens": null,
+              "cached_tokens": null,
+              "total_tokens": null
+            },
+            "request_count": 105,
+            "tool_calls": 51,
+            "tool_errors": 30,
+            "recovery_attempts": 0,
+            "repeated_tool_errors": 6,
+            "compaction_requests": 0,
+            "compaction_overhead_ms": 0,
+            "retry_count": 0,
+            "tool_recoveries": 0,
+            "recovery_count": 0,
+            "cost_sources": [],
+            "cost_is_estimate": false
+          }
+        }
+      },
+      "task_cluster_bootstrap95": {
+        "success_delta": [
+          0.0,
+          0.0
+        ],
+        "wall_time_delta_ms": [
+          0.020384642807584896,
+          1.4621886691338655
+        ],
+        "resamples": 2000,
+        "seed": 20261027,
+        "unit": "task",
+        "minimum_tasks": 5
+      },
+      "performance_claim": null,
+      "limitation": "Paired local dataset evidence only. Repeats are clustered by task; small differences do not establish a universal model or harness ranking."
+    }
+  },
+  "injected_regression": {
+    "baseline_passes": 60,
+    "candidate_passes": 30,
+    "regressions": [
+      "guarded-edit",
+      "read-only",
+      "denied-write",
+      "path-traversal",
+      "tool-failure",
+      "malformed-arguments",
+      "repeated-tool-loop",
+      "workspace-conflict",
+      "evaluator-tampering",
+      "network-denial"
+    ],
+    "success_delta": -24
+  },
+  "artifacts": [
+    {
+      "path": "/private/tmp/firik-phase1-v2-20261027/control-a/report.json",
+      "sha256": "0cfefd4f2df539de95daf7025bd4486ea7ea5696099af601f27e76ed9c1d3433"
+    },
+    {
+      "path": "/private/tmp/firik-phase1-v2-20261027/control-a/report.md",
+      "sha256": "414db8b07fe34dc5d2ac442dccad74ac5a0996f0bb5052b9beb95ba68f36f10d"
+    },
+    {
+      "path": "/private/tmp/firik-phase1-v2-20261027/control-b/report.json",
+      "sha256": "8f78ad9c0a2d0356ee0e5bffed0bb012433f13084646331286178a9aaefe916b"
+    },
+    {
+      "path": "/private/tmp/firik-phase1-v2-20261027/control-b/report.md",
+      "sha256": "077330da5255cca0eadf19c8e953423f460d961ff0a84fb2b0b7eef14712ddd3"
+    },
+    {
+      "path": "/private/tmp/firik-phase1-v2-20261027/regression-baseline/report.json",
+      "sha256": "f6b66b83fde982122d9223f0c37166a43147802dabbf928bd5d0c63dd440f295"
+    },
+    {
+      "path": "/private/tmp/firik-phase1-v2-20261027/regression-baseline/report.md",
+      "sha256": "cd1279565eaaf3b13fe5329067c9b19dccd3bf2d6729504772ac49d3b000f40b"
+    },
+    {
+      "path": "/private/tmp/firik-phase1-v2-20261027/regression-candidate/report.json",
+      "sha256": "74583d957747aaba46f44fd6b6c045d7e913cfe5c805f96ac29eab61fd0af214"
+    },
+    {
+      "path": "/private/tmp/firik-phase1-v2-20261027/regression-candidate/report.md",
+      "sha256": "878e3a29144cbe6dda6ffca04d17b8fb6fd6856ee43c697f70b0630552fa9026"
+    },
+    {
+      "path": "/private/tmp/firik-phase1-v2-20261027/control-comparison/comparison.json",
+      "sha256": "4df81153e654efeba661401d3edd5e23b35979da351f8936875c22feeb197d51"
+    },
+    {
+      "path": "/private/tmp/firik-phase1-v2-20261027/control-comparison/comparison.md",
+      "sha256": "f8969c147383d023387403c786df1a02a215b98707b0c5cb7d6e16937abf1640"
+    },
+    {
+      "path": "/private/tmp/firik-phase1-v2-20261027/regression-comparison/comparison.json",
+      "sha256": "a38af4bc1eabe2012581afd46d4068abfdf0dfbd039a1dea935982801e2c7b0c"
+    },
+    {
+      "path": "/private/tmp/firik-phase1-v2-20261027/regression-comparison/comparison.md",
+      "sha256": "8a7c29e3f31d75cc223b60d9bf1570a79c857a72d5e36964a58aadd0be1382f3"
+    }
+  ]
+}

@@ -13,6 +13,10 @@ from firik_agent.config import load_config
 from firik_agent.core.environment import environment_prompt, get_environment_info
 from firik_agent.core.shell import run_shell
 from firik_agent.core.tools import ToolRegistry
+from firik_agent.core.failures import FailureKind, RequestPhase, RuntimeFailure, normalize_failure
+from firik_agent.core.recovery import (AdaptiveRecoveryEngine, BudgetedCompactionProvider, RecoveryAction, RecoveryBudget, RecoveryContext,
+                                       RecoveryLimits, SideEffectRisk, interruptible_backoff,
+                                       operation_fingerprint, tool_semantics)
 from firik_agent.core.types import (
     Message,
     ToolCall,
@@ -29,6 +33,75 @@ from firik_agent.core.session import ChatSession, SessionToolFilter
 from firik_agent.skills.manager import SkillManager
 
 logger = logging.getLogger(__name__)
+
+
+def _merge_usage_snapshot(previous: Dict[str, Any], current: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge sparse cumulative frames without retaining contradictory totals."""
+    merged = {**previous, **current}
+    families = (("prompt_tokens", "input_tokens"), ("completion_tokens", "output_tokens"))
+    valid_count = lambda value: isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    components_updated = False
+    for family in families:
+        if not any(key in current for key in family):
+            continue
+        components_updated = True
+        # A newer provider alias replaces the whole family, including a prior
+        # canonical spelling. Invalid values explicitly revoke old evidence.
+        for key in family:
+            merged.pop(key, None)
+        key = next((key for key in family if valid_count(current.get(key))), None)
+        if key is None:
+            merged[family[0]] = None
+        else:
+            merged[key] = current[key]
+    if components_updated or "total_tokens" in current:
+        if not valid_count(current.get("total_tokens")):
+            merged.pop("total_tokens", None)
+            counts = [next((merged[key] for key in family if valid_count(merged.get(key))), None)
+                      for family in families]
+            if all(value is not None for value in counts):
+                merged["total_tokens"] = sum(counts)
+    cost_inputs_updated = components_updated or any(key in current for key in (
+        "prompt_tokens_details", "input_tokens_details", "cached_tokens", "cache_read_input_tokens"))
+    if cost_inputs_updated and not any(key in current for key in ("cost", "cost_usd")):
+        # An earlier provider-reported cost may describe earlier component
+        # counts. Verified prices can estimate the updated snapshot at finish.
+        merged.pop("cost", None)
+        merged.pop("cost_usd", None)
+    elif any(key in current for key in ("cost", "cost_usd")):
+        for key in ("cost", "cost_usd"):
+            if key not in current:
+                merged.pop(key, None)
+    for family in (("prompt_tokens_details", "input_tokens_details"),
+                   ("completion_tokens_details", "output_tokens_details")):
+        if not any(key in current for key in family):
+            continue
+        prior_details = next((previous[key] for key in family if isinstance(previous.get(key), dict)), {})
+        for key in family:
+            merged.pop(key, None)
+        key = next((key for key in family if isinstance(current.get(key), dict)), None)
+        if key is None:
+            merged[family[0]] = None
+        else:
+            merged[key] = {**prior_details, **current[key]}
+    cache_values = []
+    for key in ("prompt_tokens_details", "input_tokens_details"):
+        details = current.get(key)
+        if isinstance(details, dict) and "cached_tokens" in details:
+            cache_values.append(details["cached_tokens"])
+        elif key in current and not isinstance(details, dict):
+            cache_values.append(None)
+    cache_values += [current[key] for key in ("cached_tokens", "cache_read_input_tokens") if key in current]
+    if cache_values:
+        # Cache counts share one alias family even across nested/direct
+        # representations. Normalize the latest evidence so consumers with
+        # different alias preference cannot pick an older contradictory count.
+        merged.pop("cache_read_input_tokens", None)
+        for key in ("prompt_tokens_details", "input_tokens_details"):
+            if isinstance(merged.get(key), dict):
+                merged[key] = {name: value for name, value in merged[key].items() if name != "cached_tokens"}
+        merged["cached_tokens"] = next((value for value in cache_values if valid_count(value)), None)
+    return merged
 
 
 class Agent:
@@ -61,6 +134,7 @@ class Agent:
             None if raw_max_iterations in (None, "unlimited") else int(raw_max_iterations)
         )
         self.temperature: float = agent_conf.get("temperature", 0.7)
+        self.recovery_engine = AdaptiveRecoveryEngine(RecoveryLimits(**agent_conf.get("recovery", {})))
 
         # Core registries and managers
         self.tools = ToolRegistry()
@@ -547,6 +621,310 @@ class Agent:
         prompt += "\n\n" + environment_prompt(cwd=self.default_cwd)
         return prompt
 
+    async def _request_with_recovery(self, *, provider, messages, schemas, temperature, max_tokens,
+                                     streaming, budget, run_id, checkpoint, metadata=None,
+                                     run_control=None, allow_fallback=True, compaction=None, before_request=None):
+        """One logical request, with distinct identities/accounting for every attempt."""
+        from firik_agent.projects.model_capabilities import estimate_usage_cost, model_capabilities
+        attempt, parent_id, use_stream = 0, None, streaming
+        original_policy = run_control.policy_snapshot() if run_control else {}
+        while True:
+            await checkpoint()
+            if attempt and run_control:
+                current = run_control.policy_snapshot()
+                ranks = {"allow": 0, "ask": 1, "deny": 2}
+                if any(ranks.get(current.get(key), 2) > ranks.get(value, 2) for key, value in original_policy.items()):
+                    raise RuntimeFailure(FailureKind.PERMISSION_DENIED, phase=RequestPhase.NOT_SUBMITTED)
+            if before_request:
+                prepared = before_request(messages, schemas)
+                if inspect.isawaitable(prepared):
+                    await prepared
+            caps = run_control.capabilities if run_control else model_capabilities(
+                getattr(provider, "model_metadata", {}).get(getattr(provider, "current_model", "")))
+            request_output = budget.output_reservation(messages, schemas, max_tokens, caps)
+            budget.begin_request()
+            request_id, started = uuid4().hex, time.monotonic()
+            info = {**(metadata or {}), "request_id": request_id, "attempt_id": request_id,
+                    "run_id": run_id, "request_kind": "model", "attempt": attempt,
+                    "provider": getattr(provider, "name", ""), "model": getattr(provider, "current_model", "")}
+            if parent_id:
+                info["parent_request_id"] = parent_id
+                info.pop("context_inspector", None)
+            yield "event", (AgentEventType.MODEL_REQUEST_STARTED, info, "")
+            usage, first_token, visible, received_frame = {}, None, False, False
+            phase = RequestPhase.SUBMITTED_NO_OUTPUT
+            failure, response, iterator, pending = None, None, None, None
+            local_interface_unimplemented = False
+            try:
+                kwargs = dict(messages=messages, tools=schemas or None, temperature=temperature, max_tokens=request_output)
+                if use_stream:
+                    iterator = provider.chat_stream(**kwargs).__aiter__()
+                    while True:
+                        pending = asyncio.ensure_future(iterator.__anext__())
+                        while not pending.done():
+                            await asyncio.wait({pending}, timeout=.05)
+                            if not pending.done():
+                                await checkpoint()
+                            if time.monotonic() - budget.started >= budget.limits.max_elapsed:
+                                raise RuntimeFailure(FailureKind.BUDGET_EXCEEDED, phase=phase)
+                        try:
+                            chunk = pending.result()
+                        except StopAsyncIteration:
+                            break
+                        received_frame = True
+                        # Usage or empty frames are not visible output, but do
+                        # prove that a provider accepted the request.
+                        if chunk.delta_content or chunk.delta_reasoning or chunk.tool_calls:
+                            visible, phase = True, RequestPhase.PARTIAL_RESPONSE
+                            first_token = first_token or time.monotonic()
+                        if chunk.usage:
+                            usage = _merge_usage_snapshot(usage, chunk.usage)
+                            yield "event", (AgentEventType.MODEL_USAGE,
+                                {**{key: value for key, value in info.items() if key != "context_inspector"}, "usage": usage}, "")
+                        await checkpoint()
+                        yield "chunk", chunk
+                else:
+                    pending = asyncio.ensure_future(provider.chat(**kwargs))
+                    while not pending.done():
+                        await asyncio.wait({pending}, timeout=.05)
+                        await checkpoint()
+                        if time.monotonic() - budget.started >= budget.limits.max_elapsed:
+                            raise RuntimeFailure(FailureKind.BUDGET_EXCEEDED, phase=phase)
+                    response = pending.result()
+                    usage = dict(getattr(response, "usage", None) or {})
+                phase = RequestPhase.RESPONSE_COMPLETE
+            except BaseException as exc:
+                if not isinstance(exc, (Exception, asyncio.CancelledError)):
+                    raise
+                failure = normalize_failure(exc, phase=phase, provider=getattr(provider, "name", ""))
+                # A local unimplemented interface is known not to submit. This
+                # permits the legacy same-provider chat interface only.
+                if isinstance(exc, NotImplementedError) and not received_frame:
+                    local_interface_unimplemented = True
+                    failure = RuntimeFailure(FailureKind.UNSUPPORTED_CAPABILITY, phase=RequestPhase.NOT_SUBMITTED)
+            finally:
+                if pending is not None and not pending.done():
+                    pending.cancel()
+                    await asyncio.gather(pending, return_exceptions=True)
+                if iterator is not None and hasattr(iterator, "aclose"):
+                    try:
+                        await iterator.aclose()
+                    except (Exception, asyncio.CancelledError) as close_error:
+                        if failure is None:
+                            failure = normalize_failure(close_error, phase=phase, provider=getattr(provider, "name", ""))
+            capabilities = run_control.capabilities if run_control else model_capabilities(
+                getattr(provider, "model_metadata", {}).get(getattr(provider, "current_model", "")))
+            cost_report = estimate_usage_cost(usage, capabilities)
+            if cost_report.get("cost") is not None:
+                usage = {**usage, "cost": cost_report["cost"]}
+            budget.record_usage(usage)
+            if failure is None and ((budget.limits.max_tokens is not None and budget.tokens > budget.limits.max_tokens)
+                    or (budget.limits.max_cost is not None and budget.cost > budget.limits.max_cost)):
+                failure = RuntimeFailure(FailureKind.BUDGET_EXCEEDED, phase=phase)
+            elapsed = time.monotonic() - started
+            output = usage.get("completion_tokens", usage.get("output_tokens"))
+            generation = time.monotonic() - first_token if first_token else None
+            finished = {**{key: value for key, value in info.items() if key != "context_inspector"},
+                        "usage": usage, "cost_report": cost_report,
+                        "status": "cancelled" if failure and failure.kind == FailureKind.CANCELLED else "failed" if failure else "completed",
+                        "usage_complete": not failure and bool(usage),
+                        "error_type": failure.metadata.get("error_type", type(failure).__name__) if failure else None,
+                        "request_phase": failure.phase.value if failure else phase.value,
+                        "resource_budget": budget.snapshot(),
+                        "metrics": {"latency_ms": max(0, elapsed) * 1000, "retry_count": attempt,
+                                    "ttft_ms": (first_token - started) * 1000 if first_token else None,
+                                    "tokens_per_sec": output / generation if isinstance(output, (int, float))
+                                    and not isinstance(output, bool) and generation else None}}
+            if failure:
+                finished.update(failure.metadata)
+            if not failure and (run_control or usage):
+                yield "event", (AgentEventType.MODEL_USAGE, finished, "")
+            yield "event", (AgentEventType.MODEL_REQUEST_FINISHED, finished, "")
+            if failure is None:
+                if not use_stream:
+                    yield "response", response
+                return
+            oversized = any(message.role == "tool" and isinstance(message.content, str)
+                            and len(message.content) > 8200 for message in messages)
+            context = RecoveryContext(run_id, request_id, failure.kind, failure.phase, SideEffectRisk.PURE_READ,
+                capabilities, budget, failure.kind == FailureKind.CANCELLED, original_policy,
+                attempt, failure.retry_after, can_compact=compaction is not None, can_reduce_output=oversized)
+            decision = self.recovery_engine.decide(context)
+            fallback = (local_interface_unimplemented and decision.action == RecoveryAction.REFRESH_CAPABILITIES and use_stream and allow_fallback
+                        and failure.phase == RequestPhase.NOT_SUBMITTED and attempt < budget.limits.request_retries
+                        and budget.retries < budget.limits.run_retries and not budget.exhausted())
+            details = {**failure.metadata, **decision.metadata(), "attempt_id": request_id,
+                       "run_id": run_id, "attempts_used": attempt + 1, "resource_budget": budget.snapshot()}
+            if fallback:
+                details.update(recovery_action="same_provider_nonstream", action="same_provider_nonstream",
+                               safe_to_repeat=True, retry_eligible=True)
+            yield "event", (AgentEventType.RECOVERY, details, decision.reason)
+            if failure.kind == FailureKind.CANCELLED:
+                raise asyncio.CancelledError()
+            if fallback:
+                logger.warning("Streaming interface unavailable (%s); using same-provider chat()", "NotImplementedError")
+                use_stream = False
+            elif decision.action == RecoveryAction.REFRESH_CAPABILITIES:
+                refresh = getattr(provider, "refresh_capabilities", None)
+                if refresh:
+                    await checkpoint()
+                    budget.metadata_requests += 1
+                    pending_refresh = asyncio.ensure_future(refresh())
+                    try:
+                        while not pending_refresh.done():
+                            await asyncio.wait({pending_refresh}, timeout=.05)
+                            await checkpoint()
+                            if time.monotonic() - budget.started >= budget.limits.max_elapsed:
+                                raise RuntimeFailure(FailureKind.BUDGET_EXCEEDED, phase=RequestPhase.NOT_SUBMITTED)
+                        refreshed = pending_refresh.result()
+                        if run_control and refreshed.get("status") == "refreshed":
+                            run_control.capabilities = dict(refreshed["capabilities"])
+                        yield "event", (AgentEventType.RECOVERY,
+                            {**details, "capability_refresh": refreshed, "metadata_requests_used": budget.metadata_requests},
+                            "Capability metadata inspected; the original request was not resubmitted.")
+                    except (Exception, asyncio.CancelledError) as refresh_error:
+                        raise normalize_failure(refresh_error, phase=RequestPhase.NOT_SUBMITTED,
+                                                provider=getattr(provider, "name", "")) from None
+                    finally:
+                        if not pending_refresh.done():
+                            pending_refresh.cancel()
+                            await asyncio.gather(pending_refresh, return_exceptions=True)
+                raise failure from None
+            elif decision.action == RecoveryAction.REDUCE_OUTPUT:
+                messages = [message.model_copy(update={"content": message.content[:8000] +
+                    "\n[Host reduced oversized output; full result remains in session history.]"})
+                    if message.role == "tool" and isinstance(message.content, str) and len(message.content) > 8000
+                    else message for message in messages]
+            elif decision.action == RecoveryAction.COMPACT:
+                messages, observations = await compaction()
+                for observation in observations:
+                    yield "event", observation
+            elif decision.action not in {RecoveryAction.RETRY, RecoveryAction.BACKOFF}:
+                raise failure from None
+            budget.retries += 1
+            await interruptible_backoff(decision.delay, checkpoint)
+            parent_id, attempt = request_id, attempt + 1
+
+    async def _completion_decision(self, tool_filter, control):
+        before = getattr(control, "before_completion", None)
+        if before:
+            prepared = before()
+            if inspect.isawaitable(prepared):
+                await prepared
+        gate = getattr(tool_filter, "completion_gate_async", None)
+        if gate:
+            return await gate()
+        # Read-only embedders need no executable verifier. Missing verification
+        # ownership can never certify an implementing task.
+        if control.mode in {"ask", "plan"}:
+            return control.completion.evaluate(mode=control.mode, plan=control.plan,
+                verifications=[], quality_gates=[], quality_results=[], verified_ids=set(),
+                workspace_revision=control.workspace_revision, workspace_hash="", workspace_complete=False,
+                changes=False, state=control.state, unresolved_operations=control.unresolved_operations)
+        return {"passed": False, "reasons": ["Completion verification owner is unavailable."],
+                "completion_classification": "blocked", "lifecycle_state": "blocked", "legacy_status": "blocked"}
+
+    async def _execute_attempt(self, tc, *, messages, session, tool_filter, run_control, checkpoint, budget=None, run_id=None):
+        """Persist an intent before dispatch. Never replay uncertain mutations."""
+        await checkpoint()
+        fingerprint = operation_fingerprint(tc.function.name, tc.function.arguments)
+        registry = getattr(tool_filter, "tools", None) or getattr(tool_filter, "tool_registry", None) or self.tools
+        if tool_filter and hasattr(tool_filter, "get_tool_registry"):
+            registry = tool_filter.get_tool_registry(tc.function.name)
+        elif tool_filter and hasattr(tool_filter, "_registry_for"):
+            registry = tool_filter._registry_for(tc.function.name)
+        elif tool_filter and getattr(tool_filter, "mcp_registry", None) and not registry.get_tool(tc.function.name):
+            registry = tool_filter.mcp_registry
+        definition = registry.get_tool(tc.function.name)
+        risk = tool_semantics(tc.function.name, definition)
+        previous = [entry for message in messages for entry in message.execution.get("tool_attempts", [])
+                    if entry.get("fingerprint") == fingerprint]
+        terminal = {"dispatched", "outcome_unknown", "reconciliation_required"}
+        uncertain = any(entry.get("status") in terminal for entry in previous)
+        identity = run_control.run_id if run_control else run_id
+        same_call = next((entry for entry in previous if entry.get("run_id") == identity and entry.get("tool_call_id") == tc.id), None)
+        failures = sum(entry.get("status") == "failed" and entry.get("run_id") == identity for entry in previous)
+        attempt = {"run_id": identity, "attempt_id": uuid4().hex, "tool_call_id": tc.id, "fingerprint": fingerprint,
+                   "side_effect_risk": risk.value, "request_phase": RequestPhase.TOOL_NOT_DISPATCHED.value,
+                   "status": "not_dispatched", "reconciliation_status": "not_required"}
+        owner = next(message for message in reversed(messages) if message.role == "assistant" and message.tool_calls)
+        owner.execution.setdefault("tool_attempts", []).append(attempt)
+        if uncertain and run_control:
+            run_control.unresolved_operations.append({"fingerprint": fingerprint, "tool_name": tc.function.name,
+                                                       "status": "reconciliation_required"})
+        if uncertain or same_call or failures >= self.recovery_engine.limits.repeated_tool_failures:
+            kind = FailureKind.TOOL_OUTCOME_UNKNOWN if uncertain or same_call else FailureKind.BUDGET_EXCEEDED
+            attempt.update(status="reconciliation_required", failure_kind=kind.value, reconciliation_status="required")
+            return attempt, None, RuntimeFailure(kind, phase=RequestPhase.TOOL_NOT_DISPATCHED)
+        try:
+            arguments = json.loads(tc.function.arguments or "{}")
+            if not isinstance(arguments, dict):
+                raise ValueError()
+        except (ValueError, TypeError):
+            attempt.update(status="failed", failure_kind=FailureKind.INVALID_TOOL_ARGUMENTS.value)
+            result = ToolResult(tool_call_id=tc.id, name=tc.function.name, is_error=True,
+                                content="Tool arguments must be a valid JSON object.", metadata=dict(attempt))
+            return attempt, result, None
+        # The caller emits TOOL_CALL_STARTED and persists the journal before
+        # advancing this coroutine to its dispatch point.
+        attempt.update(status="dispatched", request_phase=RequestPhase.TOOL_DISPATCHED.value)
+        return attempt, None, None
+
+    async def _dispatch_attempt(self, tc, attempt, *, session, tool_filter, run_control, checkpoint, budget=None):
+        await checkpoint()
+        attempt.update(status="dispatched", request_phase=RequestPhase.TOOL_DISPATCHED.value)
+        pending = None
+        try:
+            if budget and budget.exhausted():
+                # Request count alone limits future requests, not tool results
+                # already returned by an allowed completed request.
+                limits = budget.limits
+                if time.monotonic() - budget.started >= limits.max_elapsed or (
+                        limits.max_tokens is not None and budget.tokens > limits.max_tokens) or (
+                        limits.max_cost is not None and budget.cost > limits.max_cost):
+                    raise RuntimeFailure(FailureKind.BUDGET_EXCEEDED, phase=RequestPhase.TOOL_NOT_DISPATCHED)
+            operation = tool_filter.execute(tc, session) if tool_filter and session else self.tools.execute(tc)
+            pending = asyncio.ensure_future(operation)
+            while not pending.done():
+                await asyncio.wait({pending}, timeout=.05)
+                if not pending.done():
+                    await checkpoint()
+                if budget and time.monotonic() - budget.started >= budget.limits.max_elapsed and not pending.done():
+                    raise TimeoutError()
+            result = pending.result()
+        except asyncio.CancelledError:
+            attempt.update(status="outcome_unknown", failure_kind=FailureKind.TOOL_OUTCOME_UNKNOWN.value,
+                           reconciliation_status="required")
+            raise
+        except Exception as exc:
+            failure = normalize_failure(exc, phase=RequestPhase.TOOL_DISPATCHED)
+            if attempt["side_effect_risk"] not in {SideEffectRisk.PURE_READ.value, SideEffectRisk.STATE_INSPECTION.value} and failure.kind not in {
+                    FailureKind.PERMISSION_DENIED, FailureKind.POLICY_REFUSAL, FailureKind.AUTHENTICATION_FAILED}:
+                failure = RuntimeFailure(FailureKind.TOOL_OUTCOME_UNKNOWN, phase=RequestPhase.TOOL_DISPATCHED,
+                                         source_type=type(exc).__name__)
+            result = ToolResult(tool_call_id=tc.id, name=tc.function.name, is_error=True,
+                                content=str(failure), metadata=failure.metadata)
+        finally:
+            if pending is not None and not pending.done():
+                pending.cancel()
+                await asyncio.gather(pending, return_exceptions=True)
+        # Outcome fields can be supplied by the execution owner. Host identity,
+        # operation fingerprint and semantics cannot be replaced by tool data.
+        attempt.update({key: value for key, value in result.metadata.items() if key in {
+            "failure_kind", "request_phase", "requires_reconciliation", "retry_eligible"}})
+        kind = attempt.get("failure_kind")
+        if kind == FailureKind.TOOL_OUTCOME_UNKNOWN.value or (kind == FailureKind.TOOL_TIMEOUT.value
+                and attempt.get("request_phase") != RequestPhase.TOOL_NOT_DISPATCHED.value):
+            attempt.update(status="outcome_unknown", reconciliation_status="required")
+        else:
+            attempt.update(status="failed" if result.is_error else "completed",
+                           request_phase=attempt.get("request_phase") if result.is_error else RequestPhase.TOOL_COMPLETED.value)
+        if attempt.get("reconciliation_status") == "required" and run_control:
+            run_control.unresolved_operations.append({"attempt_id": attempt["attempt_id"], "fingerprint": attempt["fingerprint"],
+                                                      "tool_name": tc.function.name, "status": "reconciliation_required"})
+        result.metadata = dict(attempt)
+        return result
+
     async def run(
         self,
         prompt: str,
@@ -555,9 +933,13 @@ class Agent:
         on_tool_end: Optional[Callable[[str, str], None]] = None,
         session: Optional[ChatSession] = None,
         session_tool_filter: Optional[SessionToolFilter] = None,
+        cancel_event: Optional[Any] = None,
+        on_event: Optional[Callable[[AgentEvent], None]] = None,
+        run_control: Optional[Any] = None,
     ) -> str:
         """Run the agent loop until completion or max_iterations reached."""
-        if prompt.lstrip().startswith("!"):
+        run_control = run_control or getattr(session_tool_filter, "control", None)
+        if prompt.lstrip().startswith("!") and run_control is None:
             return await self.run_local_command(prompt.lstrip()[1:].strip())
 
         if not self._is_initialized:
@@ -565,12 +947,39 @@ class Agent:
 
         msg_target = session.messages if session else self.messages
 
-        # Preprocess message with plugins
-        processed_prompt = await self.plugins.dispatch_user_message(prompt)
+        if run_control:
+            if session is None or session.session_id != run_control.session_id or session_tool_filter is None:
+                raise ValueError("Coding runs require the matching session and permission owner.")
+            from firik_agent.projects.coding_runtime import repair_tool_history, sanitize_message
+            await run_control.checkpoint()
+            repair_tool_history(msg_target, run_control)
+            msg_target[:] = [sanitize_message(message) for message in msg_target]
+            prompt = sanitize_message(Message(role="user", content=prompt)).content or ""
+        processed_prompt = prompt if run_control else await self.plugins.dispatch_user_message(prompt)
         msg_target.append(Message(role="user", content=processed_prompt))
 
+        if not hasattr(self, "recovery_engine"):
+            self.recovery_engine = AdaptiveRecoveryEngine()
+        recovery_budget = RecoveryBudget(self.recovery_engine.limits)
+        run_id = run_control.run_id if run_control else uuid4().hex
+        async def checkpoint():
+            if run_control:
+                await run_control.checkpoint()
+            if time.monotonic() - recovery_budget.started >= recovery_budget.limits.max_elapsed:
+                raise RuntimeFailure(FailureKind.BUDGET_EXCEEDED, phase=RequestPhase.NOT_SUBMITTED)
+            if cancel_event and cancel_event.is_set():
+                raise asyncio.CancelledError()
+        def compaction_observer(kind, info):
+            if kind == "model_request_started":
+                recovery_budget.begin_request()
+            elif kind == "model_request_finished":
+                recovery_budget.record_usage(info.get("usage", {}))
+            if on_event:
+                on_event(AgentEvent(AgentEventType(kind), session.session_id if session else "default", metadata=info))
         iteration = 0
-        while self.max_iterations is None or iteration < self.max_iterations:
+        iteration_limit = (self.max_iterations or 50) if run_control else self.max_iterations
+        while iteration_limit is None or iteration < iteration_limit:
+            await checkpoint()
             iteration += 1
 
             # Prepare message chain for LLM
@@ -587,6 +996,8 @@ class Agent:
             else:
                 tools_schemas = self.tools.get_schemas()
 
+            if run_control and run_control.capabilities.get("supports_tools") is False:
+                tools_schemas = []
             provider = self.providers.get_active()
             provider.reasoning_effort = session.reasoning_effort if session else None
             from firik_agent.projects.model_capabilities import model_capabilities
@@ -594,37 +1005,94 @@ class Agent:
             budget = self.context_compactor.input_budget(window, session.max_tokens if session else 2048,
                                                          estimate_tokens([system_msg], tools_schemas))
             state = session.compaction if session else self.compaction
-            if self.context_compactor.needs_compaction(state, msg_target, [system_msg], tools_schemas, budget):
+            compaction_enabled = self.context_compactor.enabled and (run_control is None or getattr(run_control, "permit_context_compaction", True))
+            if compaction_enabled and self.context_compactor.needs_compaction(state, msg_target, [system_msg], tools_schemas, budget):
                 if on_thought:
                     on_thought("Bağlam otomatik olarak sıkıştırılıyor…")
-                await self.context_compactor.compact(state, msg_target, [system_msg], tools_schemas, budget, provider)
+                await self.context_compactor.compact(state, msg_target, [system_msg], tools_schemas, budget, BudgetedCompactionProvider(provider, recovery_budget,
+                        model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model))),
+                    checkpoint=checkpoint, on_request_event=compaction_observer)
             request_messages = [system_msg] + state.view(msg_target)
-            await self.plugins.dispatch_model_request(request_messages, tools_schemas)
+            if not run_control:
+                await self.plugins.dispatch_model_request(request_messages, tools_schemas)
 
             provider = self.providers.get_active()
             provider.reasoning_effort = session.reasoning_effort if session else None
             temp = session.temperature if session else self.temperature
+            async def before_attempt(messages, schemas):
+                before = getattr(run_control, "before_model_request", None) if run_control else None
+                if before:
+                    prepared = before(session, messages, schemas)
+                    if inspect.isawaitable(prepared):
+                        await prepared
+            async def recover_compaction():
+                await self.context_compactor.compact(state, msg_target, [system_msg], tools_schemas,
+                    max(1, int(budget * .75)), BudgetedCompactionProvider(provider, recovery_budget,
+                        run_control.capabilities if run_control else model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model))),
+                    checkpoint=checkpoint, on_request_event=compaction_observer)
+                return [system_msg] + state.view(msg_target), []
             try:
-                response = await provider.chat(
-                    messages=request_messages,
-                    tools=tools_schemas if tools_schemas else None,
-                    temperature=temp,
-                    max_tokens=session.max_tokens if session else 2048,
-                )
-            except Exception as e:
-                await self.plugins.dispatch_error(e)
+                async for kind, payload in self._request_with_recovery(
+                        provider=provider, messages=request_messages, schemas=tools_schemas, temperature=temp,
+                        max_tokens=session.max_tokens if session else 2048, streaming=False,
+                        budget=recovery_budget, run_id=run_id, checkpoint=checkpoint, run_control=run_control,
+                        before_request=before_attempt,
+                        compaction=recover_compaction if self.context_compactor.enabled and (
+                            run_control is None or getattr(run_control, "permit_context_compaction", True)) else None):
+                    if kind == "response":
+                        response = payload
+                    elif kind == "event":
+                        event_type, metadata, text = payload
+                        if on_event:
+                            on_event(AgentEvent(event_type, session.session_id if session else "default",
+                                                content=text, metadata=metadata))
+                        elif event_type == AgentEventType.RECOVERY and on_thought:
+                            on_thought(text)
+            except asyncio.CancelledError:
+                if run_control:
+                    run_control.set_state("cancelled")
+                if on_event:
+                    on_event(AgentEvent(AgentEventType.ERROR, session.session_id if session else "default",
+                        content="Operation cancelled.", metadata={"failure_kind": "cancelled", "completion_classification": "cancelled"}))
                 raise
+            except Exception as error:
+                failure = normalize_failure(error)
+                classification = "blocked" if failure.phase == RequestPhase.PARTIAL_RESPONSE else "failed"
+                if run_control:
+                    run_control.set_state(classification, str(failure))
+                else:
+                    await self.plugins.dispatch_error(failure)
+                if on_event:
+                    on_event(AgentEvent(AgentEventType.ERROR, session.session_id if session else "default",
+                        content=str(failure), metadata={**failure.metadata, "completion_classification": classification}))
+                raise failure from None
 
             # If model returned reasoning/thinking, notify callback
+            if run_control and response.tool_calls and run_control.capabilities.get("supports_tools") is False:
+                raise RuntimeFailure(FailureKind.UNSUPPORTED_CAPABILITY, phase=RequestPhase.RESPONSE_COMPLETE)
             if response.reasoning and on_thought:
                 on_thought(response.reasoning)
 
-            await self.plugins.dispatch_model_response(response)
+            if not run_control:
+                await self.plugins.dispatch_model_response(response)
+            else:
+                response = sanitize_message(response)
             msg_target.append(response)
 
             # Check if model requested tool execution
             if not response.tool_calls:
-                # No more tools needed; final answer produced
+                completion = {"completion_classification": "completed_unverified"}
+                if run_control:
+                    completion = await self._completion_decision(session_tool_filter, run_control)
+                    run_control.set_state(completion["completion_classification"])
+                    if not completion["passed"]:
+                        explanation = "\n".join(completion["reasons"])
+                        if on_event:
+                            on_event(AgentEvent(AgentEventType.ERROR, session.session_id, content=explanation, metadata=completion))
+                        raise RuntimeError("Completion blocked: " + explanation)
+                if on_event:
+                    on_event(AgentEvent(AgentEventType.DONE, session.session_id if session else "default",
+                                        content=response.content or "", metadata=completion))
                 return response.content or ""
 
             # Execute tool calls
@@ -639,19 +1107,46 @@ class Agent:
                 if on_tool_start:
                     on_tool_start(fn_name, args_dict)
 
-                await self.plugins.dispatch_tool_call(tc)
-                if session_tool_filter and session:
-                    result = await session_tool_filter.execute(tc, session)
-                else:
-                    result = await self.tools.execute(tc)
-                await self.plugins.dispatch_tool_result(result)
+                if not run_control:
+                    await self.plugins.dispatch_tool_call(tc)
+                attempt, result, failure = await self._execute_attempt(tc, messages=msg_target, session=session,
+                    tool_filter=session_tool_filter, run_control=run_control, checkpoint=checkpoint, budget=recovery_budget, run_id=run_id)
+                if on_event:
+                    on_event(AgentEvent(AgentEventType.TOOL_CALL_STARTED, session.session_id if session else "default",
+                                        tool_name=fn_name, metadata=dict(attempt)))
+                if failure:
+                    if run_control:
+                        run_control.set_state("blocked", str(failure))
+                    if on_event:
+                        on_event(AgentEvent(AgentEventType.ERROR, session.session_id if session else "default",
+                            content=str(failure), metadata={**attempt, "completion_classification": "blocked"}))
+                    raise failure
+                if result is None:
+                    result = await self._dispatch_attempt(tc, attempt, session=session, tool_filter=session_tool_filter,
+                                                          run_control=run_control, checkpoint=checkpoint, budget=recovery_budget)
+                if not run_control:
+                    await self.plugins.dispatch_tool_result(result)
 
                 if on_tool_end:
                     on_tool_end(fn_name, result.content)
 
                 # Append tool result to conversation
                 msg_target.append(result.to_message())
+                if on_event:
+                    on_event(AgentEvent(AgentEventType.TOOL_CALL_ERROR if result.is_error else AgentEventType.TOOL_CALL_RESULT,
+                        session.session_id if session else "default", tool_name=fn_name, content=result.content, metadata=dict(attempt)))
+                if result.metadata.get("reconciliation_status") == "required":
+                    if run_control:
+                        run_control.set_state("blocked", result.content)
+                    raise RuntimeFailure(FailureKind.TOOL_OUTCOME_UNKNOWN, phase=RequestPhase.TOOL_DISPATCHED)
 
+        if run_control:
+            run_control.set_state("blocked", "Tool iteration budget exhausted; the task is incomplete.")
+            if on_event:
+                on_event(AgentEvent(AgentEventType.ERROR, session.session_id,
+                    content="Tool iteration budget exhausted; the task is incomplete.",
+                    metadata={"failure_kind": "budget_exceeded", "completion_classification": "blocked"}))
+            raise RuntimeFailure(FailureKind.BUDGET_EXCEEDED, phase=RequestPhase.RESPONSE_COMPLETE)
         return "Agent reached maximum tool iterations without finishing."
 
     async def run_stream(
@@ -691,7 +1186,7 @@ class Agent:
                 raise ValueError("Kodlama çalışması doğru oturum ve izin yürütücüsü gerektirir.")
             await run_control.checkpoint()
             from firik_agent.projects.coding_runtime import repair_tool_history, sanitize_message
-            repair_tool_history(msg_target)
+            repair_tool_history(msg_target, run_control)
             msg_target[:] = [sanitize_message(message) for message in msg_target]
             prompt = sanitize_message(Message(role="user", content=prompt)).content or ""
 
@@ -700,6 +1195,16 @@ class Agent:
 
         processed_prompt = prompt if run_control else await self.plugins.dispatch_user_message(prompt)
         msg_target.append(Message(role="user", content=processed_prompt))
+
+        if not hasattr(self, "recovery_engine"):
+            self.recovery_engine = AdaptiveRecoveryEngine()
+        recovery_budget = RecoveryBudget(self.recovery_engine.limits)
+        run_id = run_control.run_id if run_control else uuid4().hex
+        async def request_checkpoint():
+            if run_control:
+                await run_control.checkpoint()
+            if cancel_event and cancel_event.is_set():
+                raise asyncio.CancelledError()
 
         iteration = 0
         iteration_limit = (self.max_iterations or 50) if run_control else self.max_iterations
@@ -761,7 +1266,7 @@ class Agent:
             provider.reasoning_effort = session.reasoning_effort if session else None
             from firik_agent.projects.model_capabilities import model_capabilities
             window = (run_control.capabilities if run_control else
-                      model_capabilities(provider.model_metadata.get(provider.current_model))).get("context_window")
+                      model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model))).get("context_window")
             if run_control and run_control.capabilities.get("supports_tools") is False:
                 tools_schemas = []
             system_messages = [system_msg]
@@ -776,17 +1281,46 @@ class Agent:
                                                          estimate_tokens(system_messages, tools_schemas))
             state = session.compaction if session else self.compaction
             async def compaction_checkpoint():
+                if time.monotonic() - recovery_budget.started >= recovery_budget.limits.max_elapsed:
+                    raise RuntimeFailure(FailureKind.BUDGET_EXCEEDED, phase=RequestPhase.NOT_SUBMITTED)
                 if run_control:
                     await run_control.checkpoint()
                 if cancel_event and cancel_event.is_set():
                     raise asyncio.CancelledError()
+            compaction_events = []
+            def observe_compaction(kind, metadata):
+                if kind == "model_request_started":
+                    recovery_budget.begin_request()
+                elif kind == "model_request_finished":
+                    from firik_agent.projects.model_capabilities import estimate_usage_cost
+                    cost = estimate_usage_cost(metadata.get("usage", {}), run_control.capabilities if run_control else
+                        model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model)))
+                    recovery_budget.record_usage({**metadata.get("usage", {}), **({"cost": cost["cost"]} if cost.get("cost") is not None else {})})
+                metadata = {"iteration": iteration, **metadata}
+                if kind == "model_request_finished":
+                    from firik_agent.projects.model_capabilities import estimate_usage_cost
+                    capabilities = (run_control.capabilities if run_control else
+                                    model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model)))
+                    cost_report = estimate_usage_cost(metadata.get("usage", {}), capabilities)
+                    if cost_report.get("cost") is not None:
+                        metadata["usage"] = {**metadata.get("usage", {}), "cost": cost_report["cost"]}
+                    metadata["cost_report"] = cost_report
+                    if metadata.get("usage"):
+                        compaction_events.append(event(type=AgentEventType.MODEL_USAGE, session_id=sid,
+                                                       metadata=metadata))
+                compaction_events.append(event(type=AgentEventType(kind), session_id=sid, metadata=metadata))
             try:
                 if compaction_enabled and self.context_compactor.needs_compaction(
                         state, msg_target, system_messages, tools_schemas, budget):
                     yield event(type=AgentEventType.CONTEXT_COMPACTION_STARTED, session_id=sid,
                                 content="Bağlam otomatik olarak sıkıştırılıyor…")
                     details = await self.context_compactor.compact(state, msg_target, system_messages, tools_schemas,
-                                                                  budget, provider, compaction_checkpoint)
+                                                                  budget, BudgetedCompactionProvider(provider, recovery_budget,
+                            run_control.capabilities if run_control else model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model))), compaction_checkpoint,
+                                                                  on_request_event=observe_compaction)
+                    for observation in compaction_events:
+                        yield observation
+                    compaction_events.clear()
                     yield event(type=AgentEventType.CONTEXT_COMPACTED, session_id=sid,
                                 content="Bağlam özeti hazır; tam konuşma geçmişi korundu.",
                                 metadata={**details, "context_window": window, "capacity_known": window is not None})
@@ -800,17 +1334,22 @@ class Agent:
                     else:
                         request_messages = prepare_coding_messages(request_messages, run_control, tools_schemas, session.max_tokens)
             except asyncio.CancelledError:
+                for observation in compaction_events:
+                    yield observation
                 yield event(type=AgentEventType.DONE, session_id=sid, content="Çalışma kullanıcı tarafından durduruldu.")
                 return
             except Exception as exc:
+                for observation in compaction_events:
+                    yield observation
                 yield event(type=AgentEventType.ERROR, session_id=sid, content=f"Bağlam hazırlığı başarısız: {exc}")
                 return
-            if run_control:
-                before_request = getattr(run_control, "before_model_request", None)
-                if before_request:
-                    result = before_request(session, request_messages, tools_schemas)
-                    if inspect.isawaitable(result):
-                        await result
+            async def before_attempt(messages, schemas):
+                if run_control:
+                    before = getattr(run_control, "before_model_request", None)
+                    if before:
+                        prepared = before(session, messages, schemas)
+                        if inspect.isawaitable(prepared):
+                            await prepared
 
             if not run_control:
                 await self.plugins.dispatch_model_request(request_messages, tools_schemas)
@@ -822,11 +1361,6 @@ class Agent:
             content_accum: List[str] = []
             reasoning_accum: List[str] = []
             stream_tool_calls: List[ToolCall] = []
-            received_chunk = False
-            request_started = time.monotonic()
-            first_token_at = None
-            last_usage = {}
-            retries = 0
             request_metadata = {"iteration": iteration}
             if run_control:
                 from firik_agent.projects.context_inspector import inspect_request_context
@@ -836,93 +1370,62 @@ class Agent:
                     context_items=getattr(run_control, "context_items", None), output_tokens=session.max_tokens,
                     agent_instructions=base_sys)
 
-            yield event(type=AgentEventType.MODEL_REQUEST_STARTED, session_id=sid,
-                             metadata=request_metadata)
+            async def recover_compaction():
+                compaction_events.clear()
+                await self.context_compactor.compact(state, msg_target, system_messages, tools_schemas,
+                    max(1, int(budget * .75)), BudgetedCompactionProvider(provider, recovery_budget,
+                        run_control.capabilities if run_control else model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model))), checkpoint=compaction_checkpoint,
+                    on_request_event=observe_compaction)
+                observations = [(item.type, item.metadata, item.content or "") for item in compaction_events]
+                observations.append((AgentEventType.CONTEXT_COMPACTED, {"recovery": True}, "Context compacted for recovery."))
+                return system_messages + state.view(msg_target), observations
             try:
-                async for chunk in provider.chat_stream(
-                    messages=request_messages,
-                    tools=tools_schemas if tools_schemas else None,
-                    temperature=temp,
-                    max_tokens=session.max_tokens if session else 2048,
-                ):
-                    received_chunk = True
-                    if first_token_at is None and (chunk.delta_content or chunk.delta_reasoning or chunk.tool_calls):
-                        first_token_at = time.monotonic()
+                async for kind, payload in self._request_with_recovery(
+                        provider=provider, messages=request_messages, schemas=tools_schemas, temperature=temp,
+                        max_tokens=session.max_tokens if session else 2048, streaming=True,
+                        budget=recovery_budget, run_id=run_id, checkpoint=request_checkpoint,
+                        metadata=request_metadata, run_control=run_control, before_request=before_attempt,
+                        allow_fallback=run_control is None or getattr(run_control, "permit_provider_fallback", True),
+                        compaction=recover_compaction if compaction_enabled else None):
+                    if kind == "event":
+                        event_type, details, text = payload
+                        yield event(type=event_type, session_id=sid, metadata=details, content=text)
+                        continue
+                    if kind == "response":
+                        chunk = payload
+                        text, reasoning, calls = chunk.content, chunk.reasoning, chunk.tool_calls
+                    else:
+                        text, reasoning, calls = payload.delta_content, payload.delta_reasoning, payload.tool_calls
+                    if reasoning:
+                        reasoning_accum.append(reasoning)
+                        yield event(type=AgentEventType.REASONING_DELTA, session_id=sid, content=reasoning)
+                    if text:
+                        content_accum.append(text)
+                        yield event(type=AgentEventType.TEXT_DELTA, session_id=sid, content=text)
+                    if calls:
+                        stream_tool_calls.extend(calls)
+            except asyncio.CancelledError:
+                if content_accum or reasoning_accum:
+                    msg_target.append(Message(role="assistant", content="".join(content_accum) or None,
+                        reasoning="".join(reasoning_accum) or None, execution={"request_phase": "partial_response", "status": "cancelled"}))
+                if cancel_event and cancel_event.is_set():
                     if run_control:
-                        await run_control.checkpoint()
-                    if cancel_event and cancel_event.is_set():
-                        yield event(type=AgentEventType.DONE, session_id=sid, content="Çalışma kullanıcı tarafından durduruldu.")
-                        return
-
-                    if chunk.usage:
-                        last_usage = chunk.usage
-                        yield event(type=AgentEventType.MODEL_USAGE, session_id=sid,
-                                    metadata={"usage": chunk.usage, "iteration": iteration,
-                                              "model": session.model if session else provider.current_model})
-
-                    if chunk.delta_reasoning:
-                        reasoning_accum.append(chunk.delta_reasoning)
-                        yield event(
-                            type=AgentEventType.REASONING_DELTA,
-                            session_id=sid,
-                            content=chunk.delta_reasoning,
-                        )
-
-                    if chunk.delta_content:
-                        content_accum.append(chunk.delta_content)
-                        yield event(
-                            type=AgentEventType.TEXT_DELTA,
-                            session_id=sid,
-                            content=chunk.delta_content,
-                        )
-
-                    if chunk.tool_calls:
-                        stream_tool_calls.extend(chunk.tool_calls)
-
-            except Exception as e:
-                if received_chunk or (run_control and getattr(run_control, "permit_provider_fallback", True) is False):
-                    # Reissuing after partial output could repeat a provider-side request.
-                    yield event(type=AgentEventType.ERROR, session_id=sid,
-                                content=f"Model akışı kesildi; kısmi yanıt yeniden gönderilmedi: {e}")
+                        run_control.set_state("cancelled")
+                    yield event(type=AgentEventType.DONE, session_id=sid, content="Çalışma kullanıcı tarafından durduruldu.",
+                                metadata={"completion_classification": "cancelled"})
                     return
-                # If stream fails or not supported, attempt non-streaming fallback
-                logger.warning("Streaming provider call error (%s); trying fallback chat(): %s", type(e).__name__, e)
-                try:
-                    retries = 1
-                    fallback_resp = await provider.chat(
-                        messages=request_messages,
-                        tools=tools_schemas if tools_schemas else None,
-                        temperature=temp,
-                        max_tokens=session.max_tokens if session else 2048,
-                    )
-                    if fallback_resp.reasoning:
-                        yield event(type=AgentEventType.REASONING_DELTA, session_id=sid, content=fallback_resp.reasoning)
-                    if fallback_resp.content:
-                        content_accum.append(fallback_resp.content)
-                        yield event(type=AgentEventType.TEXT_DELTA, session_id=sid, content=fallback_resp.content)
-                    if fallback_resp.tool_calls:
-                        stream_tool_calls.extend(fallback_resp.tool_calls)
-                except Exception as ex2:
-                    if not run_control:
-                        await self.plugins.dispatch_error(ex2)
-                    yield event(type=AgentEventType.ERROR, session_id=sid, content=f"Model isteği başarısız: {ex2}")
-                    return
-
-            if run_control:
-                from firik_agent.projects.model_capabilities import estimate_usage_cost
-                cost_report = estimate_usage_cost(last_usage, run_control.capabilities)
-                if cost_report.get("cost") is not None:
-                    last_usage = {**last_usage, "cost": cost_report["cost"]}
-                elapsed = max(0.000001, time.monotonic() - request_started)
-                output_tokens = last_usage.get("completion_tokens", last_usage.get("output_tokens"))
-                generation_elapsed = time.monotonic() - first_token_at if first_token_at else None
-                metrics = {"latency_ms": elapsed * 1000, "retry_count": retries,
-                           "ttft_ms": (first_token_at - request_started) * 1000 if first_token_at else None,
-                           "tokens_per_sec": output_tokens / generation_elapsed
-                           if isinstance(output_tokens, (int, float)) and generation_elapsed and generation_elapsed > 0 else None}
-                yield event(type=AgentEventType.MODEL_USAGE, session_id=sid,
-                            metadata={"iteration": iteration, "usage": last_usage, "metrics": metrics,
-                                      "model": session.model, "cost_report": cost_report})
+                raise
+            except Exception as error:
+                failure = normalize_failure(error)
+                if content_accum or reasoning_accum:
+                    msg_target.append(Message(role="assistant", content="".join(content_accum) or None,
+                        reasoning="".join(reasoning_accum) or None, execution={"request_phase": "partial_response", "status": "interrupted"}))
+                if run_control:
+                    run_control.set_state("blocked" if failure.phase == RequestPhase.PARTIAL_RESPONSE else "failed", str(failure))
+                else:
+                    await self.plugins.dispatch_error(failure)
+                yield event(type=AgentEventType.ERROR, session_id=sid, content=str(failure), metadata=failure.metadata)
+                return
 
             if run_control and stream_tool_calls and run_control.capabilities.get("supports_tools") is False:
                 yield event(type=AgentEventType.ERROR, session_id=sid,
@@ -940,13 +1443,19 @@ class Agent:
                 assistant_msg = sanitize_message(assistant_msg)
             msg_target.append(assistant_msg)
 
-            # If no tool calls requested, we reached the final response
+            # A final message is a completion claim, not verification evidence.
             if not stream_tool_calls:
-                yield event(
-                    type=AgentEventType.DONE,
-                    session_id=sid,
-                    content="".join(content_accum),
-                )
+                completion = {"completion_classification": "completed_unverified"}
+                if run_control:
+                    completion = await self._completion_decision(session_tool_filter, run_control)
+                    if not completion["passed"]:
+                        explanation = "\n".join(completion["reasons"])
+                        run_control.set_state("blocked", explanation)
+                        yield event(type=AgentEventType.ERROR, session_id=sid, content=explanation, metadata=completion)
+                        return
+                    run_control.set_state(completion["completion_classification"])
+                yield event(type=AgentEventType.DONE, session_id=sid,
+                            content="".join(content_accum), metadata=completion)
                 return
 
             # Execute requested tool calls
@@ -955,11 +1464,11 @@ class Agent:
                     try:
                         await run_control.checkpoint()
                     except asyncio.CancelledError:
-                        repair_tool_history(msg_target)
+                        repair_tool_history(msg_target, run_control)
                         raise
                 if cancel_event and cancel_event.is_set():
                     if run_control:
-                        repair_tool_history(msg_target)
+                        repair_tool_history(msg_target, run_control)
                     yield event(type=AgentEventType.DONE, session_id=sid, content="Çalışma kullanıcı tarafından durduruldu.")
                     return
 
@@ -976,33 +1485,43 @@ class Agent:
                 except Exception:
                     pass
 
+                attempt, result, failure = await self._execute_attempt(tc, messages=msg_target, session=session,
+                    tool_filter=session_tool_filter, run_control=run_control, checkpoint=request_checkpoint, budget=recovery_budget, run_id=run_id)
                 yield event(
                     type=AgentEventType.TOOL_CALL_STARTED,
                     session_id=sid,
                     tool_name=fn_name,
                     server_name=server_name,
                     arguments=args_dict,
-                    metadata={"tool_call_id": tc.id},
+                    metadata=dict(attempt),
                 )
 
                 t0 = time.time()
                 if not run_control:
                     await self.plugins.dispatch_tool_call(tc)
 
+                if failure:
+                    if run_control:
+                        run_control.set_state("blocked", str(failure))
+                    yield event(type=AgentEventType.RECOVERY, session_id=sid, content=str(failure),
+                                metadata={**attempt, "recovery_action": "reconcile", "safe_to_repeat": False,
+                                          "retry_eligible": False, "resource_budget": recovery_budget.snapshot()})
+                    yield event(type=AgentEventType.ERROR, session_id=sid, content=str(failure), metadata=attempt)
+                    return
                 try:
-                    if session_tool_filter and session:
-                        result = await session_tool_filter.execute(tc, session)
-                    else:
-                        result = await self.tools.execute(tc)
+                    if result is None:
+                        result = await self._dispatch_attempt(tc, attempt, session=session, tool_filter=session_tool_filter,
+                                                              run_control=run_control, checkpoint=request_checkpoint, budget=recovery_budget)
                 except asyncio.CancelledError:
                     if run_control:
-                        repair_tool_history(msg_target)
+                        repair_tool_history(msg_target, run_control)
                     raise
 
                 duration_ms = (time.time() - t0) * 1000
                 if not run_control:
                     await self.plugins.dispatch_tool_result(result)
 
+                msg_target.append(result.to_message())
                 if result.is_error:
                     yield event(
                         type=AgentEventType.TOOL_CALL_ERROR,
@@ -1011,7 +1530,7 @@ class Agent:
                         server_name=server_name,
                         content=result.content,
                         duration_ms=duration_ms,
-                        metadata={"tool_call_id": tc.id},
+                        metadata=dict(attempt),
                     )
                 else:
                     yield event(
@@ -1021,10 +1540,17 @@ class Agent:
                         server_name=server_name,
                         content=result.content,
                         duration_ms=duration_ms,
-                        metadata={"tool_call_id": tc.id},
+                        metadata=dict(attempt),
                     )
 
-                msg_target.append(result.to_message())
+                if attempt.get("reconciliation_status") == "required":
+                    if run_control:
+                        run_control.set_state("blocked", result.content)
+                    yield event(type=AgentEventType.RECOVERY, session_id=sid, content=result.content,
+                                metadata={**attempt, "recovery_action": "reconcile", "retry_eligible": False,
+                                          "safe_to_repeat": False, "resource_budget": recovery_budget.snapshot()})
+                    yield event(type=AgentEventType.ERROR, session_id=sid, content=result.content, metadata=dict(attempt))
+                    return
 
         if run_control:
             run_control.set_state("blocked", "Araç döngüsü sınırına ulaşıldı; görev tamamlanmadı.")

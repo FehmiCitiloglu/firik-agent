@@ -13,6 +13,7 @@ from enum import Enum
 from typing import Any, TypedDict
 
 from firik_agent.projects.coding_sessions import redact_sensitive
+from firik_agent.core.metrics import RunMetrics
 
 
 class AgentStatus(str, Enum):
@@ -67,7 +68,8 @@ class AgentRecord(TypedDict, total=False):
 
 STATE_ALIASES = {
     "understanding": "planning", "implementing": "running", "applying": "running",
-    "verifying": "testing", "correcting": "running", "paused": "waiting",
+    "verifying": "testing", "correcting": "running", "repairing": "running", "paused": "waiting",
+    "completed_verified": "completed", "completed_unverified": "completed",
     "waiting_approval": "needs_approval", "awaiting_approval": "needs_approval",
     "interrupted": "cancelled", "stopping": "waiting",
 }
@@ -82,6 +84,23 @@ TOOL_TITLES = {
     "send_message": "Ajan mesajı", "update_plan": "Plan güncelleniyor",
 }
 TERMINAL_TOOLS = {"run_shell", "run_command", "run_tests", "run_quality_gate"}
+
+
+def benchmark_report_summary(report: dict[str, Any]) -> dict[str, Any]:
+    """Read-only desktop summary using the same validated native run evidence."""
+    from copy import deepcopy
+    from firik_agent.benchmarks.comparison import validate_report
+    from firik_agent.benchmarks.metrics import enrich_report
+    from firik_agent.projects.coding_sessions import redact_sensitive
+    validate_report(report)
+    safe = redact_sensitive(deepcopy(report))
+    summary = enrich_report(safe)["summary"]
+    return {"label": safe.get("label", "candidate"), "profile": safe["metadata"].get("profile"),
+            "trials": summary["trials"], "fixtures_passed": summary["fixtures_passed"],
+            "verified_tasks": summary["completed_verified_tasks"], "pass_at_1": summary["pass_at_1"],
+            "p50_ms": summary["wall_time_ms"]["p50"], "p95_ms": summary["wall_time_ms"]["p95"],
+            "false_completions": summary["false_completions"], "safety_violations": summary["safety_violations"],
+            "cost": summary["cost"], "cost_sources": summary["cost_sources"], "method": safe["method"]}
 
 
 def _kind(value: Any) -> str:
@@ -113,9 +132,12 @@ class CockpitState:
     timeline_limit: int = 300
     terminal_limit: int = 100
     _sequence: int = 0
-    _requests: dict[tuple[str, int], dict[str, Any]] = field(default_factory=dict, repr=False)
+    _requests: dict[tuple[str, str | int], dict[str, Any]] = field(default_factory=dict, repr=False)
     _iterations: dict[str, int] = field(default_factory=dict, repr=False)
     _started: float = 0.0
+    _run_metrics: RunMetrics = field(default_factory=RunMetrics, repr=False)
+    _persisted_metrics: dict[str, Any] | None = field(default=None, repr=False)
+    _metric_protocol: bool = field(default=False, repr=False)
 
     def start(self, model: str = "", provider: str = "", task: str = "", run_id: str = "") -> None:
         self.timeline.clear()
@@ -126,6 +148,9 @@ class CockpitState:
         self.context.clear()
         self.summary.clear()
         self._requests.clear()
+        self._run_metrics = RunMetrics()
+        self._persisted_metrics = None
+        self._metric_protocol = False
         self._iterations.clear()
         self.plan = []
         self.run_id = run_id
@@ -175,6 +200,11 @@ class CockpitState:
                     ("type", "timestamp", "tool_name", "server_name", "content", "arguments", "duration_ms", "metadata")}
         data = redact_sensitive(data)
         kind = _kind(data.get("type", data.get("event_type")))
+        # Subagent envelopes recurse below; observe only the normalized child
+        # event so starts, usage frames and terminal metrics count once.
+        if kind != "subagent_event":
+            self._run_metrics.observe(data)
+            self._metric_protocol = self._metric_protocol or bool((data.get("metadata") or {}).get("request_id")) or kind == "model_request_finished"
         metadata = data.get("metadata") or {}
         agent_id = str(metadata.get("agent_id") or "orchestrator")
         stamp = data.get("timestamp") or time.time()
@@ -223,10 +253,11 @@ class CockpitState:
                 if agent_id == "orchestrator":
                     self.context = metadata["context_inspector"]
             agent["status"] = "running"
-        elif kind == "model_usage":
+        elif kind in {"model_usage", "model_request_finished"}:
             iteration = int(metadata.get("iteration") or self._iterations.get(agent_id, 1))
             values = metadata.get("usage") or {}
-            self._requests[(agent_id, iteration)] = values
+            request_key = (agent_id, metadata.get("request_id") or iteration)
+            self._requests[request_key] = {**self._requests.get(request_key, {}), **values}
             if len(self._requests) > 512:
                 self._requests.pop(next(iter(self._requests)))
             totals: dict[str, Any] = {}
@@ -326,11 +357,25 @@ class CockpitState:
             self.approvals.pop(metadata.get("request_id"), None)
             agent["status"] = "running"
             self._append(kind, agent_id, stamp, title="İzin verildi" if metadata.get("allowed", metadata.get("approved")) else "İzin reddedildi", metadata=metadata)
+        elif kind == "recovery":
+            agent["recovery"] = dict(metadata)
+            status = "blocked" if metadata.get("reconciliation_status") == "required" else (
+                "waiting" if metadata.get("retry_eligible") else "failed")
+            self._append(kind, agent_id, stamp, status=status, title="Kurtarma kararı",
+                         result=content, metadata=metadata)
         elif kind == "task_state":
             agent["status"] = STATE_ALIASES.get(metadata.get("state", metadata.get("status", "running")), metadata.get("state", metadata.get("status", "running")))
+            if metadata.get("lifecycle_state"):
+                agent["lifecycle_state"] = metadata["lifecycle_state"]
+            if metadata.get("completion_classification"):
+                self.summary["completion_classification"] = metadata["completion_classification"]
             self._append(kind, agent_id, stamp, status=agent["status"], title=content or agent["status"], metadata=metadata)
         elif kind in {"done", "error"}:
-            agent["status"] = "failed" if kind == "error" else agent["status"] if agent["status"] in {"blocked", "failed", "cancelled"} else "completed"
+            if metadata.get("completion_classification"):
+                self.summary["completion_classification"] = metadata["completion_classification"]
+            classification = metadata.get("completion_classification")
+            agent["status"] = classification if classification in {"blocked", "failed", "cancelled"} else (
+                agent["status"] if agent["status"] in {"blocked", "failed", "cancelled"} else "failed" if kind == "error" else "completed")
             self._append(kind, agent_id, stamp, status=agent["status"], title="Çalışma hatası" if kind == "error" else "Ajan yanıtı tamamlandı",
                          result=content, error=content if kind == "error" else "", metadata=metadata)
         else:
@@ -350,6 +395,7 @@ class CockpitState:
 
     def finish(self, status: str, changes: list[dict[str, Any]] | None = None) -> None:
         changes = changes or []
+        completion_classification = self.summary.get("completion_classification")
         self._agent("orchestrator", status=status)
         for item in self.timeline + self.terminal:
             if item.get("status") == "running":
@@ -365,13 +411,35 @@ class CockpitState:
             "usage": totals, "cost": totals.get("cost_usd", totals.get("cost")),
             "duration_sec": max(0, time.time() - self._started) if self._started else 0,
             "tests": self.tests.copy(), "completed_steps": sum(s.get("status") == "completed" for s in self.plan)}
+        if completion_classification:
+            self.summary["completion_classification"] = completion_classification
+        metrics = self.metrics_snapshot()
+        self.summary["harness_metrics"] = metrics
+        # Old event streams may contain usage without request lifecycle events;
+        # keep their existing projection while new streams use complete totals.
+        if self._metric_protocol or self._persisted_metrics:
+            self.summary["usage"] = metrics["usage"]
+            self.summary["cost"] = metrics["usage"].get("cost")
         self.revision += 1
+
+    def metrics_snapshot(self) -> dict[str, Any]:
+        """Return complete durable totals when only recent events were replayed."""
+        return self._persisted_metrics or self._run_metrics.snapshot()
+
+    @property
+    def has_request_metrics(self) -> bool:
+        return self._metric_protocol or self._persisted_metrics is not None
 
     def restore(self, record: Any, events: list[Any] | None = None) -> None:
         """Replay passive history; absent old evidence stays absent."""
         self.start(record.model, record.provider, record.user_request, record.run_id)
         for event in events or []:
             self.apply(event)
+        persisted = record.usage.get("harness_metrics")
+        if isinstance(persisted, dict) and isinstance(persisted.get("usage"), dict):
+            # A bounded journal replay cannot reconstruct the full run. The
+            # durable aggregate was captured before history was truncated.
+            self._persisted_metrics = persisted
         if not events:
             for result in record.tests_executed:
                 self.apply({"type": "verification", "metadata": result})
@@ -384,5 +452,10 @@ class CockpitState:
         except (ValueError, TypeError):
             self.plan = []
         self.finish(record.status)
+        if record.result in {"completed_verified", "completed_unverified", "blocked", "failed", "cancelled"}:
+            self.summary["completion_classification"] = record.result
         self.summary.update(duration_sec=record.duration_sec, files_changed=len(record.files_changed), usage=record.usage)
+        if self._persisted_metrics:
+            self.summary["usage"] = self._persisted_metrics.get("usage", {})
+            self.summary["cost"] = self.summary["usage"].get("cost")
         self.approvals.clear()

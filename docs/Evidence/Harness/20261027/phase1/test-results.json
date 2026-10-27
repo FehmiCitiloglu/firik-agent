@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-27",
+  "command": ".venv/bin/python -m pytest -q",
+  "passed": 765,
+  "skipped": 1,
+  "failed": 0,
+  "duration_seconds": 319.67,
+  "environment": "macOS arm64 CPython 3.13; normal GUI session access",
+  "focused_accounting_runtime_tests": 159,
+  "final_analytics_accounting_live_tests": 42,
+  "cockpit_evidence_tests": 14,
+  "python_310_grammar_files": 137,
+  "git_diff_check": "passed",
+  "model_api_evaluations": 0,
+  "note": "Existing keyboard test now uses actual platform shortcut modifier (Command on macOS). No runtime shortcut behavior was changed."
+}

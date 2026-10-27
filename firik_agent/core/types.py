@@ -30,6 +30,10 @@ class Message(BaseModel):
     name: Optional[str] = None
     tool_call_id: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None
+    # Response accounting belongs to the host, never the next model's context.
+    usage: Optional[Dict[str, Any]] = Field(default=None, exclude=True)
+    # Durable host execution journal; never serialized into provider context.
+    execution: Dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {"role": self.role}
@@ -50,6 +54,7 @@ class ToolResult(BaseModel):
     content: str
     is_error: bool = False
     parts: Optional[List[ContentPart]] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
     def to_message(self) -> Message:
         return Message(
@@ -58,6 +63,7 @@ class ToolResult(BaseModel):
             tool_call_id=self.tool_call_id,
             content=self.content,
             parts=self.parts,
+            execution=self.metadata,
         )
 
 

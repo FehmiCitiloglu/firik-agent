@@ -9,6 +9,8 @@ class AgentEventType(str, Enum):
     CONTEXT_COMPACTION_STARTED = "context_compaction_started"
     CONTEXT_COMPACTED = "context_compacted"
     MODEL_REQUEST_STARTED = "model_request_started"
+    MODEL_REQUEST_FINISHED = "model_request_finished"
+    RECOVERY = "recovery"
     TEXT_DELTA = "text_delta"
     REASONING_DELTA = "reasoning_delta"
     TOOL_CALL_STARTED = "tool_call_started"

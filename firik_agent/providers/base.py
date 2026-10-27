@@ -43,6 +43,55 @@ class BaseProvider(ABC):
         return ModelInfo(id=str(metadata.get("id", "")), name=str(metadata.get("name") or metadata.get("id", "")),
                          provider=self.name, local=self.is_local, description=metadata.get("description"), **fields)
 
+    async def refresh_capabilities(self) -> Dict[str, Any]:
+        """One bounded read-only catalogue request, without cached-model fallback.
+
+        This updates only this provider's selected model. It never changes the
+        selected provider/model, retries a prompt, or infers absent capabilities.
+        Non-HTTP scripted providers have no automatic network implementation.
+        """
+        import asyncio
+        import httpx
+        from firik_agent.core.failures import RequestPhase, normalize_failure, provider_failure
+        from firik_agent.projects.model_capabilities import model_capabilities
+
+        model = self.current_model
+        unavailable = {"status": "unavailable", "model": model, "source": None,
+                       "capabilities": model_capabilities(None)}
+        parsed = urlsplit(self.base_url)
+        get_headers = getattr(self, "_get_headers", None)
+        if (parsed.scheme not in {"https", "http"} or not parsed.hostname
+                or parsed.username or parsed.password or parsed.query or parsed.fragment
+                or not callable(get_headers)):
+            return unavailable
+        phase = RequestPhase.NOT_SUBMITTED
+        try:
+            headers = get_headers()
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+                phase = RequestPhase.SUBMITTED_NO_OUTPUT
+                response = await asyncio.wait_for(client.get(self.base_url + "/models", headers=headers), timeout=10.0)
+                if response.status_code != 200:
+                    raise provider_failure(response, provider=self.name, phase=phase)
+                payload = response.json()
+                if isinstance(payload, dict) and payload.get("error"):
+                    raise provider_failure(response, provider=self.name, phase=phase)
+            rows = payload.get("data", []) if isinstance(payload, dict) else []
+            matches = ([row for row in rows if isinstance(row, dict) and row.get("id") == model]
+                       if isinstance(rows, list) else [])
+            # Missing/ambiguous catalogue data revokes previously cached claims.
+            if len(matches) != 1:
+                self.model_metadata.pop(model, None)
+                return unavailable
+            capabilities = model_capabilities({**matches[0], "source": "provider"})
+            # Keep only validated capability fields; arbitrary catalogue extension
+            # values do not become diagnostic/event payloads or cached secrets.
+            self.model_metadata[model] = {"id": model, **capabilities}
+            return {"status": "refreshed", "model": model, "source": "provider", "capabilities": capabilities}
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            raise normalize_failure(error, phase=phase, provider=self.name) from None
+
     async def endpoint_health(self) -> Dict[str, Any]:
         """A read-only endpoint probe; fallback catalogues cannot report online status."""
         import httpx

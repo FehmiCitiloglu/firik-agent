@@ -1,0 +1,153 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.2, pytest-9.1.1, pluggy-1.6.0 -- /Users/alien/Development/evren/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/alien/Development/evren
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 91 items
+
+tests/test_ui.py::test_app_title_is_firik_agent PASSED                   [  1%]
+tests/test_ui.py::test_app_views_initialized PASSED                      [  2%]
+tests/test_ui.py::test_theme_colors PASSED                               [  3%]
+tests/test_ui.py::test_turkce_hata_mesajlari PASSED                      [  4%]
+tests/test_ui.py::test_ensure_app_icon PASSED                            [  5%]
+tests/test_ui.py::test_service_settings_update PASSED                    [  6%]
+tests/test_ui.py::test_frozen_settings_use_user_directory PASSED         [  7%]
+tests/test_ui.py::test_worker_callbacks_run_on_gui_thread PASSED         [  8%]
+tests/test_ui.py::test_linux_font_policy_is_bundled PASSED               [  9%]
+tests/test_ui_chat.py::test_message_alignment_wrap_and_panels_do_not_overlap PASSED [ 10%]
+tests/test_ui_chat.py::test_activity_is_folded_and_complete_output_is_inspectable PASSED [ 12%]
+tests/test_ui_chat.py::test_reasoning_stream_follows_tail_and_wheel_stays_inside_textbox PASSED [ 13%]
+tests/test_ui_chat.py::test_closing_older_activity_reveals_its_reply_instead_of_latest_turn PASSED [ 14%]
+tests/test_ui_chat.py::test_errors_and_repeated_calls_keep_their_own_details PASSED [ 15%]
+tests/test_ui_chat.py::test_cancel_and_clear_ignore_late_callbacks PASSED [ 16%]
+tests/test_ui_chat.py::test_stream_follows_bottom_but_preserves_reading_position PASSED [ 17%]
+tests/test_ui_chat.py::test_text_only_reply_has_no_activity_and_on_done_fallback_works PASSED [ 18%]
+tests/test_ui_chat.py::test_live_activity_shows_command_without_opening_details_and_keeps_animating PASSED [ 19%]
+tests/test_ui_chat.py::test_active_commands_are_matched_by_call_id_and_stop_cleans_up_indicators PASSED [ 20%]
+tests/test_ui_chat.py::test_live_activity_fits_narrow_windows_and_survives_scroll PASSED [ 21%]
+tests/test_ui_chat.py::test_stream_completion_does_not_repeat_text_with_trailing_whitespace PASSED [ 23%]
+tests/test_ui_chat.py::test_activity_and_message_fit_with_display_scaling[Light] PASSED [ 24%]
+tests/test_ui_chat.py::test_activity_and_message_fit_with_display_scaling[Dark] PASSED [ 25%]
+tests/test_ui_chat.py::test_new_chat_preserves_history_and_reopened_chat_can_continue PASSED [ 26%]
+tests/test_ui_chat.py::test_restart_recovers_partial_reply_and_folded_activity PASSED [ 27%]
+tests/test_ui_chat.py::test_deletion_requires_confirmation_and_removes_only_current_chat PASSED [ 28%]
+tests/test_ui_chat.py::test_failed_save_keeps_current_chat_visible PASSED [ 29%]
+tests/test_ui_chat.py::test_async_model_list_preserves_restored_model PASSED [ 30%]
+tests/test_ui_chat.py::test_typed_model_is_remembered_when_sending PASSED [ 31%]
+tests/test_ui_chat.py::test_new_chat_uses_latest_default_after_restoring_older_model PASSED [ 32%]
+tests/test_ui_chat.py::test_saved_image_preview_survives_original_file_removal PASSED [ 34%]
+tests/test_ui_chat.py::test_automatic_compaction_has_visible_live_stage PASSED [ 35%]
+tests/test_ui_chat_workspace.py::test_two_streams_keep_messages_drafts_and_cancellation_separate PASSED [ 36%]
+tests/test_ui_chat_workspace.py::test_deltas_do_not_write_history_and_hidden_completion_is_marked PASSED [ 37%]
+tests/test_ui_chat_workspace.py::test_history_search_and_delete_do_not_resurrect_chat PASSED [ 38%]
+tests/test_ui_chat_workspace.py::test_workspace_toolbar_fits_small_window PASSED [ 39%]
+tests/test_ui_chat_workspace.py::test_sidebar_reports_each_background_chats_actual_phase PASSED [ 40%]
+tests/test_ui_cockpit.py::test_keyboard_views_persist_and_bindings_follow_workspace_lifetime PASSED [ 41%]
+tests/test_ui_cockpit.py::test_palette_filters_and_executes_selected_keyboard_action PASSED [ 42%]
+tests/test_ui_cockpit.py::test_live_commands_and_verification_survive_switching_views PASSED [ 43%]
+tests/test_ui_cockpit.py::test_inspector_drawer_keeps_composer_visible_on_compact_screen PASSED [ 45%]
+tests/test_ui_cockpit.py::test_composer_autocomplete_resolves_real_project_paths_and_plan_mode PASSED [ 46%]
+tests/test_ui_cockpit_evidence.py::test_legacy_evidence_is_bounded_and_does_not_claim_commands_were_executed PASSED [ 47%]
+tests/test_ui_cockpit_evidence.py::test_context_exclusion_removes_conflicting_inclusion_and_summary_policy PASSED [ 48%]
+tests/test_ui_cockpit_evidence.py::test_agent_parent_cycles_are_bounded PASSED [ 49%]
+tests/test_ui_cockpit_evidence.py::test_native_terminal_and_test_evidence_preserve_failures_and_staleness PASSED [ 50%]
+tests/test_ui_cockpit_evidence.py::test_native_timeline_widgets_and_expansion_are_bounded PASSED [ 51%]
+tests/test_ui_cockpit_evidence.py::test_manual_command_approval_is_bound_to_original_project PASSED [ 52%]
+tests/test_ui_cockpit_evidence.py::test_command_preparation_cannot_dispatch_into_newly_selected_project PASSED [ 53%]
+tests/test_ui_cockpit_evidence.py::test_idle_spawn_captures_dialog_choices_before_background_inspection PASSED [ 54%]
+tests/test_ui_cockpit_evidence.py::test_checkpoint_restore_scope_contains_only_visible_reviewed_files PASSED [ 56%]
+tests/test_ui_cockpit_explorer.py::test_context_markers_and_actions_use_canonical_metadata_without_source_reads PASSED [ 57%]
+tests/test_ui_coding_history.py::test_subagent_record_reopens_as_one_passive_card PASSED [ 58%]
+tests/test_ui_coding_history.py::test_restart_restores_transcript_plan_context_usage_diff_tests_decisions_and_interruption PASSED [ 59%]
+tests/test_ui_coding_history.py::test_real_history_dialog_is_project_scoped_and_open_is_passive PASSED [ 60%]
+tests/test_ui_coding_history.py::test_explicit_new_session_keeps_preferences_and_clears_task_and_history_only PASSED [ 61%]
+tests/test_ui_coding_history.py::test_history_undo_requires_same_live_run_filter PASSED [ 62%]
+tests/test_ui_coding_workspace.py::test_subagent_opt_in_native_activity_card_and_terminal_isolation PASSED [ 63%]
+tests/test_ui_coding_workspace.py::test_modes_multiline_cards_approvals_and_project_identity PASSED [ 64%]
+tests/test_ui_coding_workspace.py::test_panel_preferences_and_long_conversation_are_bounded Timeout (0:00:30)!
+Thread 0x00000001737bb000 (most recent call first):
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py", line 90 in _worker
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 992 in run
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1041 in _bootstrap_inner
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1012 in _bootstrap
+
+Thread 0x00000001727af000 (most recent call first):
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/selectors.py", line 548 in select
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/asyncio/base_events.py", line 2002 in _run_once
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/asyncio/base_events.py", line 683 in run_forever
+  File "/Users/alien/Development/evren/firik_agent/core/runtime.py", line 66 in _run_loop
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 992 in run
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1041 in _bootstrap_inner
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1012 in _bootstrap
+
+Thread 0x000000016e3ab000 (most recent call first):
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 363 in wait
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 659 in wait
+  File "/Users/alien/Development/evren/firik_agent/projects/scheduler.py", line 115 in _run_loop
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 992 in run
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1041 in _bootstrap_inner
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1012 in _bootstrap
+
+Thread 0x000000017168b000 (most recent call first):
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 363 in wait
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 659 in wait
+  File "/Users/alien/Development/evren/firik_agent/projects/scheduler.py", line 115 in _run_loop
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 992 in run
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1041 in _bootstrap_inner
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1012 in _bootstrap
+
+Thread 0x000000017067f000 (most recent call first):
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 363 in wait
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 659 in wait
+  File "/Users/alien/Development/evren/firik_agent/projects/scheduler.py", line 115 in _run_loop
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 992 in run
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1041 in _bootstrap_inner
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1012 in _bootstrap
+
+Thread 0x000000016d287000 (most recent call first):
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 363 in wait
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 659 in wait
+  File "/Users/alien/Development/evren/firik_agent/projects/scheduler.py", line 115 in _run_loop
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 992 in run
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1041 in _bootstrap_inner
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1012 in _bootstrap
+
+Thread 0x00000001f8f03f80 (most recent call first):
+  File "/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/tkinter/__init__.py", line 1467 in update
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/customtkinter/windows/ctk_tk.py", line 157 in update
+  File "/Users/alien/Development/evren/tests/test_ui_coding_workspace.py", line 46 in settle
+  File "/Users/alien/Development/evren/tests/test_ui_coding_workspace.py", line 129 in test_panel_preferences_and_long_conversation_are_bounded
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/python.py", line 167 in pytest_pyfunc_call
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/python.py", line 1707 in runtest
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/runner.py", line 184 in pytest_runtest_call
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/runner.py", line 250 in <lambda>
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/runner.py", line 361 in from_call
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/runner.py", line 249 in call_and_report
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/runner.py", line 139 in runtestprotocol
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/runner.py", line 118 in pytest_runtest_protocol
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/main.py", line 408 in pytest_runtestloop
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/main.py", line 384 in _main
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/main.py", line 330 in wrap_session
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/main.py", line 377 in pytest_cmdline_main
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/config/__init__.py", line 229 in _main
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pytest/config/__init__.py", line 253 in _console_main
+  File "/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/pytest/__main__.py", line 9 in <module>
+  File "<frozen runpy>", line 88 in _run_code
+  File "<frozen runpy>", line 198 in _run_module_as_main

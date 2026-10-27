@@ -12,6 +12,7 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 from firik_agent.core.events import AgentEvent, AgentEventType
+from firik_agent.core.failures import FailureKind, RequestPhase, RuntimeFailure
 from firik_agent.core.session import ChatSession
 from firik_agent.core.types import Message, ToolDefinition, ToolResult
 from firik_agent.projects.coding_runtime import CodingRunControl, _CodingRegistry, safe_payload, safe_text
@@ -51,8 +52,13 @@ class SubagentLimits:
             raise ValueError("Alt ajan maliyet bütçesi geçersiz.")
 
 
-class SubagentBudgetExceeded(RuntimeError):
-    pass
+class SubagentBudgetExceeded(RuntimeFailure):
+    def __init__(self, _diagnostic=""):
+        super().__init__(FailureKind.BUDGET_EXCEEDED, phase=RequestPhase.NOT_SUBMITTED,
+                         source_type="SubagentBudgetExceeded")
+        # This fixed host message is safe to expose; arbitrary provider bodies
+        # and the caller's diagnostic are never retained.
+        self.args = ("Alt ajan kaynak bütçesi doldu veya doğrulanmış fiyat bilgisi bulunamadı; yeni istek gönderilmedi.",)
 
 
 class _ChildControl(CodingRunControl):
@@ -99,6 +105,38 @@ class _ChildTools:
         if session is not self.job["session"]:
             return []
         return self.tools.get_schemas() + self.registry.get_schemas()
+
+    def get_tool_registry(self, name):
+        if self.registry.get_tool(name):
+            return self.registry
+        parent = self.tools.parent
+        if parent.mcp_registry and parent.mcp_registry.get_tool(name):
+            return parent.mcp_registry
+        return parent.tools
+
+    async def completion_gate_async(self):
+        """A child result is scoped evidence, never completion of the parent plan.
+
+        Editing specialists may return unverified work to their parent. The
+        parent's existing completion gate still requires current verification.
+        """
+        parent = self.tools.parent
+        control = self.job["control"]
+        current = await asyncio.to_thread(parent.refresh_evidence)
+        evidence = [item for item in parent.control.verifications if item.get("agent_id") == control.run_id]
+        valid_ids = {item.get("evidence_id") for item in evidence} & parent._verified_evidence
+        result = control.completion.evaluate(mode=control.mode, plan=control.plan,
+            verifications=evidence, quality_gates=control.quality_gates, quality_results=control.quality_results,
+            verified_ids=valid_ids, workspace_revision=parent.control.workspace_revision,
+            workspace_hash=current["digest"], workspace_complete=current["complete"],
+            # Unverified child work is handed back; it cannot verify the parent.
+            changes=False, state=control.state,
+            unresolved_operations=control.unresolved_operations + parent.control.unresolved_operations)
+        changed = any(item.get("agent_id") == control.run_id for item in parent.control.changes)
+        if changed and not result["evidence_ids"] and result["passed"]:
+            result.update(completion_classification="completed_unverified", lifecycle_state="completed_unverified")
+        control.emit(AgentEventType.QUALITY_GATE, "Alt ajan tamamlanma kanıtı değerlendirildi.", **result)
+        return result
 
     async def send_message(self, agent_id, message):
         return await self.manager.send_message(agent_id, message, sender=self.job["agent_id"])
@@ -187,6 +225,16 @@ class SubagentToolFilter:
         if self._enabled():
             schemas += self.registry.get_schemas()
         return schemas
+
+    def get_tool_registry(self, name):
+        if self.registry.get_tool(name):
+            return self.registry
+        if self.parent.mcp_registry and self.parent.mcp_registry.get_tool(name):
+            return self.parent.mcp_registry
+        return self.parent.tools
+
+    async def completion_gate_async(self):
+        return await self.parent.completion_gate_async()
 
     async def execute(self, call, session):
         if call.function.name not in DELEGATION_TOOLS:
@@ -351,6 +399,8 @@ class SubagentToolFilter:
         try:
             async for event in stream:
                 self._event(job, event)
+                if control.cancel_event.is_set() or self.control.cancel_event.is_set() or event.metadata.get("completion_classification") == "cancelled":
+                    raise asyncio.CancelledError()
                 if event.type == AgentEventType.ERROR:
                     raise RuntimeError(event.content)
                 if event.type == AgentEventType.DONE:

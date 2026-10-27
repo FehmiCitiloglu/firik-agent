@@ -1,9 +1,12 @@
 from __future__ import annotations
+import asyncio
 import inspect
 import json
 import logging
 from typing import Any, Callable, Dict, List, Optional
 from firik_agent.core.types import ToolCall, ToolDefinition, ToolResult
+from firik_agent.core.failures import FailureKind, RequestPhase, RuntimeFailure, normalize_failure
+from firik_agent.core.recovery import SideEffectRisk, tool_semantics
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +61,7 @@ class ToolRegistry:
                 name=name,
                 content=f"Error: Unknown tool '{name}'",
                 is_error=True,
+                metadata={"failure_kind": "unsupported_capability", "request_phase": "tool_not_dispatched"},
             )
 
         try:
@@ -73,13 +77,30 @@ class ToolRegistry:
                 name=name,
                 content=f"Error parsing JSON arguments for tool '{name}': {str(e)}",
                 is_error=True,
+                metadata={"failure_kind": "invalid_tool_arguments", "request_phase": "tool_not_dispatched"},
             )
+
+        if not isinstance(kwargs, dict):
+            return ToolResult(tool_call_id=tool_call.id, name=name, content="Tool arguments must be a JSON object.",
+                              is_error=True, metadata={"failure_kind": "invalid_tool_arguments", "request_phase": "tool_not_dispatched"})
+        try:
+            signature = inspect.signature(handler)
+        except (ValueError, TypeError):
+            signature = None
+        if signature is not None:
+            try:
+                signature.bind(**kwargs)
+            except TypeError:
+                return ToolResult(tool_call_id=tool_call.id, name=name, content="Tool parameters do not match the required arguments.",
+                                  is_error=True, metadata={"failure_kind": "invalid_tool_arguments", "request_phase": "tool_not_dispatched"})
 
         try:
             if inspect.iscoroutinefunction(handler):
                 result = await handler(**kwargs)
             else:
-                result = handler(**kwargs)
+                result = await asyncio.to_thread(handler, **kwargs)
+            if inspect.isawaitable(result):
+                result = await result
 
             if isinstance(result, ToolResult):
                 result.tool_call_id = tool_call.id
@@ -100,12 +121,19 @@ class ToolRegistry:
             )
 
         except Exception as e:
-            logger.exception("Error executing tool %s: %s", name, e)
+            failure = normalize_failure(e, phase=RequestPhase.TOOL_DISPATCHED)
+            risk = tool_semantics(name, self.get_tool(name))
+            if risk not in {SideEffectRisk.PURE_READ, SideEffectRisk.STATE_INSPECTION} and failure.kind not in {
+                    FailureKind.PERMISSION_DENIED, FailureKind.POLICY_REFUSAL, FailureKind.AUTHENTICATION_FAILED}:
+                failure = RuntimeFailure(FailureKind.TOOL_OUTCOME_UNKNOWN, phase=RequestPhase.TOOL_DISPATCHED,
+                                         source_type=type(e).__name__)
+            logger.warning("Tool failed (%s): %s", name, failure.kind.value)
             return ToolResult(
                 tool_call_id=tool_call.id,
                 name=name,
-                content=f"Execution error in tool '{name}': {str(e)}",
+                content=str(failure),
                 is_error=True,
+                metadata=failure.metadata,
             )
 
 

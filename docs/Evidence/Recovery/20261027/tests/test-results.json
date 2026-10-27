@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "validation_date": "2026-10-27",
+  "python_source_sha256": "1f33caf817f21d6930d541a46efd04e56448237623214c2839b6ca5d001935b4",
+  "aggregate": {
+    "passed": 936,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 1,
+    "skip_reason": "Windows cmd quoting regression, current host macOS"
+  },
+  "runs": [
+    {
+      "command": ".venv/bin/python -m pytest -q --ignore-glob='tests/test_ui*.py' --tb=short --junitxml=/tmp/phase2-nonui-complete.xml",
+      "exit_code": 0,
+      "tests": 845,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "receipt": "nonui.xml",
+      "log": "nonui.log"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/test_ui*.py --tb=short --junitxml=/tmp/phase2-ui-complete.xml",
+      "exit_code": 0,
+      "tests": 92,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "receipt": "ui.xml",
+      "log": "ui.log",
+      "execution": "macOS WindowServer access outside filesystem sandbox"
+    }
+  ],
+  "additional_receipts": {
+    "deferred_markdown": "ui-deferred.xml",
+    "benchmark_report_integrity": "../benchmark-tests.xml"
+  },
+  "static_checks": {
+    "compileall": "passed",
+    "git_diff_check": "passed"
+  },
+  "notes": [
+    "Aggregate covers separate complete non-UI and UI selections, not one combined pytest process.",
+    "Initial sandbox Tk abort and initial long-message resize hang were diagnostic runs. Final GUI selection passes after the deferred-render fix.",
+    "No live provider generation requests or paid model benchmark were run."
+  ]
+}

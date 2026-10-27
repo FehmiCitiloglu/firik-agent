@@ -1,0 +1,337 @@
+{
+  "date": "2026-10-27",
+  "scope": "First vertical slice: native offline replay and request observability",
+  "runs": [
+    {
+      "label": "control-a",
+      "metadata": {
+        "repository": {
+          "commit": "cf7af2fa5dd1ed1ab756376c5352b6fd2ec3b7f0",
+          "dirty": true
+        },
+        "source_sha256": "39199680f962259374dda401772e7f52266567467e238da0b6c0dbe37f52ae9c",
+        "controlled_settings_sha256": "bba37d73fac6a7380927a665d1dee9540281cbc154590862d86ca5f215e13016",
+        "harness_version": "0.2.21",
+        "lab_version": "1",
+        "model": "scripted-v1",
+        "provider": "replay",
+        "capability_evidence": {
+          "supports_tools": true,
+          "supports_streaming": true,
+          "context_window": 32000,
+          "source": "synthetic_replay_contract"
+        },
+        "profile": "native-replay",
+        "prompt_revision": "native-coding-v1",
+        "tool_revision": "guarded-file-tools-and-ast-v1",
+        "evaluator_version": "exact-source-ast-v1",
+        "python": "3.13.2",
+        "environment": {
+          "python": "3.13.2",
+          "os": "Darwin",
+          "machine": "arm64",
+          "sqlite": "3.47.1"
+        }
+      },
+      "tasks": [
+        {
+          "id": "guarded-edit",
+          "manifest_sha256": "e44b2773196921f6a6f9e27a9dff1594194602fbec39dc427c49bfbe27276077",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        },
+        {
+          "id": "read-only",
+          "manifest_sha256": "72bffafe7a6733a181248e9d329d4be9ad85323c0b92006961932e36ce9ba47f",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        },
+        {
+          "id": "denied-write",
+          "manifest_sha256": "5ce05abe1d5d5270b52b952b3538d4e48da3d87b2f0e5b41c71e3713ef5b5865",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        },
+        {
+          "id": "path-traversal",
+          "manifest_sha256": "e6085936d0e894efe5b97cf4dcf436d00781bbe619197a7ad966b78be31f4dbb",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        },
+        {
+          "id": "partial-stream",
+          "manifest_sha256": "bdb9521fb04e7d8ad12ab598764f09e9c42d044e3651abdbd90aabacd8d35937",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        },
+        {
+          "id": "cancellation",
+          "manifest_sha256": "47d1d7dbe014e0c46b8e34bc7bb299e5d1a96f7149c23554840716da48f59c89",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        },
+        {
+          "id": "unknown-usage",
+          "manifest_sha256": "9f3cd04c3aaa2ea3156aa4cc9c54ea27970caf7e9c7a7753a500f37df42fb3f1",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        }
+      ],
+      "summary": {
+        "trials": 21,
+        "fixtures_passed": 21,
+        "fixture_pass_rate": 1.0,
+        "completed_verified_tasks": 15,
+        "descriptive_wilson95": [
+          0.8453561767357979,
+          0.9999999999999999
+        ],
+        "safety_violations": 0,
+        "wall_time_ms": {
+          "count": 21,
+          "mean": 91.07168271428431,
+          "stdev": 25.7987142409173,
+          "min": 71.30716700009998,
+          "max": 151.98383400002058
+        },
+        "per_task": {
+          "guarded-edit": {
+            "count": 3,
+            "mean": 150.3827916666675,
+            "stdev": 2.2487666300209095,
+            "min": 147.81183299999157,
+            "max": 151.98383400002058
+          },
+          "read-only": {
+            "count": 3,
+            "mean": 89.74355566662477,
+            "stdev": 3.6674482366052494,
+            "min": 87.16074999995271,
+            "max": 93.9413329999752
+          },
+          "denied-write": {
+            "count": 3,
+            "mean": 87.23337500002042,
+            "stdev": 1.5654693677984028,
+            "min": 86.20033399995464,
+            "max": 89.03454100004637
+          },
+          "path-traversal": {
+            "count": 3,
+            "mean": 87.94205566668249,
+            "stdev": 1.574528199946282,
+            "min": 86.66641599995728,
+            "max": 89.70179200002804
+          },
+          "partial-stream": {
+            "count": 3,
+            "mean": 74.0484866666596,
+            "stdev": 1.297884757936644,
+            "min": 73.19254200001524,
+            "max": 75.54183399997783
+          },
+          "cancellation": {
+            "count": 3,
+            "mean": 72.20886133336535,
+            "stdev": 0.853470695726307,
+            "min": 71.30716700009998,
+            "max": 73.0041250000113
+          },
+          "unknown-usage": {
+            "count": 3,
+            "mean": 75.94265299997005,
+            "stdev": 1.4193018875362964,
+            "min": 74.64933400001428,
+            "max": 77.46104199998172
+          }
+        },
+        "cost": null,
+        "successful_tasks_per_dollar": null,
+        "usage_label": "Synthetic replay usage; unknown values remain null."
+      },
+      "raw_json": "/Users/alien/.codex/visualizations/2026/10/26/01a179d1-7d9b-7a40-b6b0-b27c806716b4/harness-benchmarks/control-a/report.json",
+      "raw_json_sha256": "bad1820bbedae079fc256575c3aac986f2e4c50bcc44be43f6f208002252db5a",
+      "markdown": "/Users/alien/.codex/visualizations/2026/10/26/01a179d1-7d9b-7a40-b6b0-b27c806716b4/harness-benchmarks/control-a/report.md"
+    },
+    {
+      "label": "control-b",
+      "metadata": {
+        "repository": {
+          "commit": "cf7af2fa5dd1ed1ab756376c5352b6fd2ec3b7f0",
+          "dirty": true
+        },
+        "source_sha256": "39199680f962259374dda401772e7f52266567467e238da0b6c0dbe37f52ae9c",
+        "controlled_settings_sha256": "bba37d73fac6a7380927a665d1dee9540281cbc154590862d86ca5f215e13016",
+        "harness_version": "0.2.21",
+        "lab_version": "1",
+        "model": "scripted-v1",
+        "provider": "replay",
+        "capability_evidence": {
+          "supports_tools": true,
+          "supports_streaming": true,
+          "context_window": 32000,
+          "source": "synthetic_replay_contract"
+        },
+        "profile": "native-replay",
+        "prompt_revision": "native-coding-v1",
+        "tool_revision": "guarded-file-tools-and-ast-v1",
+        "evaluator_version": "exact-source-ast-v1",
+        "python": "3.13.2",
+        "environment": {
+          "python": "3.13.2",
+          "os": "Darwin",
+          "machine": "arm64",
+          "sqlite": "3.47.1"
+        }
+      },
+      "tasks": [
+        {
+          "id": "guarded-edit",
+          "manifest_sha256": "e44b2773196921f6a6f9e27a9dff1594194602fbec39dc427c49bfbe27276077",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        },
+        {
+          "id": "read-only",
+          "manifest_sha256": "72bffafe7a6733a181248e9d329d4be9ad85323c0b92006961932e36ce9ba47f",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        },
+        {
+          "id": "denied-write",
+          "manifest_sha256": "5ce05abe1d5d5270b52b952b3538d4e48da3d87b2f0e5b41c71e3713ef5b5865",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        },
+        {
+          "id": "path-traversal",
+          "manifest_sha256": "e6085936d0e894efe5b97cf4dcf436d00781bbe619197a7ad966b78be31f4dbb",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        },
+        {
+          "id": "partial-stream",
+          "manifest_sha256": "bdb9521fb04e7d8ad12ab598764f09e9c42d044e3651abdbd90aabacd8d35937",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        },
+        {
+          "id": "cancellation",
+          "manifest_sha256": "47d1d7dbe014e0c46b8e34bc7bb299e5d1a96f7149c23554840716da48f59c89",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        },
+        {
+          "id": "unknown-usage",
+          "manifest_sha256": "9f3cd04c3aaa2ea3156aa4cc9c54ea27970caf7e9c7a7753a500f37df42fb3f1",
+          "timeout_seconds": 10.0,
+          "token_budget": 10000
+        }
+      ],
+      "summary": {
+        "trials": 21,
+        "fixtures_passed": 21,
+        "fixture_pass_rate": 1.0,
+        "completed_verified_tasks": 15,
+        "descriptive_wilson95": [
+          0.8453561767357979,
+          0.9999999999999999
+        ],
+        "safety_violations": 0,
+        "wall_time_ms": {
+          "count": 21,
+          "mean": 90.97549809522272,
+          "stdev": 25.869085354886153,
+          "min": 71.33041700001286,
+          "max": 154.20691700001044
+        },
+        "per_task": {
+          "guarded-edit": {
+            "count": 3,
+            "mean": 150.55472233329206,
+            "stdev": 3.3003334169018923,
+            "min": 147.78612499992505,
+            "max": 154.20691700001044
+          },
+          "read-only": {
+            "count": 3,
+            "mean": 88.83679166668419,
+            "stdev": 1.540578214107134,
+            "min": 87.79025000001184,
+            "max": 90.60583300004055
+          },
+          "denied-write": {
+            "count": 3,
+            "mean": 88.35820866666684,
+            "stdev": 1.87084080947105,
+            "min": 86.88512499998069,
+            "max": 90.46316700005264
+          },
+          "path-traversal": {
+            "count": 3,
+            "mean": 87.06798599996546,
+            "stdev": 1.0640378911591966,
+            "min": 86.21608299995387,
+            "max": 88.26066599999649
+          },
+          "partial-stream": {
+            "count": 3,
+            "mean": 73.81433366663259,
+            "stdev": 0.8491156858288884,
+            "min": 72.97174999996514,
+            "max": 74.66983399990568
+          },
+          "cancellation": {
+            "count": 3,
+            "mean": 72.73247233331404,
+            "stdev": 2.167864672679188,
+            "min": 71.33041700001286,
+            "max": 75.2294169999459
+          },
+          "unknown-usage": {
+            "count": 3,
+            "mean": 75.4639720000038,
+            "stdev": 1.5266035498714112,
+            "min": 74.5574159999478,
+            "max": 77.2265000000516
+          }
+        },
+        "cost": null,
+        "successful_tasks_per_dollar": null,
+        "usage_label": "Synthetic replay usage; unknown values remain null."
+      },
+      "raw_json": "/Users/alien/.codex/visualizations/2026/10/26/01a179d1-7d9b-7a40-b6b0-b27c806716b4/harness-benchmarks/control-b/report.json",
+      "raw_json_sha256": "80a5ef36b3deb871946ee265f0a8b1a90969c95d5bcd5a568438d0a441436bef",
+      "markdown": "/Users/alien/.codex/visualizations/2026/10/26/01a179d1-7d9b-7a40-b6b0-b27c806716b4/harness-benchmarks/control-b/report.md"
+    }
+  ],
+  "comparison": {
+    "method": "Deterministic offline replay; synthetic usage; no live-model performance or billing claim.",
+    "paired_wall_time_delta_ms": {
+      "count": 21,
+      "mean": -0.0961846190615948,
+      "stdev": 1.9479946787966724,
+      "min": -6.151082999963364,
+      "max": 2.4772490000941616
+    },
+    "fixture_pass_delta": 0,
+    "completed_verified_task_delta": 0,
+    "performance_claim": null,
+    "limitation": "Sequential local replay timings measure harness overhead only; repeated timings are not independent model trials."
+  },
+  "baseline_tests": {
+    "passed": 526,
+    "skipped": 1,
+    "seconds": 70.21,
+    "native_suite": "SIGABRT before edits in test_ui.py Tk construction"
+  },
+  "final_tests": {
+    "non_ui_passed": 617,
+    "non_ui_skipped": 1,
+    "non_ui_seconds": 53.05,
+    "pure_ui_helpers_passed": 3,
+    "python310_grammar_modules": 127,
+    "native_desktop": "Not verified: baseline Tk SIGABRT reproduced"
+  },
+  "performance_improvement_claim": null
+}

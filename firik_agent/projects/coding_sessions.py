@@ -16,6 +16,7 @@ import uuid
 
 from firik_agent.projects.indexer import is_sensitive_file, sanitize_secrets
 from firik_agent.projects.models import CodingRunEvent, CodingSession
+from firik_agent.core.completion import legacy_status
 
 if TYPE_CHECKING:
     from firik_agent.projects.db import ProjectDatabase
@@ -24,7 +25,7 @@ if TYPE_CHECKING:
 REDACTED = "[SECRET_FILTERED]"
 ACTIVE_STATUSES = frozenset({
     "queued", "running", "understanding", "planning", "waiting_approval",
-    "applying", "implementing", "verifying", "correcting", "stopping", "awaiting_approval", "paused",
+    "applying", "implementing", "verifying", "correcting", "repairing", "reviewing", "stopping", "awaiting_approval", "paused",
 })
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "interrupted", "blocked"})
 _SECRET_KEY = re.compile(
@@ -218,6 +219,9 @@ class CodingSessionStore:
         return self._mutate(run_id, change)
 
     def finish_run(self, run_id: str, status: str = "completed", **fields: Any) -> CodingSession:
+        if status in {"completed_verified", "completed_unverified"}:
+            fields.setdefault("result", status)
+            status = legacy_status(status)
         if status not in TERMINAL_STATUSES:
             raise ValueError("Çalışmayı bitirmek için son durum gerekli.")
         return self.update_run(run_id, status=status, **fields)

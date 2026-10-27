@@ -945,6 +945,9 @@ class ChatView(ctk.CTkFrame):
                 self._show_activity_stage("Bağlam sıkıştırılıyor", "Önceki konuşma özetleniyor…")
             elif evt.type == AgentEventType.CONTEXT_COMPACTED:
                 self._show_activity_stage("Bağlam hazır", evt.content or "Bağlam özeti hazır.")
+            elif evt.type == AgentEventType.RECOVERY:
+                self._show_activity_stage("Kurtarma durumu", evt.content or "Kurtarma kararı değerlendiriliyor.")
+                get_activity().append_reasoning("\nKurtarma: " + (evt.content or "") + "\n")
             elif evt.type == AgentEventType.MCP_CONNECTING:
                 self._show_activity_stage("MCP bağlanıyor", f"{evt.server_name} bağlantısı kuruluyor…")
             elif evt.type == AgentEventType.MCP_CONNECTED:

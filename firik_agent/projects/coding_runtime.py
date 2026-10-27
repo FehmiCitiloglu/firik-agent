@@ -23,6 +23,7 @@ from typing import Any, Callable, Dict, Optional
 from uuid import uuid4
 
 from firik_agent.core.events import AgentEvent, AgentEventType
+from firik_agent.core.completion import CompletionController, legacy_status
 from firik_agent.core.session import ChatSession
 from firik_agent.core.shell import run_shell
 from firik_agent.core.tools import ToolRegistry
@@ -125,14 +126,30 @@ def sanitize_message(message: Message) -> Message:
     return copy
 
 
-def repair_tool_history(messages: list[Message]) -> None:
+def repair_tool_history(messages: list[Message], control: Optional["CodingRunControl"] = None) -> None:
     """A cancelled call may have run: record unknown outcome without rerunning it."""
+    from firik_agent.core.recovery import operation_fingerprint
     repaired: list[Message] = []
-    pending: dict[str, ToolCall] = {}
+    pending: dict[str, tuple[ToolCall, Message]] = {}
     def finish_pending():
-        for call in pending.values():
+        for call, owner in pending.values():
+            attempts = owner.execution.setdefault("tool_attempts", [])
+            attempt = next((item for item in reversed(attempts) if item.get("tool_call_id") == call.id), None)
+            if attempt is None:
+                fingerprint = operation_fingerprint(call.function.name, call.function.arguments)
+                attempt = {"attempt_id": f"legacy_{uuid4().hex}", "tool_call_id": call.id,
+                           "fingerprint": fingerprint, "operation_fingerprint": fingerprint,
+                           "status": "outcome_unknown", "request_phase": "tool_dispatched",
+                           "failure_kind": "tool_outcome_unknown", "reconciliation_status": "required",
+                           "requires_reconciliation": True, "side_effect_risk": "unknown"}
+                attempts.append(attempt)
+            elif attempt.get("status") in {"dispatched", "outcome_unknown", "reconciliation_required"}:
+                attempt.update(status="outcome_unknown", failure_kind="tool_outcome_unknown",
+                               request_phase="tool_dispatched", reconciliation_status="required",
+                               requires_reconciliation=True)
             repaired.append(ToolResult(tool_call_id=call.id, name=call.function.name, is_error=True,
-                content="Kesilen çalışmada araç sonucu kaydedilemedi. İşlem tekrarlanmadı; güncel dosya durumu yeniden doğrulanmalıdır.").to_message())
+                content="İşlem kesildi; araç sonucu kaydedilemedi. İşlem tekrarlanmadı; güncel dosya durumu yeniden doğrulanmalıdır.",
+                metadata=dict(attempt)).to_message())
         pending.clear()
     for message in messages:
         if message.role != "tool":
@@ -141,9 +158,16 @@ def repair_tool_history(messages: list[Message]) -> None:
             pending.pop(message.tool_call_id)
         repaired.append(message)
         if message.role == "assistant" and message.tool_calls:
-            pending.update({call.id: call for call in message.tool_calls})
+            pending.update({call.id: (call, message) for call in message.tool_calls})
     finish_pending()
     messages[:] = repaired
+    if control is not None:
+        known = {item.get("attempt_id") for item in control.unresolved_operations}
+        for message in messages:
+            for attempt in message.execution.get("tool_attempts", []):
+                if attempt.get("status") in {"dispatched", "outcome_unknown", "reconciliation_required"} and attempt.get("attempt_id") not in known:
+                    control.unresolved_operations.append(dict(attempt))
+                    known.add(attempt.get("attempt_id"))
 
 
 def prepare_coding_messages(messages: list[Message], control: "CodingRunControl",
@@ -196,11 +220,30 @@ def _digest(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def _failure_metadata(exc: Exception, *, dispatched: bool = False) -> dict[str, Any]:
+    """Structured classification survives redaction and registry boundaries."""
+    if isinstance(exc, PermissionError):
+        kind = "permission_denied"
+    elif isinstance(exc, (json.JSONDecodeError, TypeError)):
+        kind = "invalid_tool_arguments"
+    elif isinstance(exc, asyncio.TimeoutError):
+        kind = "tool_outcome_unknown" if dispatched else "tool_timeout"
+    elif isinstance(exc, ValueError) and any(word in str(exc) for word in ("değişti", "silindi", "eşleşmiyor", "sürüm")):
+        kind = "workspace_conflict"
+    elif isinstance(exc, ValueError):
+        kind = "invalid_tool_arguments"
+    else:
+        kind = "tool_outcome_unknown" if dispatched else "invalid_tool_arguments"
+    return {"failure_kind": kind, "request_phase": "tool_dispatched" if dispatched else "tool_not_dispatched",
+            "requires_reconciliation": kind == "tool_outcome_unknown", "retry_eligible": False}
+
+
 class _CodingRegistry(ToolRegistry):
     """Translate and redact handler errors before they reach logs or the model."""
 
     async def execute(self, tool_call: ToolCall) -> ToolResult:
         name = tool_call.function.name
+        dispatched = False
         try:
             handler = self._handlers.get(name)
             if handler is None:
@@ -220,6 +263,7 @@ class _CodingRegistry(ToolRegistry):
                 kind = schema["properties"][key].get("type")
                 if kind in types and (not isinstance(argument, types[kind]) or (kind in {"integer", "number"} and isinstance(argument, bool))):
                     raise ValueError(f"Araç parametresinin türü geçersiz: {key}")
+            dispatched = True
             if inspect.iscoroutinefunction(handler):
                 value = await handler(**arguments)
             elif name in {"read_file", "list_files", "search_project", "search_symbols", "update_plan", "record_verification", "discover_quality_gates"}:
@@ -240,7 +284,8 @@ class _CodingRegistry(ToolRegistry):
         except UnicodeError:
             return ToolResult(tool_call_id=tool_call.id, name=name, content="Dosya UTF-8 metin olarak okunamadı.", is_error=True)
         except Exception as exc:
-            return ToolResult(tool_call_id=tool_call.id, name=name, content=safe_text(f"İşlem yapılamadı: {exc}"), is_error=True)
+            return ToolResult(tool_call_id=tool_call.id, name=name, content=safe_text(f"İşlem yapılamadı: {exc}"),
+                              is_error=True, metadata=_failure_metadata(exc, dispatched=dispatched))
 
 
 class CodingRunControl:
@@ -287,6 +332,8 @@ class CodingRunControl:
         self.quality_gates: list[dict[str, Any]] = []
         self.quality_results: list[dict[str, Any]] = []
         self.workspace_revision = 0
+        self.completion = CompletionController()
+        self.unresolved_operations: list[dict[str, Any]] = []
 
     @contextmanager
     def actor(self, agent_id: str):
@@ -386,8 +433,12 @@ class CodingRunControl:
 
     def set_state(self, state: str, content: str = "") -> None:
         with self._lock:
-            self.state = state
-        self.emit(AgentEventType.TASK_STATE, content, state=state)
+            self.completion.transition(state)
+            self.state = legacy_status(state)
+        metadata = {"state": self.state, "lifecycle_state": self.completion.state}
+        if state.startswith("completed_"):
+            metadata["completion_classification"] = state
+        self.emit(AgentEventType.TASK_STATE, content, **metadata)
 
     def pause(self) -> None:
         self.pause_event.set()
@@ -453,6 +504,8 @@ class CodingRunControl:
                     "mode": self.mode, "permissions": dict(self.permissions), "state": self.state,
                     "policy": self.policy_snapshot(), "sandbox": "none", "workspace_revision": self.workspace_revision,
                     "excluded_paths": list(self.excluded_paths),
+                    "completion": self.completion.snapshot(),
+                    "unresolved_operations": [dict(item) for item in self.unresolved_operations],
                     "quality_gates": [dict(g) for g in self.quality_gates],
                     "quality_results": [dict(g) for g in self.quality_results],
                     "capabilities": dict(self.capabilities),
@@ -708,8 +761,11 @@ class CodingToolFilter:
     async def execute(self, tool_call: ToolCall, session: ChatSession) -> ToolResult:
         name = tool_call.function.name
         failure_key = _digest(json.dumps([name, tool_call.function.arguments], sort_keys=True).encode())
+        dispatched = False
         try:
             await self.control.checkpoint()
+            if self.control.unresolved_operations and name not in self.READ_TOOLS | {"discover_quality_gates"}:
+                raise PermissionError("Sonucu bilinmeyen işlem var; uzlaştırma tamamlanmadan yeni yan etki başlatılamaz.")
             if self.control.failures.get(failure_key, 0) >= 3:
                 raise ValueError("Aynı işlem üç kez başarısız oldu; yöntem veya parametre değiştirin.")
             if not self.is_tool_allowed(name, session):
@@ -779,12 +835,25 @@ class CodingToolFilter:
                 action = self._tool_policy(name)
                 await self.control.authorize(action, name, arguments, "Bu proje okuma işlemi izin politikasında onay gerektiriyor.")
             registry = self.tools if self.tools.get_tool(name) else self.mcp_registry
+            dispatched = True
             if registry is self.tools:
                 result = await registry.execute(tool_call)
             else:
                 result = await asyncio.wait_for(registry.execute(tool_call), timeout=60)
             if not isinstance(registry, _CodingRegistry):
                 result.content = safe_serialized_text(result.content)
+            if name in {"run_command", "run_tests", "run_quality_gate"}:
+                try:
+                    command_result = json.loads(result.content)
+                except (ValueError, TypeError):
+                    command_result = {}
+                if command_result.get("timed_out"):
+                    result.metadata.update(failure_kind="tool_outcome_unknown", request_phase="tool_dispatched",
+                                           requires_reconciliation=True, retry_eligible=False)
+            if result.metadata.get("requires_reconciliation"):
+                self.control.unresolved_operations.append({"tool_call_id": tool_call.id, "tool_name": name,
+                                                          **result.metadata})
+                self.control.set_state("blocked", "Araç sonucu belirsiz; güncel durum uzlaştırılmadan tekrarlanamaz.")
             if result.is_error:
                 self.control.failures[failure_key] = self.control.failures.get(failure_key, 0) + 1
             else:
@@ -792,15 +861,21 @@ class CodingToolFilter:
             return result
         except asyncio.CancelledError:
             raise
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             self.control.failures[failure_key] = self.control.failures.get(failure_key, 0) + 1
-            return ToolResult(tool_call_id=tool_call.id, name=name, content="Araç çağrısı zaman aşımına uğradı.", is_error=True)
+            metadata = _failure_metadata(exc, dispatched=dispatched)
+            if metadata["requires_reconciliation"]:
+                self.control.unresolved_operations.append({"tool_call_id": tool_call.id, "tool_name": name, **metadata})
+                self.control.set_state("blocked", "Zaman aşımından sonra araç sonucu bilinmiyor; işlem tekrarlanmadı.")
+            return ToolResult(tool_call_id=tool_call.id, name=name, content="Araç çağrısı zaman aşımına uğradı; güncel durumu kontrol edin.",
+                              is_error=True, metadata=metadata)
         except FileNotFoundError:
             self.control.failures[failure_key] = self.control.failures.get(failure_key, 0) + 1
             return ToolResult(tool_call_id=tool_call.id, name=name, content="Dosya veya çalışma klasörü bulunamadı.", is_error=True)
         except Exception as exc:
             self.control.failures[failure_key] = self.control.failures.get(failure_key, 0) + 1
-            return ToolResult(tool_call_id=tool_call.id, name=name, content=safe_text(f"İşlem yapılamadı: {exc}"), is_error=True)
+            return ToolResult(tool_call_id=tool_call.id, name=name, content=safe_text(f"İşlem yapılamadı: {exc}"),
+                              is_error=True, metadata=_failure_metadata(exc, dispatched=dispatched))
 
     def read_file(self, path: str, start_line: int = 1, end_line: Optional[int] = None) -> dict[str, Any]:
         if not isinstance(start_line, int) or isinstance(start_line, bool) or start_line < 1:
@@ -1080,9 +1155,17 @@ class CodingToolFilter:
                 "passed": code == 0 and not timed_out}
 
     async def run_tests(self, command: str, cwd: str = ".", timeout: float = 60) -> ToolResult:
-        self.control.set_state("verifying", "Doğrulama komutu çalıştırılıyor.")
         revision = self.control.workspace_revision
         before = await asyncio.to_thread(self._workspace_version)
+        if not self.control.completion.permit_verification(command, cwd, before["digest"]):
+            result = {"kind": "test", "command": safe_text(command), "cwd": cwd, "executed": False,
+                      "passed": False, "status": "blocked", "fresh": False,
+                      "workspace_revision": revision, "workspace_hash": before["digest"],
+                      "reason": "Aynı başarısız doğrulama değişen kaynak veya yeni kanıt olmadan tekrarlanamaz; onarım bütçesi sınırlıdır."}
+            self.control.emit(AgentEventType.VERIFICATION, result["reason"], **result)
+            self.control.set_state("blocked", result["reason"])
+            return ToolResult(tool_call_id="", name="run_tests", content=json.dumps(result, ensure_ascii=False), is_error=True)
+        self.control.set_state("verifying", "Doğrulama komutu çalıştırılıyor.")
         result = await self.run_command(command, cwd, timeout)
         after = await asyncio.to_thread(self._workspace_version)
         fresh = (before["complete"] and after["complete"] and before["digest"] == after["digest"]
@@ -1098,6 +1181,8 @@ class CodingToolFilter:
         self._evidence_versions[result["evidence_id"]] = after
         if result["passed"] and fresh:
             self._verified_evidence.add(result["evidence_id"])
+        self.control.completion.observe_verification(result)
+        self.control.set_state(self.control.completion.state)
         self.control.emit(AgentEventType.VERIFICATION, "Test başarılı." if result["passed"] else "Test başarısız veya çalıştırılamadı.", **result)
         return ToolResult(tool_call_id="", name="run_tests", content=json.dumps(result, ensure_ascii=False), is_error=not result["passed"])
 
@@ -1179,29 +1264,14 @@ class CodingToolFilter:
 
     def completion_gate(self) -> dict[str, Any]:
         """Read current source hashes before permitting a successful completion."""
-        self.refresh_evidence()
-        reasons = []
-        if self.control.state in {"blocked", "cancelled"}:
-            reasons.append("Çalışma engellendi veya durduruldu.")
-        if self.control.mode not in {"ask", "plan"}:
-            for step in self.control.plan:
-                if step["status"] != "completed":
-                    reasons.append(f"Plan adımı tamamlanmadı: {step['title']}")
-                elif not step.get("evidence_ids") or any(value not in self._verified_evidence for value in step["evidence_ids"]):
-                    reasons.append(f"Plan adımının güncel doğrulama kanıtı yok: {step['title']}")
-            for gate in self.control.quality_gates:
-                if not gate["enabled"] or not gate["required"]:
-                    continue
-                result = next((value for value in reversed(self.control.quality_results) if value["gate_id"] == gate["id"]), None)
-                if (not result or not result.get("passed") or result.get("evidence_id") not in self._verified_evidence
-                        or result.get("command") != safe_text(gate["command"])):
-                    reasons.append(f"Kalite kapısı başarılı ve güncel değil: {gate['kind']}")
-            if self.control.changes and not self.control.plan and not self._verified_evidence:
-                reasons.append("Dosya değişiklikleri güncel doğrulama gerektiriyor.")
-        result = {"passed": not reasons, "status": "passed" if not reasons else "blocked", "reasons": reasons,
-                  "workspace_revision": self.control.workspace_revision,
-                  "evidence_ids": sorted(self._verified_evidence)}
-        self.control.emit(AgentEventType.QUALITY_GATE, "Tamamlanma kontrolü başarılı." if not reasons else "Tamamlanma kontrolü engellendi.", **result)
+        current = self.refresh_evidence()
+        result = self.control.completion.evaluate(mode=self.control.mode, plan=self.control.plan,
+            verifications=self.control.verifications, quality_gates=self.control.quality_gates,
+            quality_results=self.control.quality_results, verified_ids=self._verified_evidence,
+            workspace_revision=self.control.workspace_revision, workspace_hash=current["digest"],
+            workspace_complete=current["complete"], changes=bool(self.control.changes), state=self.control.state,
+            unresolved_operations=self.control.unresolved_operations)
+        self.control.emit(AgentEventType.QUALITY_GATE, "Tamamlanma kontrolü başarılı." if result["passed"] else "Tamamlanma kontrolü engellendi.", **result)
         return result
 
     async def completion_gate_async(self) -> dict[str, Any]:

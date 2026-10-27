@@ -998,6 +998,11 @@ class FirikService(CodingBridge):
                     session_tool_filter=tool_filter,
                     cancel_event=cancel_event,
                 ):
+                    if evt.type in {AgentEventType.TOOL_CALL_STARTED, AgentEventType.TOOL_CALL_RESULT,
+                                    AgentEventType.TOOL_CALL_ERROR}:
+                        # Commit attempt identity before advancing the generator
+                        # to dispatch, then retain the recorded result/status.
+                        await asyncio.to_thread(self.chat_history.save_context, session)
                     if evt.type == AgentEventType.DONE:
                         # Finish persistence and release the session before the
                         # UI enables Send. A completion callback may start the

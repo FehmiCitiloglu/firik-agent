@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from firik_agent.core.agent import Agent
 from firik_agent.core.events import AgentEvent, AgentEventType
+from firik_agent.core.metrics import RunMetrics
 from firik_agent.core.types import ToolCall
 from firik_agent.projects.coding_runtime import CodingRunControl, CodingToolFilter
 from firik_agent.projects.model_capabilities import model_capabilities
@@ -140,6 +141,7 @@ class CodingActions:
             status, result, error_text = "completed", None, ""
             commands = []
             child_decisions, usage_requests = [], {}
+            run_metrics = RunMetrics()
             try:
                 settings = self.projects.db.get_settings(project.id)
                 prefs = settings.coding_preferences
@@ -166,6 +168,7 @@ class CodingActions:
                 def receive(event):
                     try:
                         self.coding_store.append_event(record.id, event)
+                        run_metrics.observe(event)
                     except Exception:
                         cancel_event.set()
                         control.cancel_event.set()
@@ -173,7 +176,8 @@ class CodingActions:
                     if event.type == AgentEventType.SUBAGENT_EVENT:
                         detail = event.metadata
                         if detail.get("child_event_type") == "model_usage":
-                            usage_requests[(detail["agent_id"], detail.get("request_iteration", 1))] = detail.get("child_metadata", {}).get("usage", {})
+                            child = detail.get("child_metadata", {})
+                            usage_requests[(detail["agent_id"], child.get("request_id") or detail.get("request_iteration", 1))] = child.get("usage", {})
                         if detail.get("status") not in {"created", "queued", "running"} and not detail.get("child_event_type"):
                             child_decisions.append({"kind": "subagent", **detail, "result": event.content})
                     if on_event:
@@ -234,6 +238,7 @@ class CodingActions:
                             for key, value in values.items():
                                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                                     usage[key] = usage.get(key, 0) + value
+                        usage["harness_metrics"] = run_metrics.snapshot()
                         self.coding_store.update_run(record.id, status=status, result=status,
                             ended_at=datetime.now(timezone.utc).isoformat(), duration_sec=int(time.monotonic() - started),
                             tests_executed=snapshot["tests"], file_journal=snapshot["changes"], commands_executed=commands,

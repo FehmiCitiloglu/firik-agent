@@ -10,6 +10,8 @@ Sohbet özeti ve konumu kalıcı sohbet kaydına yazılır. Kodlama geçmişi ta
 
 Özetleme başarısız olursa veya iptal edilirse eski geçmiş korunur. Sığmayan tek bir istek/araç işlemi sessizce kesilmez; açıklayıcı hata verilir. Model özetleri ayrıntı kaybedebilir; dosya veya test sonucu gerektiğinde tekrar doğrulanmalıdır. Özetleme ek model istekleri ve süre gerektirir.
 
+Streaming ajan akışında her özetleme çağrısı ayrı `request_id` ve `request_kind=compaction` ile ölçülür. Sağlayıcı kullanım bildirirse token ve doğrulanmış fiyatlarla tahmini maliyet kayda girer. Eksik kullanım sıfır sayılmaz. Başarısız veya iptal çağrılarının süresi de kaydedilir. Olaylar özetleme sınırından sonra aktarılır; süreç bu sırada çökerse eksiksiz ücret kaydı garanti edilmez. Ayrıntılar: [Harness Benchmark Lab](HARNESS_BENCHMARKS.md).
+
 `config.yaml` içinde isteğe bağlı ayarlar:
 
 ```yaml

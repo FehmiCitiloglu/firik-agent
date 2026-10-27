@@ -1,5 +1,4 @@
 from __future__ import annotations
-import json
 import logging
 from typing import Any, AsyncIterator, Dict, List, Optional
 import httpx
@@ -8,8 +7,6 @@ from firik_agent.core.types import (
     Message,
     ModelInfo,
     StreamChunk,
-    ToolCall,
-    ToolCallFunction,
 )
 from firik_agent.providers.base import BaseProvider
 
@@ -100,46 +97,8 @@ class OpenAIProvider(BaseProvider):
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
     ) -> Message:
-        payload = self._prepare_payload(
-            messages=messages,
-            tools=tools,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=False,
-        )
-
-        url = f"{self.base_url}/chat/completions"
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(url, json=payload, headers=self._get_headers())
-            if resp.status_code != 200:
-                raise RuntimeError(f"OpenAI error ({resp.status_code}): {resp.text}")
-            data = resp.json()
-
-        choices = data.get("choices", [])
-        if not choices:
-            return Message(role="assistant", content="")
-
-        msg_data = choices[0].get("message", {})
-        content = msg_data.get("content")
-        tool_calls = None
-        if "tool_calls" in msg_data and msg_data["tool_calls"]:
-            tool_calls = [
-                ToolCall(
-                    id=tc.get("id", ""),
-                    type="function",
-                    function=ToolCallFunction(
-                        name=tc.get("function", {}).get("name", ""),
-                        arguments=tc.get("function", {}).get("arguments", ""),
-                    ),
-                )
-                for tc in msg_data["tool_calls"]
-            ]
-
-        return Message(
-            role="assistant",
-            content=content,
-            tool_calls=tool_calls,
-        )
+        from firik_agent.providers._chat import chat, prepare_payload
+        return await chat(self, prepare_payload(self, messages, tools, temperature, max_tokens, stream=False))
 
     async def chat_stream(
         self,
@@ -148,90 +107,9 @@ class OpenAIProvider(BaseProvider):
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
     ) -> AsyncIterator[StreamChunk]:
-        payload = self._prepare_payload(
-            messages=messages,
-            tools=tools,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-        )
-
-        url = f"{self.base_url}/chat/completions"
-        tool_calls_accumulator: Dict[int, Dict[str, Any]] = {}
-
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            async with client.stream("POST", url, json=payload, headers=self._get_headers()) as response:
-                if response.status_code != 200:
-                    body = await response.aread()
-                    raise RuntimeError(f"OpenAI stream error ({response.status_code}): {body.decode('utf-8', errors='replace')}")
-
-                buffer = ""
-                async for chunk in response.aiter_text():
-                    buffer += chunk
-                    lines = buffer.split("\n")
-                    buffer = lines.pop()
-
-                    for line in lines:
-                        line = line.strip()
-                        if not line or not line.startswith("data:"):
-                            continue
-
-                        data_str = line[len("data:") :].strip()
-                        if data_str == "[DONE]":
-                            yield StreamChunk(is_done=True)
-                            continue
-
-                        try:
-                            data = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
-
-                        choices = data.get("choices", [])
-                        usage = data.get("usage")
-                        if isinstance(usage, dict) and usage:
-                            yield StreamChunk(usage=usage)
-                        if not choices:
-                            continue
-
-                        delta = choices[0].get("delta", {})
-                        content_delta = delta.get("content")
-                        reasoning_delta = delta.get("reasoning") or delta.get("reasoning_content")
-
-                        raw_tool_calls = delta.get("tool_calls")
-                        if raw_tool_calls:
-                            for tc_delta in raw_tool_calls:
-                                idx = tc_delta.get("index", 0)
-                                if idx not in tool_calls_accumulator:
-                                    tool_calls_accumulator[idx] = {
-                                        "id": tc_delta.get("id", ""),
-                                        "name": "",
-                                        "arguments": "",
-                                    }
-                                if tc_delta.get("id"):
-                                    tool_calls_accumulator[idx]["id"] = tc_delta["id"]
-                                fn = tc_delta.get("function", {})
-                                if fn.get("name"):
-                                    tool_calls_accumulator[idx]["name"] += fn["name"]
-                                if fn.get("arguments"):
-                                    tool_calls_accumulator[idx]["arguments"] += fn["arguments"]
-
-                        finish_reason = choices[0].get("finish_reason")
-                        if finish_reason == "tool_calls" and tool_calls_accumulator:
-                            assembled = [
-                                ToolCall(
-                                    id=v["id"] or f"call_{i}",
-                                    type="function",
-                                    function=ToolCallFunction(
-                                        name=v["name"],
-                                        arguments=v["arguments"],
-                                    ),
-                                )
-                                for i, v in tool_calls_accumulator.items()
-                            ]
-                            yield StreamChunk(tool_calls=assembled, is_done=True)
-                        else:
-                            if content_delta or reasoning_delta:
-                                yield StreamChunk(delta_content=content_delta, delta_reasoning=reasoning_delta)
+        from firik_agent.providers._chat import chat_stream, prepare_payload
+        async for chunk in chat_stream(self, prepare_payload(self, messages, tools, temperature, max_tokens, stream=True)):
+            yield chunk
 
     async def list_models(self) -> List[ModelInfo]:
         try:
@@ -245,7 +123,7 @@ class OpenAIProvider(BaseProvider):
                                            for row in rows if isinstance(row, dict) and row.get("id")}
                     return [self.model_info(row) for row in self.model_metadata.values()]
         except Exception as e:
-            logger.debug("Failed listing models from %s: %s", self.base_url, e)
+            logger.debug("Failed listing models: %s", type(e).__name__)
 
         # Configured model remains selectable during an outage; it is not a
         # successful discovery or evidence of capabilities.

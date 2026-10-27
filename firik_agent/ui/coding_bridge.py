@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from firik_agent.core.agent import Agent
 from firik_agent.core.events import AgentEventType
+from firik_agent.core.metrics import RunMetrics
 from firik_agent.core.session import ChatSession
 from firik_agent.core.types import Message
 from firik_agent.mcp.models import redact_secrets
@@ -84,10 +85,11 @@ class CodingBridge(CodingActions):
         else:
             session = ChatSession(session_id=record.session_id, model=record.model or self.default_model,
                                   active_mcp_servers=set())
-            # Exclude half-written tool protocol groups. The durable event log
-            # retains them; resumed inference starts from conversational turns.
-            session.messages = [Message.model_validate(self._coding_redact(m)) for m in record.messages
-                                if m.get("role") in {"user", "assistant"} and not m.get("tool_calls")]
+            # Preserve the host attempt journal across restart. Close missing
+            # protocol results conservatively without replaying their calls.
+            session.messages = [Message.model_validate(self._coding_redact(m)) for m in record.messages]
+            from firik_agent.projects.coding_runtime import repair_tool_history
+            repair_tool_history(session.messages)
         self.sessions[session.session_id] = session
         if not hasattr(self, "_coding_session_projects"):
             self._coding_session_projects = {}
@@ -150,6 +152,7 @@ class CodingBridge(CodingActions):
         acquired = set()
         terminal_events = []
         checkpoints, decisions, usage_requests, commands = [], [], {}, []
+        run_metrics = RunMetrics()
         state = {"last_checkpoint": 0.0, "partial": "", "partial_start": 0,
                  "iteration": 0, "terminal_status": None, "prior_count": 0,
                  "initial_messages": []}
@@ -194,6 +197,8 @@ class CodingBridge(CodingActions):
             checkpoint = {"kind": "progress", "created_at": time.time(), "run_id": run_id,
                           "project_id": project_id, "task_id": task_id, "session_id": session_id,
                           "state": snapshot["state"],
+                          "completion": snapshot.get("completion", {}),
+                          "unresolved_operations": snapshot.get("unresolved_operations", []),
                           "completed_step_ids": [step.get("id") for step in snapshot.get("plan", []) if step.get("status") == "completed"],
                           "file_hashes": [{"path": change.get("path"), "after_hash": change.get("after_hash"), "undone": change.get("undone", False)}
                                           for change in snapshot.get("changes", [])],
@@ -214,6 +219,9 @@ class CodingBridge(CodingActions):
                         usage[key] = usage.get(key, 0) + value
                     else:
                         usage[key] = value
+            # Preserve legacy numeric fields for old clients. The nullable,
+            # coverage-aware aggregate is authoritative for new displays.
+            usage["harness_metrics"] = run_metrics.snapshot()
             fields = dict(status=current_status, messages=snapshot_messages(),
                           duration_sec=int(now - started), plan=snapshot.get("plan", []),
                           context_report=options.get("visibility_report", []),
@@ -224,7 +232,8 @@ class CodingBridge(CodingActions):
                           commands_executed=commands, usage=usage,
                           tokens_used=int(usage.get("total_tokens", usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0))))
             if final is not None:
-                fields.update(result=current_status, summary=final,
+                classification = snapshot.get("completion", {}).get("classification")
+                fields.update(result=classification if current_status == "completed" and classification else current_status, summary=final,
                               error=final if current_status == "failed" else "")
             self.coding_store.update_run(run_id, **fields)
             state["last_checkpoint"] = now
@@ -245,11 +254,12 @@ class CodingBridge(CodingActions):
                                        metadata=self._coding_redact({**event.metadata, **expected}))
             try:
                 self.coding_store.append_event(run_id, safe)
+                run_metrics.observe(safe)
                 if event.type == AgentEventType.SUBAGENT_EVENT:
                     child = safe.metadata
                     if child.get("child_event_type") == "model_usage":
                         detail = child.get("child_metadata", {})
-                        usage_requests[(child["agent_id"], detail.get("iteration", child.get("request_iteration", 1)))] = detail.get("usage", {})
+                        usage_requests[(child["agent_id"], detail.get("request_id") or detail.get("iteration", child.get("request_iteration", 1)))] = detail.get("usage", {})
                     if child.get("status") != "running" and not child.get("child_event_type"):
                         decisions.append({"kind": "subagent", **child, "result": safe.content})
                     persist_snapshot(force=not child.get("child_event_type"))
@@ -257,7 +267,7 @@ class CodingBridge(CodingActions):
                         self._dispatch(on_event, safe)
                     return
                 first_delta = event.type == AgentEventType.TEXT_DELTA and not state["partial"]
-                if event.type == AgentEventType.MODEL_REQUEST_STARTED:
+                if event.type == AgentEventType.MODEL_REQUEST_STARTED and event.metadata.get("request_kind") != "compaction":
                     state.update(partial="", partial_start=len(session.messages),
                                  iteration=event.metadata.get("iteration", state["iteration"] + 1))
                 elif event.type == AgentEventType.TEXT_DELTA:
@@ -268,7 +278,7 @@ class CodingBridge(CodingActions):
                     cost = estimate_usage_cost(usage, control.capabilities)
                     if cost.get("cost") is not None:
                         usage["cost"] = cost["cost"]
-                    usage_requests[state["iteration"]] = usage
+                    usage_requests[safe.metadata.get("request_id") or state["iteration"]] = usage
                 elif event.type == AgentEventType.APPROVAL_DECIDED:
                     decisions.append({"kind": "approval", **safe.metadata})
                 elif event.type in {AgentEventType.TOOL_CALL_RESULT, AgentEventType.TOOL_CALL_ERROR}:
@@ -410,6 +420,12 @@ class CodingBridge(CodingActions):
                     tool_filter.configure_quality_gates(options["quality_gates"])
                 elif options.get("auto_quality_gates"):
                     await asyncio.to_thread(tool_filter.discover_quality_gates)
+                async def before_completion():
+                    if options.get("auto_quality_gates") and control.mode not in {"ask", "plan"}:
+                        for quality_gate in control.quality_gates:
+                            if quality_gate["enabled"]:
+                                await tool_filter.run_quality_gate(quality_gate["id"])
+                control.before_completion = before_completion
                 stream_filter = tool_filter
                 if options.get("subagents_enabled") is True:
                     from firik_agent.projects.subagents import SubagentToolFilter
@@ -446,7 +462,7 @@ class CodingBridge(CodingActions):
                                                      cancel_event=cancel_event, run_control=control, cwd=cwd):
                     receive(event)
                     if event.type == AgentEventType.ERROR:
-                        status = "failed"
+                        status = "blocked" if control.state == "blocked" else "failed"
                         final = event.content or "Model isteği başarısız."
                     elif event.type == AgentEventType.DONE:
                         final = event.content or ""
@@ -455,10 +471,6 @@ class CodingBridge(CodingActions):
                     final = "Çalışma kullanıcı tarafından durduruldu."
                     terminal_events.clear()
                 elif status == "completed":
-                    if options.get("auto_quality_gates") and control.mode not in {"ask", "plan"}:
-                        for gate in control.quality_gates:
-                            if gate["enabled"]:
-                                await tool_filter.run_quality_gate(gate["id"])
                     completion = await tool_filter.completion_gate_async()
                     if not completion["passed"]:
                         status = "blocked"
@@ -470,32 +482,43 @@ class CodingBridge(CodingActions):
             except Exception as error:
                 status, final = "failed", str(error)
             finally:
-                if subagents is not None:
-                    try:
-                        await subagents.close()
-                    except Exception as error:
-                        status, final = "failed", f"Alt ajan kaydı saklanamadı: {self._coding_redact(str(error))}"
-                        terminal_events.clear()
-                if session is not None and initial_system_prompt is not None:
-                    session.system_prompt = initial_system_prompt
-                state["terminal_status"] = status
-                if status == "cancelled":
-                    terminal_events.clear()
-                try:
-                    persist_snapshot(status=status, final=final, force=True)
-                except Exception as error:
-                    status = "failed"
-                    final = f"Çalışma kaydı saklanamadı: {self._coding_redact(str(error))}"
-                    terminal_events.clear()
-                try:
-                    for name in acquired:
+                async def finalize_run():
+                    nonlocal status, final
+                    if subagents is not None:
                         try:
-                            await self.mcp_manager.release_for_session(session_id, name)
-                        except Exception:
-                            logger.warning("Kodlama MCP bağlantısı serbest bırakılamadı: %s", name)
-                finally:
-                    release_stream()
-                    notify(status, final)
+                            await subagents.close()
+                        except Exception as error:
+                            status, final = "failed", f"Alt ajan kaydı saklanamadı: {self._coding_redact(str(error))}"
+                            terminal_events.clear()
+                    if session is not None and initial_system_prompt is not None:
+                        session.system_prompt = initial_system_prompt
+                    state["terminal_status"] = status
+                    if status == "cancelled":
+                        terminal_events.clear()
+                    try:
+                        persist_snapshot(status=status, final=final, force=True)
+                    except Exception as error:
+                        status = "failed"
+                        final = f"Çalışma kaydı saklanamadı: {self._coding_redact(str(error))}"
+                        terminal_events.clear()
+                    try:
+                        for name in acquired:
+                            try:
+                                await self.mcp_manager.release_for_session(session_id, name)
+                            except Exception:
+                                logger.warning("Kodlama MCP bağlantısı serbest bırakılamadı: %s", name)
+                    finally:
+                        release_stream()
+                        notify(status, final)
+                # A second cancellation can arrive after the live control
+                # checkpoint already started cleanup. Keep durable finalization
+                # in its own shielded task so registries cannot be left active.
+                cleanup = asyncio.create_task(finalize_run())
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    await asyncio.shield(cleanup)
+
         coroutine = run()
         try:
             future = self.runtime.run_coroutine(coroutine)

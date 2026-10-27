@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime, timezone
-from tkinter import messagebox, simpledialog
+from tkinter import filedialog, messagebox, simpledialog
 from typing import Any
 
 import customtkinter as ctk
@@ -42,6 +42,40 @@ CATEGORY_TEXT = {
 def cockpit_value(state: dict, name: str, default: Any = None) -> Any:
     cockpit = state.get("cockpit")
     return cockpit.get(name, default) if isinstance(cockpit, dict) else getattr(cockpit, name, default)
+
+
+def completion_accounting(state: dict) -> tuple[dict, dict]:
+    """New aggregates carry coverage; legacy sessions retain their old fields."""
+    usage = state.get("usage", {})
+    record = state.get("record")
+    persisted = getattr(record, "usage", {}).get("harness_metrics", {}) if record else {}
+    metrics = persisted or state.get("harness_metrics") or usage.get("harness_metrics")
+    if isinstance(metrics, dict) and isinstance(metrics.get("usage"), dict):
+        return metrics.get("usage", {}), metrics
+    return usage, {}
+
+
+def update_accounting_state(state: dict, event: Any) -> None:
+    """Refresh aggregate displays only when accounting evidence can change."""
+    kind = str(getattr(event.type, "value", event.type))
+    deltas = {"text_delta", "reasoning_delta", "tool_call_arguments"}
+    if kind in deltas or kind == "subagent_event" and event.metadata.get("child_event_type") in deltas:
+        return
+    cockpit = state.get("cockpit")
+    if not hasattr(cockpit, "metrics_snapshot"):
+        return
+    metrics = cockpit.metrics_snapshot()
+    if cockpit.has_request_metrics or metrics.get("tool_calls"):
+        state["harness_metrics"] = metrics
+        state["usage"] = {**metrics["usage"], "harness_metrics": metrics}
+    else:
+        state["usage"] = {key: value for key, value in metrics["reported_usage"].items() if value is not None}
+
+
+def reported_agent_usage(agent: dict) -> str:
+    """Per-agent projections retain observed subtotals, not coverage proof."""
+    total = (agent.get("usage") or {}).get("total_tokens")
+    return f"Bildirilen token: {total} · Kapsam eksik olabilir" if total is not None else ""
 
 
 def display_status(value: Any) -> str:
@@ -120,6 +154,27 @@ def context_preference_update(state: dict, path: str, action: str) -> dict:
 
 
 class CodingEvidenceMixin:
+    def _open_benchmark_summary(self):
+        """Import an existing result for inspection; never start a trial."""
+        from pathlib import Path
+        from firik_agent.benchmarks.storage import load_report
+        from firik_agent.projects.cockpit import benchmark_report_summary
+        filename = filedialog.askopenfilename(title="Harness benchmark raporu", filetypes=[("JSON", "*.json")])
+        if not filename:
+            return
+        try:
+            summary = benchmark_report_summary(load_report(Path(filename)))
+            cost = f"${summary['cost']:.6f} ({', '.join(summary['cost_sources']) or 'kaynak bilinmiyor'})" if summary["cost"] is not None else "Bilinmiyor"
+            messagebox.showinfo("Harness Benchmark Lab",
+                f"{summary['label']} · {summary['profile']}\n"
+                f"Kontrol: {summary['fixtures_passed']}/{summary['trials']} · Doğrulanmış görev: {summary['verified_tasks']}\n"
+                f"Pass@1: {summary['pass_at_1']:.1%} · P50/P95: {summary['p50_ms']:.1f}/{summary['p95_ms']:.1f} ms\n"
+                f"Yanlış tamamlandı iddiası: {summary['false_completions']} · İzin ihlali: {summary['safety_violations']}\n"
+                f"Maliyet: {cost}\n\n{summary['method']}")
+        except (ValueError, OSError, TypeError, KeyError) as error:
+            from firik_agent.projects.coding_sessions import redact_sensitive
+            messagebox.showerror("Benchmark raporu okunamadı", redact_sensitive(str(error)))
+
     def _evidence_text(self, value, limit=OUTPUT_LIMIT):
         if not isinstance(value, str):
             value = json.dumps(value, ensure_ascii=False, indent=2, default=str)
@@ -181,6 +236,8 @@ class CodingEvidenceMixin:
             state="readonly", width=145, command=lambda value: self._refresh_coding_activity())
         self.coding_event_filter.set("Tüm işlemler")
         self.coding_event_filter.grid(row=1, column=0, sticky="w", padx=6, pady=4)
+        ctk.CTkButton(self.coding_evidence_header, text="Benchmark raporu", width=130, height=26,
+                     command=self._open_benchmark_summary).grid(row=1, column=1, padx=6, pady=4)
         self.coding_completion_actions = ctk.CTkFrame(self.coding_evidence_header, fg_color="transparent")
         self.coding_completion_actions.grid(row=2, column=0, sticky="w", padx=4, pady=3)
         for title, action in (("Farkı incele", lambda: self.coding_tabs.set("Değişiklikler")),
@@ -424,15 +481,21 @@ class CodingEvidenceMixin:
         failed = sum(test.get("exit_code") is not None and not test.get("passed") for test in tests)
         stale = sum(bool(test.get("stale")) for test in tests)
         agents = cockpit_value(state, "agents", {}) or {}
-        usage = state.get("usage", {})
+        usage, metrics = completion_accounting(state)
         tokens = usage.get("total_tokens")
-        cost = summary.get("cost", usage.get("cost"))
+        cost = usage.get("cost") if metrics else summary.get("cost", usage.get("cost"))
         detail = f"{state.get('status', 'Çalışma kaydı')}\n{len(changes)} dosya · +{sum(c.get('added', 0) for c in changes)} / −{sum(c.get('removed', 0) for c in changes)} satır"
         detail += f" · Doğrulama: {passed} geçti, {failed} hata" if tests else " · Doğrulama çalıştırılmadı"
         if stale:
             detail += f", {stale} yeniden doğrulanmalı"
-        detail += f"\nAjan: {len(agents) or 1} · Token: {tokens if tokens is not None else 'Sağlayıcı bildirmedi'}"
-        detail += f" · Tahmini maliyet: ${cost:.4f}" if isinstance(cost, (float, int)) else " · Fiyat bilgisi sağlayıcı tarafından sunulmuyor"
+        detail += f"\nAjan: {len(agents) or 1} · Token: {tokens if tokens is not None else 'Bilinmiyor' if metrics else 'Sağlayıcı bildirmedi'}"
+        detail += (f" · Tahmini maliyet: ${cost:.4f}" if isinstance(cost, (float, int)) else
+                   " · Maliyet bilinmiyor" if metrics else " · Fiyat bilgisi sağlayıcı tarafından sunulmuyor")
+        if metrics:
+            detail += f"\nModel isteği: {metrics.get('request_count', 0)} · Araç çağrısı: {metrics.get('tool_calls', 0)}"
+            detail += f" · İstek hatası: {metrics.get('failed_requests', 0)} · Araç hatası: {metrics.get('tool_errors', 0)}"
+            if not metrics.get("usage_complete") or not metrics.get("cost_complete"):
+                detail += " · Kullanım/maliyet kaydı eksik"
         duration = summary.get("duration_sec", summary.get("elapsed_sec"))
         if isinstance(duration, (int, float)):
             detail += f" · Süre: {duration:.1f} sn"
@@ -457,10 +520,9 @@ class CodingEvidenceMixin:
             model = str(agent.get("model") or state["session"].model)
             ctk.CTkLabel(card, text=self._evidence_text(f"{agent.get('provider') or self.service.provider} · {model}", 220),
                          anchor="w", justify="left", wraplength=230).pack(fill="x", padx=6)
-            usage = agent.get("usage") or {}
-            total = usage.get("total_tokens")
-            if total is not None:
-                ctk.CTkLabel(card, text=f"Token: {total} · Süre: {agent.get('elapsed_sec', 0):.1f} sn", anchor="w").pack(fill="x", padx=6)
+            usage_label = reported_agent_usage(agent)
+            if usage_label:
+                ctk.CTkLabel(card, text=usage_label, anchor="w", wraplength=230).pack(fill="x", padx=6)
             ctk.CTkButton(card, text="Ajanı incele", height=25, command=lambda: self._inspect_coding_agent(agent)).pack(fill="x", padx=6, pady=4)
         self._sync_evidence_cards("agents", self.coding_agent_list, records, render, "Henüz ajan çalışması başlamadı.")
 
@@ -598,7 +660,7 @@ class CodingEvidenceMixin:
         generation = state["run_id"]
         ended = False
         state.update(busy=True, stopped=False, status="İşlem izinleri değerlendiriliyor…", last_prompt=task, record=None,
-                     before=None, snapshot=None, changes=[], agent_paths={}, usage={})
+                     before=None, snapshot=None, changes=[], agent_paths={}, usage={}, harness_metrics={})
         cockpit = state.get("cockpit")
         if hasattr(cockpit, "start"):
             cockpit.start(state["session"].model, state.get("preferences", {}).get("provider", self.service.provider), task)
@@ -609,6 +671,7 @@ class CodingEvidenceMixin:
             cockpit = state.get("cockpit")
             if hasattr(cockpit, "apply"):
                 cockpit.apply(event)
+                update_accounting_state(state, event)
             value = event.type.value
             if value == "approval_required":
                 request = dict(event.metadata, arguments=event.arguments or event.metadata.get("arguments", {}),
@@ -795,7 +858,7 @@ class CodingEvidenceMixin:
         capabilities = state.get("capabilities", {})
         provider = state.get("preferences", {}).get("provider", self.service.provider)
         info = state.get("model_info") or {}
-        usage = state.get("usage", {})
+        usage, accounting = completion_accounting(state)
         from firik_agent.projects.model_capabilities import usage_tokens
         usage = {**usage, **{key: value for key, value in usage_tokens(usage).items() if value is not None}}
         metrics = (cockpit_value(state, "agents", {}) or {}).get("orchestrator", {}).get("metrics", {})
@@ -814,6 +877,8 @@ class CodingEvidenceMixin:
             for key, label in (("input_tokens", "Girdi"), ("output_tokens", "Çıktı"), ("cached_tokens", "Önbellek"), ("total_tokens", "Toplam")):
                 if usage.get(key) is not None:
                     lines.append(f"{label}: {usage[key]}")
+            if accounting and not accounting.get("usage_complete"):
+                lines.append("Token kapsamı eksik; toplam bilinmiyor.")
             for key, label in (("ttft_ms", "İlk token (ms)"), ("tokens_per_sec", "Token/sn"),
                                ("prompt_tokens_per_sec", "Girdi token/sn"), ("latency_ms", "Gecikme (ms)"),
                                ("retry_count", "Yeniden deneme"), ("ram_bytes", "RAM (bayt)"),
@@ -821,7 +886,8 @@ class CodingEvidenceMixin:
                 if metrics.get(key) is not None:
                     lines.append(f"{label}: {metrics[key]}")
             cost = usage.get("cost")
-            lines.append(f"Tahmini maliyet: ${cost:.4f}" if isinstance(cost, (int, float)) else "Fiyat bilgisi sağlayıcı tarafından sunulmuyor")
+            lines.append(f"Tahmini maliyet: ${cost:.4f}" if isinstance(cost, (int, float)) else
+                         "Maliyet bilinmiyor" if accounting else "Fiyat bilgisi sağlayıcı tarafından sunulmuyor")
             for key, label in (("input_cost_per_million", "Girdi fiyatı / 1M"), ("output_cost_per_million", "Çıktı fiyatı / 1M")):
                 if metadata.get(key) is not None:
                     lines.append(f"{label}: ${metadata[key]}")
