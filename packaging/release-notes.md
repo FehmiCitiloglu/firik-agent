@@ -1,3 +1,7 @@
+## v0.2.24 değişiklikleri
+
+- Windows üzerinde LSP dosya adresleri ve platformlar arası test uyumluluğu düzeltildi.
+
 ## v0.2.23 değişiklikleri
 
 - Python 3.10 üzerinde araç zaman aşımı sonrası belirsiz işlemlerin güvenli şekilde durdurulması düzeltildi.
