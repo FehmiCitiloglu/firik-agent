@@ -12,6 +12,10 @@ from firik_agent.projects.lsp import LSPAdapter, LSPUnavailable
 
 SERVER = r'''
 import json, os, sys
+if os.name == "nt":
+    import msvcrt
+    msvcrt.setmode(sys.stdin.fileno(), os.O_BINARY)
+    msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
 
 def send(value):
     payload = json.dumps(value).encode()
@@ -103,8 +107,10 @@ async def test_real_stdio_initialize_diagnostics_definitions_and_shutdown(tmp_pa
 
 @pytest.mark.asyncio
 async def test_timeout_and_cancellation_remove_pending_requests(tmp_path):
-    adapter = server(tmp_path, timeout=.1)
+    adapter = server(tmp_path, timeout=5)
     try:
+        assert await adapter.start()
+        adapter.timeout = .1
         with pytest.raises(asyncio.TimeoutError):
             await adapter.references("main.py", 0)
         assert not adapter._pending
