@@ -7,7 +7,7 @@ from firik_agent.providers.firik import FirikProvider
 from firik_agent.skills.skill import Skill
 from firik_agent.api import FirikAPI, FirikAPIError
 
-__version__ = "0.2.22"
+__version__ = "0.2.23"
 
 __all__ = [
     "Agent",

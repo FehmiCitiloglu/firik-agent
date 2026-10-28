@@ -1,3 +1,7 @@
+## v0.2.23 değişiklikleri
+
+- Python 3.10 üzerinde araç zaman aşımı sonrası belirsiz işlemlerin güvenli şekilde durdurulması düzeltildi.
+
 ## v0.2.22 değişiklikleri
 
 - Kodlama ajanına gelişmiş bağlam toplama, arama, araç seçimi ve LSP desteği eklendi.
