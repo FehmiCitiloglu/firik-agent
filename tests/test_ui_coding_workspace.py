@@ -47,6 +47,22 @@ def settle(app, seconds=0.15):
         time.sleep(0.005)
 
 
+def test_phase3_profile_selector_prepares_separate_context_and_inspector(workspace):
+    app, view, project, streams = workspace
+    view.coding_profile_selector._dropdown_callback("local-efficient")
+    assert view.project_service.db.get_settings(project.id).coding_preferences["harness_profile"] == "local-efficient"
+    view.coding_input.insert(0, "main.py açıkla")
+    view.coding_send_btn.invoke()
+    call = streams[-1]
+    assert call["coding_options"]["harness_profile"]["name"] == "local-efficient"
+    assert "print(" in call["coding_options"]["project_context"]
+    assert "print(" not in view._coding_state()["session"].system_prompt
+    view._coding_context_inspector()
+    settle(app)
+    assert view.coding_context_list.winfo_children()
+    call["on_done"]("Dosya incelendi")
+
+
 def test_subagent_opt_in_native_activity_card_and_terminal_isolation(workspace):
     app, view, project, streams = workspace
     assert not view.coding_subagents_var.get()

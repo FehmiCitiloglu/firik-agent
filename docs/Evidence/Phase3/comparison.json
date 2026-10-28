@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "method": "paired offline retrieval fixtures; no live model or billing measurement",
+  "fixture_sha256": "e2ffb0a0955fe4165d339cf8fe0488f45fe741e42a1c737954558d10eced7ed1",
+  "task_sha256": "51ac118ff27370a02276c1d22bcbcf86fb347bf1a2b782a6c0f5d54b9a2af1a0",
+  "baseline_implementation_sha256": "3a4525449e1851536299c1833e2504d1935ba09ccdc31e7f71451bd8471633b9",
+  "candidate_implementation_sha256": "32a3792bb049c64a1a832d15ddac6a1ee41c786c0df6cf6bd4cca2260ba5e091",
+  "baseline": {
+    "trials": 18,
+    "retrieval_successes": 15,
+    "median_latency_ms": 156.69633349898504,
+    "median_warm_latency_ms": 158.99924949917477,
+    "total_retrieved_context_utf8_bytes": 12474,
+    "unrelated_noise_files": 69,
+    "total_retrieved_tokens_estimate": 3144,
+    "model_task_success": null,
+    "provider_cost": null,
+    "provider_requests": 0
+  },
+  "candidate": {
+    "trials": 18,
+    "retrieval_successes": 18,
+    "median_latency_ms": 249.63052100065397,
+    "median_warm_latency_ms": 239.8132504968089,
+    "total_retrieved_context_utf8_bytes": 7494,
+    "unrelated_noise_files": 0,
+    "total_retrieved_tokens_estimate": 1890,
+    "model_task_success": null,
+    "provider_cost": null,
+    "provider_requests": 0
+  },
+  "retrieved_tokens_estimate_change_percent": -39.8854961832061,
+  "median_latency_change_percent": 59.30846333572373,
+  "model_task_success": null,
+  "provider_cost": null
+}

@@ -94,6 +94,8 @@ class ProjectContextBuilder:
             raise ValueError("Oturum özeti bu projeye ait değil.")
         self._last_slices: Optional[Dict[str, ContextSlice]] = None
         self._last_prompt = ""
+        self._trusted_prompt = ""
+        self._project_context = ""
 
     @staticmethod
     def _json(value: Any) -> str:
@@ -173,6 +175,8 @@ class ProjectContextBuilder:
                           "estimate_only": True, "included": included, "truncated": visible < len(block),
                           "pinned": bool(metadata.get("pinned")), "always_include": bool(metadata.get("always_include")),
                           "summarized": bool(metadata.get("summarized")),
+                          "score": metadata.get("score"), "factors": metadata.get("factors", {}),
+                          "file_hash": metadata.get("file_hash"),
                           "line_start": metadata.get("line_start", 1), "line_end": metadata.get("line_end")})
             cursor += len(block) + 1
         for memory in self.memories:
@@ -243,8 +247,19 @@ class ProjectContextBuilder:
             if text:
                 parts.append(headings[key] + text)
         prompt = "".join(parts)
+        # The combined string remains a backwards compatible preview. Runtime
+        # callers use separate roles so repository bytes cannot become policy.
+        trusted = (CONTEXT_POLICY + trusted_base)[:char_limit]
+        self._trusted_prompt = trusted
+        self._project_context = prompt[len(trusted):]
         self._last_slices, self._last_prompt = slices, prompt
         return prompt
+
+    def get_request_parts(self) -> Dict[str, str]:
+        if not self._last_prompt:
+            raise ValueError("Önce proje bağlamı hazırlanmalı.")
+        return {"trusted_system_prompt": self._trusted_prompt,
+                "project_context": self._project_context}
 
     def get_visibility_report(self) -> List[Dict[str, Any]]:
         report = []

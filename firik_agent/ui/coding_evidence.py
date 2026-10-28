@@ -44,6 +44,28 @@ def cockpit_value(state: dict, name: str, default: Any = None) -> Any:
     return cockpit.get(name, default) if isinstance(cockpit, dict) else getattr(cockpit, name, default)
 
 
+def context_detail_records(state: dict, report: dict) -> list[dict]:
+    """Bounded presentation metadata shared by live and restored context views."""
+    profile = report.get("harness_profile") or state.get("harness_profile") or {}
+    confidence = report.get("capability_confidence", "unknown")
+    confidence_label = {"unknown": "Bilinmiyor", "verified": "Doğrulandı",
+                        "provider_declared": "Sağlayıcı beyanı"}.get(confidence, str(confidence))
+    records = [{"id": "context-profile", "type": "detail", "label": "Çalışma profili",
+                "detail": profile.get("name", "coding")},
+               {"id": "context-confidence", "type": "detail", "label": "Yetenek güveni",
+                "detail": confidence_label}]
+    tools = report.get("tool_schemas_selected", [])
+    if tools:
+        records.append({"id": "context-tools", "type": "detail", "label": f"Seçilen araç şemaları ({len(tools)})",
+                        "detail": ", ".join(tools[:80])})
+    for index, warning in enumerate(report.get("warnings", [])[:10]):
+        records.append({"id": f"context-warning:{index}", "type": "detail", "label": "Eksik bağlam uyarısı", "detail": warning})
+    for index, item in enumerate((report.get("excluded_sources") or state.get("excluded_sources", []))[:80]):
+        records.append({"id": f"context-excluded:{index}", "type": "detail", "label": "Dışlanan kaynak: " + str(item.get("path", "")),
+                        "detail": item.get("reason", "Bağlam tercihi nedeniyle dışlandı")})
+    return records
+
+
 def completion_accounting(state: dict) -> tuple[dict, dict]:
     """New aggregates carry coverage; legacy sessions retain their old fields."""
     usage = state.get("usage", {})
@@ -803,12 +825,13 @@ class CodingEvidenceMixin:
         state = self._coding_state()
         report = cockpit_value(state, "context", {}) or state.get("context_inspector", {})
         records = [{"id": "context-total", "type": "total", "report": report}]
+        records += context_detail_records(state, report)
         categories = report.get("categories", [])
         if not categories:
             categories = [{"key": item.get("key"), "label": item.get("display_name"), "tokens": item.get("tokens_used", 0)}
                           for item in state.get("context_report", [])]
         records += [{"id": "category:" + str(item.get("key", index)), "type": "category", **item} for index, item in enumerate(categories)]
-        records += [{"type": "item", **item} for item in state.get("context_items", [])[:80]]
+        records += [{"type": "item", **item} for item in (report.get("sources") or state.get("context_items", []))[:80]]
         def render(card, record, identifier, expanded):
             if record["type"] == "total":
                 total = report.get("estimated_input_tokens")
@@ -821,6 +844,9 @@ class CodingEvidenceMixin:
                 progress.pack(fill="x", padx=6, pady=5)
                 ctk.CTkLabel(card, text=report.get("label") or "Token hesabı yerel tahmindir; sağlayıcı token sayacı farklı olabilir.",
                              wraplength=230, justify="left").pack(fill="x", padx=6, pady=4)
+            elif record["type"] == "detail":
+                ctk.CTkLabel(card, text=self._evidence_text(str(record["label"]) + "\n" + str(record["detail"]), 1200),
+                             anchor="w", justify="left", wraplength=230).pack(fill="x", padx=6, pady=4)
             elif record["type"] == "category":
                 label = record.get("label") or CATEGORY_TEXT.get(record.get("key"), record.get("key", "Bağlam"))
                 ctk.CTkLabel(card, text=f"{label} · ~{record.get('tokens', 0)} token", anchor="w", wraplength=230).pack(fill="x", padx=6, pady=3)

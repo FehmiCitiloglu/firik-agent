@@ -20,11 +20,11 @@ from firik_agent.projects.model_capabilities import model_capabilities
 class CodingActions:
     def _coding_metadata(self, provider, model):
         config = self.config.get("providers", {}).get(provider, {})
-        rows = (config.get("models") or {}) if isinstance(config, dict) else {}
+        rows = (config.get("model_capabilities") or config.get("models") or {}) if isinstance(config, dict) else {}
         metadata = rows.get(model) if isinstance(rows, dict) else next(
             (item for item in rows if isinstance(item, dict) and item.get("id") == model), None)
         if isinstance(metadata, dict) and (metadata.get("verified") is True
-                or metadata.get("source") in {"provider", "verified_probe"}):
+                or metadata.get("source") in {"provider", "verified_probe", "verified_config"}):
             return deepcopy(metadata)
         if provider == self.provider and self._model_metadata_url == self.base_url:
             cached = self._model_metadata.get(model)

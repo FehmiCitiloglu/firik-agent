@@ -238,6 +238,18 @@ class FirikService(CodingBridge):
     def configure_model_metadata(self, provider) -> None:
         if provider.name == self.provider and provider.base_url.rstrip("/") == self.base_url.rstrip("/"):
             provider.model_metadata = dict(self._model_metadata) if self._model_metadata_url == self.base_url else {}
+        # Apply the same exact-model evidence in desktop and registry paths.
+        # Endpoint catalogue refreshes cannot silently erase explicit host config.
+        configured = self.config.get("providers", {}).get(provider.name, {})
+        rows = configured.get("model_capabilities") or configured.get("models") or {}
+        if isinstance(rows, list):
+            rows = {row["id"]: row for row in rows if isinstance(row, dict) and isinstance(row.get("id"), str)}
+        if isinstance(rows, dict):
+            from firik_agent.projects.model_capabilities import model_capabilities
+            for model, evidence in rows.items():
+                if isinstance(evidence, dict) and (evidence.get("verified") is True
+                        or evidence.get("source") in {"provider", "verified_probe", "verified_config"}):
+                    provider.model_metadata[model] = {"id": model, **model_capabilities(evidence)}
 
     def fetch_models_async(
         self,

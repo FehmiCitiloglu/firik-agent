@@ -15,6 +15,7 @@ from firik_agent.projects.db import ProjectDatabase
 from firik_agent.projects.git_service import GitService
 from firik_agent.projects.explorer import ProjectExplorer
 from firik_agent.projects.indexer import CodebaseIndexer, IGNORED_EXTENSIONS, read_project_text, safe_project_path, sanitize_secrets, sanitize_git_diff
+from firik_agent.projects.retrieval import ContextRetrievalPipeline, query_tokens
 from firik_agent.projects.model_capabilities import model_capabilities, context_budget
 from firik_agent.projects.skill_selection import skill_catalogue, select_skill_instructions
 from firik_agent.projects.models import (
@@ -29,6 +30,15 @@ class ProjectCodingService:
 
     def __init__(self, db: ProjectDatabase):
         self.db = db
+        self._context_indexes: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
+        self._lsp_adapters: Dict[str, Any] = {}
+
+    def register_lsp_adapter(self, project_id: str, adapter: Any) -> None:
+        """Attach an already explicitly approved adapter; never start/install here."""
+        project = self.db.get_project(project_id)
+        if not project or Path(project.local_path).resolve() != adapter.root or not adapter.approved:
+            raise ValueError("LSP bağdaştırıcısı proje kapsamı ve açık onay gerektirir.")
+        self._lsp_adapters[project_id] = adapter
 
     def suggest_composer(self, project_id: str, query: str, *,
                          composer_context: Optional[Dict[str, Any]] = None,
@@ -73,6 +83,8 @@ class ProjectCodingService:
         pinned_paths: Optional[List[str]] = None, always_include_paths: Optional[List[str]] = None,
         excluded_paths: Optional[List[str]] = None, summarized_paths: Optional[List[str]] = None,
         composer_context: Optional[Dict[str, Any]] = None,
+        harness_profile: Optional[str | Dict[str, Any]] = None,
+        harness_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Re-read project rules, task, files, Git, and continuity for every turn."""
         project = self.db.get_project(project_id)
@@ -91,11 +103,14 @@ class ProjectCodingService:
             raise ValueError("Oturum özeti bu göreve ait değil.")
         settings = self.db.get_settings(project_id)
         preferences = getattr(settings, "coding_preferences", {})
+        from firik_agent.projects.harness_profiles import resolve_harness_profile
+        profile = resolve_harness_profile(preferences, harness_profile, harness_config)
         parsed = parse_composer(user_request)
         reference_paths = [item["value"] for item in parsed["references"] if item["kind"] in {"file", "folder"}]
         pinned = list(pinned_paths if pinned_paths is not None else preferences.get("pinned_files", []))
         always = list(always_include_paths if always_include_paths is not None else preferences.get("always_include_files", []))
-        excluded = list(excluded_paths if excluded_paths is not None else preferences.get("excluded_files", []))
+        # A narrower session selection cannot remove durable project exclusions.
+        excluded = list(dict.fromkeys(list(preferences.get("excluded_files", [])) + list(excluded_paths or [])))
         summarized = list(summarized_paths if summarized_paths is not None else preferences.get("summarized_files", []))
         normalized_paths = {}
         def normalize_path(value):
@@ -109,6 +124,8 @@ class ProjectCodingService:
             normalized_paths[value] = normalized
             return normalized
         def covered(path, selections):
+            if not selections:
+                return False
             path = normalize_path(path)
             return any(selection == "." or path == selection or path.startswith(selection + "/") for selection in map(normalize_path, selections))
         def excluded_file(path):
@@ -122,26 +139,46 @@ class ProjectCodingService:
                                  or getattr(session, "session_id", "") == session_id)
                              and (not task_id or session.task_id == task_id)), None)
         capabilities = model_capabilities(model_metadata)
-        budget = context_budget(capabilities, local_budget=total_token_budget)
+        budget = context_budget(capabilities, local_budget=min(total_token_budget, profile["context_tokens"] // 2))
         indexer = CodebaseIndexer(project.local_path)
         all_indexed = self.db.get_all_code_indexes(project_id)
-        indexed = [item for item in all_indexed if not excluded_file(item["file_path"])]
+        index_key = (project_id, str(indexer.root))
+        previous = self._context_indexes.get(index_key, all_indexed)
+        indexed = indexer.refresh_index(previous, excluded=excluded_file) if allow_read else []
+        if allow_read:
+            self._context_indexes[index_key] = indexed
+            prior_hashes = {item["file_path"]: item.get("file_hash") for item in all_indexed}
+            columns = ("file_path", "file_type", "symbols", "classes", "functions", "imports", "todos", "file_hash")
+            for item in indexed:
+                if prior_hashes.get(item["file_path"]) != item["file_hash"]:
+                    self.db.save_code_index(project_id, **{key: item[key] for key in columns})
+            for item in all_indexed:
+                relative = item["file_path"]
+                if excluded_file(relative):
+                    continue
+                try:
+                    if not safe_project_path(indexer.root, relative).exists():
+                        self.db.delete_code_index(project_id, relative)
+                except (ValueError, OSError):
+                    continue
         query = parsed["user_prompt"] + (" " + task.title + " " + task.description if task else "")
-        matches = indexer.search_codebase(query, indexed, limit=8) if allow_read else []
-        # The content fallback is bounded and also discovers files created after indexing.
-        # Supply a filtered path list even without a persisted index: exclusions
-        # take effect before content search reads anything.
-        search_index = indexed
-        if allow_read and not all_indexed:
-            search_index = [{"file_path": path.relative_to(indexer.root).as_posix()}
-                            for path in indexer.scan_files(max_files=300)
-                            if not excluded_file(path.relative_to(indexer.root).as_posix())]
-        content_matches = indexer.search_content(query, search_index, limit=6, max_files=300) if allow_read and search_index else []
         selected = list(relevant_paths or []) + reference_paths
-        paths = always + pinned + selected + (list(task.related_files) if task else [])
-        if feature:
-            paths += feature.related_files
-        paths += [match["file_path"] for match in matches + content_matches]
+        task_paths = (list(task.related_files) if task else []) + (list(feature.related_files) if feature else [])
+        lsp_adapter = self._lsp_adapters.get(project_id)
+        lsp_status = lsp_adapter.snapshot() if lsp_adapter and allow_read else {"status": "not_configured", "diagnostics": []}
+        # Only current project diagnostics may become retrieval signals. Exclusions
+        # are reapplied even if the adapter was configured before a preference change.
+        diagnostics = [item for item in lsp_status.get("diagnostics", []) if not excluded_file(item.get("path", ""))] if lsp_status.get("status") == "ready" else []
+        retrieval = ContextRetrievalPipeline(indexer, indexed, excluded=excluded_file).run(
+            query, pinned=pinned, always=always, selected=selected, task_paths=task_paths,
+            verified_edits=last_session.file_journal if last_session else [], diagnostics=diagnostics)
+        retrieval["report"]["lsp"] = {key: value for key, value in lsp_status.items() if key != "diagnostics"}
+        matches = retrieval["candidates"]
+        candidate_metadata = {item["file_path"]: item for item in matches}
+        content_matches = retrieval["content_matches"]
+        # Explicit folder requests retain bounded expansion; rank their matching
+        # children first while never using arbitrary unrelated files automatically.
+        paths = pinned + always + selected + task_paths + [match["file_path"] for match in matches]
         unavailable: List[str] = []
         unavailable_report: List[Dict[str, str]] = []
         def report_unavailable(path: str, reason: str) -> None:
@@ -211,15 +248,7 @@ class ProjectCodingService:
         else:
             for relative in dict.fromkeys(paths):
                 report_unavailable(relative, "Proje dosyalarını okuma izni kapalı olduğu için bağlama eklenmedi.")
-        # Add direct Python dependencies from index metadata without loading every module.
-        lookup = {item["file_path"]: item for item in indexed}
-        for path in list(dict.fromkeys(paths))[:8]:
-            for dependency in lookup.get(path, {}).get("imports", [])[:8]:
-                candidate = dependency.replace(".", "/")
-                for suffix in (".py", "/__init__.py"):
-                    if candidate + suffix in lookup:
-                        if not excluded_file(candidate + suffix):
-                            paths.append(candidate + suffix)
+        # Dependencies and matching tests were expanded against the safe fresh graph.
         relevant_files: Dict[str, str] = {}
         file_metadata: Dict[str, Dict[str, Any]] = {}
         if allow_read:
@@ -245,11 +274,14 @@ class ProjectCodingService:
                     if is_summary:
                         excerpt = "[Yerel sıkıştırma: en fazla 30 kaynak satırı; model tarafından üretilmiş özet değildir.]\n" + excerpt
                     relevant_files[rel] = excerpt[:10000]
-                    source = "always" if covered(rel, always) else "pinned" if covered(rel, pinned) else "selected" if covered(rel, selected) else "task" if task and covered(rel, task.related_files) else "retrieved" if any(item["file_path"] == rel for item in matches + content_matches) else "dependency"
+                    candidate = candidate_metadata.get(rel, {})
+                    source = "pinned" if covered(rel, pinned) else "always" if covered(rel, always) else "selected" if covered(rel, selected) else "task" if covered(rel, task_paths) else candidate.get("source", "retrieved")
                     reasons = {"always": "Kullanıcı her isteğe eklenmesini seçti", "pinned": "Kullanıcı kaynak bağlamını sabitledi",
                                "selected": "Kullanıcı bu dosyayı veya klasörü seçti", "task": "Aktif görevin ilgili dosyası",
-                               "retrieved": "Görev sorgusunda dosya, sembol veya içerik eşleşmesi", "dependency": "İlgili dosyanın indekslenmiş bağımlılığı"}
-                    file_metadata[rel] = {"source": source, "reason": reasons[source], "pinned": covered(rel, pinned),
+                               "retrieved": "Görev sorgusunda dosya, sembol veya içerik eşleşmesi", "dependency": "İlgili dosyanın indekslenmiş bağımlılığı", "test": "İlgili kaynak dosyasının testi"}
+                    file_metadata[rel] = {"source": source, "reason": candidate.get("reason", reasons[source]),
+                                          "score": candidate.get("score", 0), "factors": candidate.get("factors", []),
+                                          "file_hash": candidate.get("file_hash"), "pinned": covered(rel, pinned),
                                           "always_include": covered(rel, always), "summarized": is_summary,
                                           "line_start": first + 1, "line_end": min(len(lines), first + count)}
                 except ValueError as error:
@@ -302,15 +334,24 @@ class ProjectCodingService:
             if kind not in {"file", "folder", "skill", "mcp"}:
                 reference_report.append({**reference, "resolved": resolved is not None,
                                          "reason": "Proje kapsamındaki kayıt eklendi" if resolved else "Bu proje kapsamında referans kaydı bulunamadı"})
-        diff = GitService.get_diff(project.local_path, staged=False, max_lines=180) if allow_read else ""
-        if excluded:
-            sections = re.split(r"(?m)(?=^diff --git )", diff)
-            diff = "".join(section for section in sections if not any(excluded_file(path.strip('"'))
-                           for path in re.findall(r"(?m)^(?:---|\+\+\+) [ab]/(.+)$", section)))
+        diff = GitService.get_diff(project.local_path, staged=False, max_lines=180,
+                                   file_paths=list(relevant_files)) if allow_read else ""
+        diff = sanitize_git_diff(diff, excluded=excluded_file)
+        relevance_terms = query_tokens(query)
+        def relevance_score(text):
+            return sum(term in str(text).casefold() for term in relevance_terms)
+        memories = self.db.list_memories(project_id)
+        memories.sort(key=lambda item: (item.status == "pinned", relevance_score(item.content)), reverse=True)
+        adrs = self.db.list_adrs(project_id)
+        adrs.sort(key=lambda item: relevance_score(item.title + " " + item.context + " " + item.decision), reverse=True)
+        retrieval["report"]["decision_sources"] = [
+            {"id": item.id, "source": "accepted_adr", "relevance_matches": relevance_score(item.title + " " + item.context + " " + item.decision),
+             "reason": "Kabul edilmiş karar; görev sorgusuyla eşleşme önceliği"}
+            for item in adrs if item.project_id == project_id and item.status == "accepted"][:6]
         builder = ProjectContextBuilder(
             project=project, settings=settings, instructions=self.db.list_instructions(project_id),
-            memories=self.db.list_memories(project_id), current_feature=feature, current_task=task,
-            adrs=self.db.list_adrs(project_id), relevant_files=relevant_files,
+            memories=memories, current_feature=feature, current_task=task,
+            adrs=adrs, relevant_files=relevant_files,
             git_diff=diff,
             last_session=last_session, total_token_budget=budget["token_budget"],
             documents=prepared_documents, selected_skills=loaded_skills, session_carry=carry, file_metadata=file_metadata,
@@ -326,17 +367,32 @@ class ProjectCodingService:
         budget["estimated_tokens_used"] = (len(system_prompt) + 3) // 4
         visibility = builder.get_visibility_report()
         context_items = builder.get_context_items()
-        inspector = inspect_request_context([{"role": "system", "content": system_prompt},
+        request_parts = builder.get_request_parts()
+        retrieval["report"].update(
+            assembled_sources=len(relevant_files),
+            included_sources=sum(bool(item.get("included")) for item in context_items if item.get("path")),
+            estimated_retrieved_tokens=sum(item.get("tokens_used", 0) for item in context_items if item.get("included")),
+            token_count_method="local_characters_divided_by_four", estimate_only=True)
+        inspector = inspect_request_context([{"role": "system", "content": request_parts["trusted_system_prompt"]},
+                                             {"role": "user", "content": request_parts["project_context"]},
                                              {"role": "user", "content": parsed["user_prompt"]}], [], capabilities,
-                                            visibility_report=visibility, context_items=context_items)
+                                            visibility_report=visibility, context_items=context_items,
+                                            project_context=request_parts["project_context"], harness_profile=profile,
+                                            excluded_sources=unavailable_report, context_pipeline=retrieval["report"])
         return {"project": project, "task": task, "feature": feature,
+                **request_parts, "harness_profile": profile,
                 "system_prompt": system_prompt, "user_prompt": parsed["user_prompt"],
                 "visibility_report": visibility, "model": settings.coding_model,
                 "context_items": context_items, "context_inspector": inspector,
                 "composer": {**parsed, "reference_report": reference_report},
-                "index_status": {"files": len(all_indexed), "symbols": sum(len(item.get("symbols", [])) for item in all_indexed),
-                                 "dependency_edges": sum(len(item.get("imports", [])) for item in all_indexed),
-                                 "semantic_index_available": False, "source": "persisted_index"},
+                "context_pipeline": retrieval["report"],
+                "index_status": {**indexer.last_refresh,
+                                 "files": len(indexed) + sum(excluded_file(item["file_path"]) for item in all_indexed),
+                                 "available_files": len(indexed),
+                                 "symbols": sum(len(item.get("symbols", [])) for item in indexed),
+                                 "dependency_edges": sum(len(edges) for edges in retrieval["dependency_graph"].values()),
+                                 "semantic_index_available": False,
+                                 "source": "incremental_hash_index" if allow_read else "reads_denied"},
                 "capabilities": capabilities, "context_budget": budget,
                 "relevant_files": list(relevant_files), "unavailable_files": unavailable,
                 "unavailable_report": unavailable_report,

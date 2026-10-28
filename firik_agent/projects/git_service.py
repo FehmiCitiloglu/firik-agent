@@ -145,9 +145,20 @@ class GitService(GitInsightsMixin, GitOperationsMixin):
         return commits
 
     @classmethod
-    def get_diff(cls, path: str | Path, staged: bool = False, max_lines: int = 500, file_path: str = "", strict: bool = False) -> str:
+    def get_diff(cls, path: str | Path, staged: bool = False, max_lines: int = 500, file_path: str = "", strict: bool = False,
+                 file_paths: Optional[List[str]] = None) -> str:
         args = ["diff", "--no-ext-diff", "--no-textconv", "--cached"] if staged else ["diff", "--no-ext-diff", "--no-textconv"]
-        if file_path:
+        if file_paths is not None:
+            if not file_paths:
+                return ""
+            # Paths are relative to the selected workspace (which may itself be
+            # a subdirectory of a repository). Non-Git projects retain the
+            # historical empty-diff behavior through _run_git below.
+            root = Path(path).expanduser().resolve()
+            relatives = [cls._insights_file(root, entry) for entry in dict.fromkeys(file_paths[:64])]
+            args.extend(["--", *[f":(literal){relative}" for relative in relatives]])
+            path = root
+        elif file_path:
             root = cls._insights_root(path)
             relative = cls._insights_file(root, file_path)
             args.extend(["--", f":(literal){relative}"])

@@ -328,6 +328,9 @@ class CodingRunControl:
         self.verifications: list[dict[str, Any]] = []
         self.failures: Dict[str, int] = {}
         self.capabilities: Dict[str, Any] = {}
+        self.harness_profile: Dict[str, Any] | None = None
+        self.discovered_tools: set[str] = set()
+        self.tool_selection: Dict[str, Any] = {}
         self.decisions: list[dict[str, Any]] = []
         self.quality_gates: list[dict[str, Any]] = []
         self.quality_results: list[dict[str, Any]] = []
@@ -531,6 +534,7 @@ class CodingToolFilter:
     READ_TOOLS = {"read_file", "list_files", "search_project", "search_symbols", "git_status", "git_diff"}
     EDIT_TOOLS = {"edit_file", "write_file", "apply_patch", "delete_file", "undo_change"}
     STATE_TOOLS = {"update_plan", "record_verification", "discover_quality_gates", "run_quality_gate"}
+    META_TOOLS = {"discover_tools"}
 
     def __init__(self, root: str | Path, control: CodingRunControl,
                  mcp_registry: Optional[ToolRegistry] = None,
@@ -547,6 +551,7 @@ class CodingToolFilter:
         self._verified_evidence: set[str] = set()
         self._evidence_versions: dict[str, dict[str, Any]] = {}
         self.before_file_mutation: Optional[Callable[[str], None]] = None
+        self._schema_session: Optional[ChatSession] = None
         self._register_tools()
 
     def _resolve(self, raw: str, *, must_exist: bool = True) -> Path:
@@ -674,6 +679,9 @@ class CodingToolFilter:
 
     def _register_tools(self) -> None:
         s, n = {"type": "string"}, {"type": "integer"}
+        if self.control.harness_profile:
+            self._register("discover_tools", "İzinli araç kataloğunda ara; sonraki isteğe gerekli şemaları ekle. İzinleri değiştirmez.",
+                           self.discover_tools, {"query": s, "names": {"type": "array", "items": s}}, [])
         self._register("read_file", "Proje dosyasını satır aralığı ve SHA-256 sürüm özetiyle oku.", self.read_file,
                        {"path": s, "start_line": n, "end_line": n}, ["path"])
         self._register("list_files", "Filtreli proje ağacını sınırlı ve kademeli listele.", self.list_files,
@@ -733,7 +741,7 @@ class CodingToolFilter:
             action = self._tool_policy(name)
             if action and self.control.permission_decision(action) == "deny":
                 return False
-            mode_tools = self.READ_TOOLS if self.control.mode == "ask" else self.READ_TOOLS | {"update_plan"}
+            mode_tools = self.READ_TOOLS | self.META_TOOLS if self.control.mode == "ask" else self.READ_TOOLS | self.META_TOOLS | {"update_plan"}
             if self.control.mode in {"ask", "plan"} and name not in mode_tools:
                 return False
             if name in self.EDIT_TOOLS and not self.control.permissions["allow_edits"]:
@@ -753,10 +761,37 @@ class CodingToolFilter:
                     and definition.source[4:] in session.active_mcp_servers)
 
     def get_schemas(self, session: ChatSession) -> list[dict[str, Any]]:
+        self._schema_session = session
+        self.control.explicit_mcp_tools = self.trusted_mcp_tools
         definitions = self.tools.list_tools()
         if self.mcp_registry:
             definitions += [tool for tool in self.mcp_registry.list_tools() if not self.tools.get_tool(tool.name)]
         return [tool.to_schema() for tool in definitions if self.is_tool_allowed(tool.name, session)]
+
+    def discover_tools(self, query: str = "", names: Optional[list[str]] = None) -> dict[str, Any]:
+        """Discover only current permitted schemas; never accept schema bodies."""
+        session = self._schema_session
+        if session is None or session.session_id != self.control.session_id:
+            raise PermissionError("Araç keşfi doğru oturum kapsamında yapılmalıdır.")
+        if names is not None and (len(names) > 32 or any(not isinstance(name, str) for name in names)):
+            raise ValueError("En çok 32 araç adı belirtin.")
+        if len(query) > 1000:
+            raise ValueError("Araç arama sorgusu çok uzun.")
+        definitions = self.tools.list_tools() + (self.mcp_registry.list_tools() if self.mcp_registry else [])
+        words = [word.casefold() for word in re.findall(r"\w+", query)]
+        found = []
+        for tool in definitions:
+            if not self.is_tool_allowed(tool.name, session):
+                continue
+            requested = tool.name in (names or [])
+            matched = bool(words) and any(word in (tool.name + " " + tool.description).casefold() for word in words)
+            if requested or matched or query == "*":
+                self.control.discovered_tools.add(tool.name)
+                found.append({"name": tool.name, "description": tool.description[:240]})
+            if len(found) >= 32:
+                break
+        return {"tools": found, "permission_effect": "none", "selection_only": True,
+                "fallback": "İzinli envanter için query=* kullanın; çalıştırma izinleri her çağrıda yeniden denetlenir."}
 
     async def execute(self, tool_call: ToolCall, session: ChatSession) -> ToolResult:
         name = tool_call.function.name
@@ -764,7 +799,7 @@ class CodingToolFilter:
         dispatched = False
         try:
             await self.control.checkpoint()
-            if self.control.unresolved_operations and name not in self.READ_TOOLS | {"discover_quality_gates"}:
+            if self.control.unresolved_operations and name not in self.READ_TOOLS | self.META_TOOLS | {"discover_quality_gates"}:
                 raise PermissionError("Sonucu bilinmeyen işlem var; uzlaştırma tamamlanmadan yeni yan etki başlatılamaz.")
             if self.control.failures.get(failure_key, 0) >= 3:
                 raise ValueError("Aynı işlem üç kez başarısız oldu; yöntem veya parametre değiştirin.")

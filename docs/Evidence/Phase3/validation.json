@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "verification_date": "2026-10-27",
+  "source_base_commit": "d40230ea0b69cb1442aa4011aab7274b2d1eefc7",
+  "implementation_sha256": "32a3792bb049c64a1a832d15ddac6a1ee41c786c0df6cf6bd4cca2260ba5e091",
+  "python": "3.13.2",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "regression": {
+    "command": ".venv/bin/python -m pytest -q",
+    "graphical_session_access": true,
+    "passed": 1021,
+    "skipped": 1,
+    "duration_seconds": 136.98,
+    "skip_reason": "Windows cmd quoting regression is not applicable on macOS",
+    "failed": 0
+  },
+  "python_3_10_parse": {
+    "modules": 146,
+    "passed": true
+  },
+  "diff_check": "passed",
+  "native_profile_ui_test": "tests/test_ui_coding_workspace.py::test_phase3_profile_selector_prepares_separate_context_and_inspector",
+  "live_provider_evaluation": null,
+  "provider_cost": null
+}

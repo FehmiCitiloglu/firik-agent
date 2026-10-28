@@ -183,7 +183,10 @@ async def test_coding_compaction_keeps_authoritative_state_and_permissions():
     assert "context_compacted" in [e.type.value for e in events]
     assert not any(e.type.value == "error" for e in events)
     system = '\n'.join(m.content or '' for m in provider.streams[0]["messages"] if m.role == "system")
-    assert '"allowed": false' in system and '"passed": false' in system and 'failed-1' in system
+    task_data = '\n'.join(m.content or '' for m in provider.streams[0]["messages"] if m.role == "user")
+    assert '"allowed": false' in task_data and '"passed": false' in task_data and 'failed-1' in task_data
+    assert 'failed-1' not in system and '"allowed": false' not in system
+    assert "Çalışma modu: ask" in system
     assert control.mode == "ask" and control.plan[0]["status"] == "pending"
 
 

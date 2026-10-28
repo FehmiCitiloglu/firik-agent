@@ -254,7 +254,8 @@ async def test_dependencies_receive_real_result_and_cancelled_prerequisite_block
             started.set()
             await release.wait()
             return "Önceki kanıt"
-        assert "Önceki kanıt" in job["session"].system_prompt
+        assert "Önceki kanıt" not in job["session"].system_prompt
+        assert any("Önceki kanıt" in (message.content or "") for message in job["session"].messages if message.role == "user")
         return "Bağımlı sonuç"
     manager.coordinator.register("planning", runner)
     try:

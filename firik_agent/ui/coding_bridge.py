@@ -65,10 +65,11 @@ class CodingBridge(CodingActions):
                 # and model-name guesses cannot establish a capability.
                 if isinstance(metadata, dict):
                     source = metadata.get("source") or metadata.get("capability_source")
-                    if metadata.get("verified") is True or source in {"provider", "verified_probe"}:
+                    if metadata.get("verified") is True or source in {"provider", "verified_probe", "verified_config"}:
                         prepared_options["model_metadata"] = deepcopy(metadata)
             if "available_skills" not in prepared_options:
                 prepared_options["available_skills"] = self._coding_skill_definitions(project_id, options.get("session_id"))
+            prepared_options.setdefault("harness_config", self.config.get("agent", {}))
             return self.projects.coding.prepare_coding_prompt(project_id, self._coding_redact(prompt), **prepared_options)
         async def prepare():
             return await asyncio.to_thread(prepare_context)
@@ -332,9 +333,18 @@ class CodingBridge(CodingActions):
                                            run_id=run_id, policy=options.get("policy"),
                                            excluded_paths=options.get("excluded_paths", []))
                 control.capabilities = dict(options.get("capabilities", {}))
+                from firik_agent.projects.harness_profiles import resolve_harness_profile
+                control.harness_profile = resolve_harness_profile(
+                    self.projects.db.get_settings(project_id).coding_preferences,
+                    options.get("harness_profile"), self.config.get("agent", {}))
+                control.project_context_data = self._coding_redact(options.get("project_context", ""))
+                control.excluded_sources = options.get("excluded_sources", [])
+                control.context_pipeline = options.get("context_pipeline", {})
                 control.visibility_report = options.get("visibility_report", [])
                 control.context_items = options.get("context_items", [])
-                control.excluded_paths = options.get("excluded_paths", [])
+                control.excluded_paths = list(dict.fromkeys(
+                    self.projects.db.get_settings(project_id).coding_preferences.get("excluded_files", [])
+                    + list(options.get("excluded_paths", []))))
                 def drain_messages(target):
                     with self._stream_lock:
                         pending = self._coding_steering.pop(session_id, [])
@@ -437,9 +447,15 @@ class CodingBridge(CodingActions):
                         self.configure_model_metadata(worker.providers.get_active())
                         return worker
                     selected_provider = options.get("provider", self.provider)
+                    limits = dict(options.get("subagent_limits") or {})
+                    parallel = control.harness_profile["max_parallel_agents"]
+                    children = limits.get("max_children", 4)
+                    limits["max_parallel"] = min(limits.get("max_parallel", 2), parallel, children)
+                    limits["token_budget"] = min(limits.get("token_budget", 131072),
+                                                 control.harness_profile["per_agent_tokens"] * children)
                     subagents = SubagentToolFilter(tool_filter, session, child_agent, receive, self._coding_redact,
                         provider_resolver=lambda p, m: self._coding_worker(p or selected_provider, m or session.model),
-                        limits=options.get("subagent_limits"))
+                        limits=limits)
                     self._coding_managers[session_id] = subagents
                     stream_filter = subagents
                     session.system_prompt += (
@@ -454,7 +470,8 @@ class CodingBridge(CodingActions):
                                         "files": revalidation, "created_at": time.time()})
                     changed = [item["path"] for item in revalidation if not item["matches"]]
                     if changed:
-                        session.system_prompt += "\nÖnceki çalışmadan sonra değişen dosyaları yeniden oku; kullanıcının değişikliklerini koru: " + ", ".join(changed)
+                        session.system_prompt += "\nÖnceki çalışmadan sonra değişen dosyaları yeniden oku; kullanıcının değişikliklerini koru."
+                        control.project_context_data += "\nDeğişen dosyalar (veri):\n" + json.dumps(changed, ensure_ascii=False)
                     self.coding_store.checkpoint(run_id, checkpoints[-1])
                 await control.checkpoint()
                 async for event in agent.run_stream(prompt=safe_prompt, session=session,

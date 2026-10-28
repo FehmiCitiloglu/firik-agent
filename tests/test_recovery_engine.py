@@ -262,14 +262,15 @@ def test_unknown_mcp_override_cannot_inherit_builtin_semantics():
 
 
 @pytest.mark.asyncio
-async def test_context_reduction_only_changes_request_view():
+async def test_overflow_without_compaction_never_silently_clips_tool_result():
     agent,provider,session=runtime([RuntimeFailure(F.CONTEXT_OVERFLOW),StreamChunk(delta_content="done")])
     session.messages=[Message(role="user",content="old"),Message(role="assistant",tool_calls=[call()]),
                       Message(role="tool",tool_call_id="call1",name="effect",content="x"*12000)]
     events=await stream(agent,session)
-    assert events[-1].type==E.DONE and len(provider.calls)==2
+    assert events[-1].type==E.ERROR and len(provider.calls)==1
     assert len(session.messages[2].content)==12000
-    assert len(provider.calls[1]["messages"][3].content)<8200
+    assert len(provider.calls[0]["messages"][3].content)==12000
+    assert events[-1].metadata["failure_kind"]=="context_overflow"
 
 
 @pytest.mark.asyncio

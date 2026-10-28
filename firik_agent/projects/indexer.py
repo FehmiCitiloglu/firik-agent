@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import fnmatch
 import os
 import re
+import shlex
 import stat
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 
 # Files and directories to always exclude from indexing and LLM context
@@ -42,8 +44,11 @@ SENSITIVE_FILENAMES = {
     ".env", ".env.local", ".env.production", ".env.development", ".env.staging",
     "id_rsa", "id_dsa", "id_ed25519", "credentials.json", "service-account.json",
     "secret.key", "secrets.yaml", "secrets.json",
+    ".netrc", "_netrc", ".npmrc", ".pypirc", ".git-credentials", ".pgpass",
+    ".boto", ".s3cfg", ".dockercfg", "application_default_credentials.json",
 }
-SENSITIVE_DIRECTORIES = {".git", ".ssh", ".aws", ".azure", ".gcloud", ".credentials", ".codex", ".agents"}
+SENSITIVE_DIRECTORIES = {".git", ".ssh", ".aws", ".azure", ".gcloud", ".credentials", ".codex", ".agents",
+                         ".kube", ".docker", ".gnupg"}
 
 
 def is_sensitive_file(file_path: str | Path, *, project_root: str | Path | None = None) -> bool:
@@ -97,7 +102,12 @@ def safe_project_path(project_root: str | Path, file_path: str | Path) -> Path:
     resolved = candidate.resolve()
     if not resolved.is_relative_to(root):
         raise ValueError("Dosya proje klasörünün dışında.")
-    if is_sensitive_file(relative) or is_sensitive_file(resolved, project_root=root):
+    # Resolution and the containment check above already established this root.
+    # Check the resolved relative name directly rather than resolving both paths
+    # again in is_sensitive_file. Keep this second name check: a concurrent
+    # symlink swap could resolve an innocent name into a protected local folder.
+    resolved_relative = resolved.relative_to(root)
+    if is_sensitive_file(relative) or (resolved_relative != relative and is_sensitive_file(resolved_relative)):
         raise ValueError("Hassas dosyalar proje bağlamına alınamaz.")
     return resolved
 
@@ -133,7 +143,7 @@ def read_project_text(project_root: str | Path, file_path: str | Path,
     return sanitize_secrets(text) if sanitize else text
 
 
-def sanitize_git_diff(text: str) -> str:
+def sanitize_git_diff(text: str, *, excluded: Optional[Callable[[str], bool]] = None) -> str:
     """Drop entire sensitive-file diff sections, then mask inline credentials."""
     sections = re.split(r"(?m)(?=^diff --git )", text)
     safe = []
@@ -141,12 +151,20 @@ def sanitize_git_diff(text: str) -> str:
         paths = re.findall(r"(?m)^(?:---|\+\+\+) (.+)$", section)
         first = section.splitlines()[0] if section.splitlines() else ""
         paths += re.findall(r"[ab]/([^\s]+)", first)
+        try:
+            if first.startswith("diff --git "):
+                paths += shlex.split(first)[2:]
+        except ValueError:
+            # Malformed boundaries cannot safely carry excluded source content.
+            if excluded:
+                continue
+        paths += re.findall(r"(?m)^(?:rename from|rename to|copy from|copy to) (.+)$", section)
         unsafe = False
         for raw in paths:
             path = raw.strip().strip('"').split("\t", 1)[0]
             if path.startswith(("a/", "b/")):
                 path = path[2:]
-            if is_sensitive_file(path):
+            if is_sensitive_file(path) or (excluded and excluded(path)):
                 unsafe = True
                 break
         if not unsafe:
@@ -167,11 +185,58 @@ class CodebaseIndexer:
 
     def __init__(self, project_root: str | Path):
         self.root = Path(project_root).resolve()
+        self.last_scan_limited = False
+        self.last_refresh: Dict[str, Any] = {}
+        self._ignore_rules: List[Tuple[str, str, bool]] = []
 
-    def scan_files(self, max_files: int = 1500) -> List[Path]:
+    def _load_ignore(self, directory: Path, excluded=None) -> None:
+        """Read bounded project-local ignore rules without executing repository code."""
+        if not (directory / ".gitignore").is_file():
+            return
+        if excluded and excluded((directory / ".gitignore").relative_to(self.root).as_posix()):
+            return
+        try:
+            content = read_project_text(self.root, directory / ".gitignore", max_bytes=32768)
+        except (ValueError, OSError):
+            return
+        base = directory.relative_to(self.root).as_posix()
+        base = "" if base == "." else base + "/"
+        for raw in content.splitlines()[:1000]:
+            pattern = raw.strip()
+            if not pattern or pattern.startswith("#"):
+                continue
+            negated = pattern.startswith("!")
+            self._ignore_rules.append((base, pattern[1:] if negated else pattern, negated))
+
+    def repository_ignored(self, relative: str, *, is_dir: bool = False) -> bool:
+        """Conservative gitignore-style filtering; security exclusions are separate."""
+        ignored = False
+        for base, raw, negated in self._ignore_rules:
+            if not relative.startswith(base):
+                continue
+            local = relative[len(base):]
+            directory_only = raw.endswith("/")
+            pattern = raw.rstrip("/")
+            anchored = pattern.startswith("/")
+            pattern = pattern.lstrip("/")
+            if not pattern:
+                continue
+            parts = local.split("/")
+            candidates = [local] if anchored or "/" in pattern else parts
+            if directory_only:
+                candidates = ["/".join(parts[:i]) for i in range(1, len(parts) + (1 if is_dir else 0))] if anchored or "/" in pattern else parts if is_dir else parts[:-1]
+            if any(fnmatch.fnmatchcase(value, pattern) for value in candidates):
+                ignored = not negated
+        return ignored
+
+    def scan_files(self, max_files: int = 1500, *, excluded: Optional[Callable[[str], bool]] = None) -> List[Path]:
         """Collects relevant source and text files in the project."""
         found: List[Path] = []
+        self.last_scan_limited = False
+        self._ignore_rules = []
         if not self.root.exists() or max_files <= 0:
+            return found
+        if excluded and excluded("."):
             return found
         try:
             safe_project_path(self.root, ".")
@@ -179,13 +244,20 @@ class CodebaseIndexer:
             return found
 
         for root, dirs, files in os.walk(self.root):
+            directory = Path(root)
+            self._load_ignore(directory, excluded)
             # Prune ignored directories in-place
             dirs[:] = sorted(d for d in dirs if d not in IGNORED_DIRS and not d.startswith(".")
-                             and not (Path(root) / d).is_symlink())
+                             and not (directory / d).is_symlink()
+                             and not (excluded and excluded((directory / d).relative_to(self.root).as_posix()))
+                             and not self.repository_ignored((directory / d).relative_to(self.root).as_posix(), is_dir=True))
 
             for f in sorted(files):
                 p = Path(root) / f
-                if p.is_symlink() or p.suffix.lower() in IGNORED_EXTENSIONS or is_sensitive_file(p, project_root=self.root):
+                relative = p.relative_to(self.root).as_posix()
+                if (excluded and excluded(relative)) or self.repository_ignored(relative):
+                    continue
+                if p.is_symlink() or p.suffix.lower() in IGNORED_EXTENSIONS or is_sensitive_file(relative):
                     continue
                 try:
                     # Skip files larger than 1MB
@@ -195,8 +267,50 @@ class CodebaseIndexer:
                     continue
                 found.append(p)
                 if len(found) >= max_files:
+                    self.last_scan_limited = True
                     return found
         return found
+
+    def refresh_index(self, previous: Optional[List[Dict[str, Any]]] = None, *,
+                      excluded: Optional[Callable[[str], bool]] = None, max_files: int = 1500,
+                      max_bytes: int = 16 * 1024 * 1024) -> List[Dict[str, Any]]:
+        """Hash current safe bytes, reuse unchanged parses, and invalidate stale entries.
+
+        Hashes are checked even when mtimes and sizes match. No cached file content
+        is used as model context. Exclusions apply before opening any source.
+        """
+        lookup = {item.get("file_path"): item for item in previous or []}
+        result, total, reused, changed = [], 0, 0, 0
+        paths = self.scan_files(max_files=max_files, excluded=excluded)
+        limited = self.last_scan_limited
+        for path in paths:
+            relative = path.relative_to(self.root).as_posix()
+            try:
+                size = path.stat().st_size
+                if total + size > max_bytes:
+                    limited = True
+                    continue
+                content = read_project_text(self.root, relative, max_bytes=1024 * 1024, sanitize=False)
+            except (ValueError, OSError):
+                continue
+            total += len(content.encode("utf-8"))
+            file_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            old = lookup.get(relative)
+            if old and old.get("file_hash") == file_hash and "symbol_references" in old:
+                item = dict(old)
+                reused += 1
+            else:
+                item = self._parse(relative, content, include_details=True)
+                changed += 1
+            result.append(item)
+        current = {item["file_path"] for item in result}
+        self.last_refresh = {"files": len(result), "reused": reused, "updated": changed,
+                             "invalidated": len(set(lookup) - current), "bytes_hashed": total,
+                             "limited": limited, "max_files": max_files, "max_bytes": max_bytes,
+                             "workspace_revision": hashlib.sha256("\n".join(
+                                 item["file_path"] + ":" + item["file_hash"] for item in result).encode()).hexdigest(),
+                             "source": "incremental_hash_index", "parser": "python_ast_and_lexical_fallback"}
+        return result
 
     def index_file(self, file_path: Path) -> Optional[Dict[str, Any]]:
         """Extracts symbols, classes, functions, imports, and TODOs from a single file."""
@@ -209,13 +323,20 @@ class CodebaseIndexer:
         except (ValueError, OSError):
             return None
 
+        return self._parse(rel_path, content)
+
+    @staticmethod
+    def _parse(rel_path: str, content: str, *, include_details: bool = False) -> Dict[str, Any]:
         file_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        file_path = Path(rel_path)
         ext = file_path.suffix.lower()
 
         classes: List[str] = []
         functions: List[str] = []
         imports: List[str] = []
         todos: List[Dict[str, Any]] = []
+        references: Dict[str, List[int]] = {}
+        definitions: Dict[str, int] = {}
 
         # 1. Extract TODO / FIXME comments across any text file
         todo_regex = re.compile(r"(?i)\b(TODO|FIXME|HACK|XXX|BUG)\b:?\s*(.*)")
@@ -238,13 +359,23 @@ class CodebaseIndexer:
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ClassDef):
                         classes.append(node.name)
+                        definitions[node.name] = node.lineno
                     elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         functions.append(node.name)
+                        definitions[node.name] = node.lineno
                     elif isinstance(node, ast.Import):
                         for n in node.names:
                             imports.append(n.name)
-                    elif isinstance(node, ast.ImportFrom) and node.module:
-                        imports.append(node.module)
+                    elif isinstance(node, ast.ImportFrom):
+                        module = "." * node.level + (node.module or "")
+                        imports.append(module)
+                        for imported in node.names:
+                            if imported.name != "*":
+                                imports.append(module + ("." if node.module else "") + imported.name)
+                    elif isinstance(node, ast.Name):
+                        references.setdefault(node.id, []).append(node.lineno)
+                    elif isinstance(node, ast.Attribute):
+                        references.setdefault(node.attr, []).append(node.lineno)
             except SyntaxError:
                 pass
 
@@ -260,10 +391,18 @@ class CodebaseIndexer:
                 functions.append(m.group(1))
             for m in import_pat.finditer(content):
                 imports.append(m.group(1))
+            imports.extend(m.group(1) for m in re.finditer(r"\brequire\s*\(\s*['\"]([^'\"]+)['\"]\s*\)", content))
+            for m in re.finditer(r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>", content):
+                functions.append(m.group(1))
+            # Lexical references are explicitly labeled; they are not a semantic AST.
+            for number, line in enumerate(sanitize_secrets(content).splitlines(), 1):
+                for name in set(re.findall(r"\b[A-Za-z_$][\w$]*\b", line)):
+                    if len(references) < 5000 or name in references:
+                        references.setdefault(name, []).append(number)
 
         symbols = list(dict.fromkeys(classes + functions))
 
-        return {
+        result = {
             "file_path": rel_path,
             "file_type": ext,
             "symbols": symbols,
@@ -273,6 +412,10 @@ class CodebaseIndexer:
             "todos": todos,
             "file_hash": file_hash,
         }
+        if include_details:
+            result.update(symbol_references={name: sorted(set(lines))[:100] for name, lines in list(references.items())[:5000]},
+                          definitions=definitions, parser="python_ast" if ext == ".py" else "lexical")
+        return result
 
     def search_codebase(
         self,

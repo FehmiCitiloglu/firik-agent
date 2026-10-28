@@ -1,0 +1,644 @@
+{
+  "schema_version": 1,
+  "method": "offline real context pipeline; fixture retrieval oracle; no model execution",
+  "implementation_sha256": "3a4525449e1851536299c1833e2504d1935ba09ccdc31e7f71451bd8471633b9",
+  "fixture_sha256": "e2ffb0a0955fe4165d339cf8fe0488f45fe741e42a1c737954558d10eced7ed1",
+  "task_sha256": "51ac118ff27370a02276c1d22bcbcf86fb347bf1a2b782a6c0f5d54b9a2af1a0",
+  "noise_files": 350,
+  "trials_per_task": 3,
+  "token_count_method": "local_characters_divided_by_four_estimate",
+  "rows": [
+    {
+      "task_id": "python-symbol",
+      "trial": 1,
+      "selected_files": [
+        "src/invoice.py",
+        "tests/test_invoice.py",
+        "private.py",
+        "noise/file_0000.py",
+        "noise/file_0001.py",
+        "noise/file_0002.py",
+        "noise/file_0003.py",
+        "noise/file_0004.py"
+      ],
+      "expected_files": [
+        "src/invoice.py"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 5,
+      "retrieved_tokens_estimate": 228,
+      "assembled_context_tokens_estimate": 445,
+      "retrieved_context_utf8_bytes": 904,
+      "retrieval_latency_ms": 98.42779199971119,
+      "warm_retrieval_latency_ms": 96.34583300066879,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "matching-test",
+      "trial": 1,
+      "selected_files": [
+        "src/invoice.py",
+        "tests/test_invoice.py",
+        "private.py",
+        "noise/file_0000.py",
+        "noise/file_0001.py",
+        "noise/file_0002.py",
+        "noise/file_0003.py",
+        "noise/file_0004.py"
+      ],
+      "expected_files": [
+        "src/invoice.py",
+        "tests/test_invoice.py"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 5,
+      "retrieved_tokens_estimate": 228,
+      "assembled_context_tokens_estimate": 445,
+      "retrieved_context_utf8_bytes": 904,
+      "retrieval_latency_ms": 96.91591700538993,
+      "warm_retrieval_latency_ms": 96.62075000233017,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "typescript-import",
+      "trial": 1,
+      "selected_files": [
+        "src/checkout.ts",
+        "src/money.ts",
+        "tests/test_invoice.py",
+        "noise/file_0000.py",
+        "noise/file_0001.py",
+        "noise/file_0002.py",
+        "noise/file_0003.py",
+        "noise/file_0004.py",
+        "noise/file_0005.py",
+        "src/invoice.py"
+      ],
+      "expected_files": [
+        "src/checkout.ts",
+        "src/money.ts"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 6,
+      "retrieved_tokens_estimate": 291,
+      "assembled_context_tokens_estimate": 509,
+      "retrieved_context_utf8_bytes": 1158,
+      "retrieval_latency_ms": 150.0107920001028,
+      "warm_retrieval_latency_ms": 150.77904200006742,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "pinned-priority",
+      "trial": 1,
+      "selected_files": [
+        "docs/decision.md",
+        "src/invoice.py",
+        "private.py"
+      ],
+      "expected_files": [
+        "docs/decision.md"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 0,
+      "retrieved_tokens_estimate": 78,
+      "assembled_context_tokens_estimate": 296,
+      "retrieved_context_utf8_bytes": 308,
+      "retrieval_latency_ms": 169.45391599438153,
+      "warm_retrieval_latency_ms": 166.73116700258106,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "exclusion-secret",
+      "trial": 1,
+      "selected_files": [
+        "src/invoice.py",
+        "noise/file_0000.py",
+        "noise/file_0001.py",
+        "noise/file_0002.py",
+        "noise/file_0003.py",
+        "noise/file_0004.py",
+        "noise/file_0005.py",
+        "noise/file_0006.py"
+      ],
+      "expected_files": [
+        "src/invoice.py"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 7,
+      "retrieved_tokens_estimate": 223,
+      "assembled_context_tokens_estimate": 440,
+      "retrieved_context_utf8_bytes": 884,
+      "retrieval_latency_ms": 227.82033299881732,
+      "warm_retrieval_latency_ms": 224.38804199919105,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "fresh-file",
+      "trial": 1,
+      "selected_files": [],
+      "expected_files": [
+        "src/new.py"
+      ],
+      "retrieval_success": false,
+      "expected_coverage": 0.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 0,
+      "retrieved_tokens_estimate": 0,
+      "assembled_context_tokens_estimate": 205,
+      "retrieved_context_utf8_bytes": 0,
+      "retrieval_latency_ms": 163.38187499786727,
+      "warm_retrieval_latency_ms": 165.0177910050843,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "python-symbol",
+      "trial": 2,
+      "selected_files": [
+        "src/invoice.py",
+        "tests/test_invoice.py",
+        "private.py",
+        "noise/file_0000.py",
+        "noise/file_0001.py",
+        "noise/file_0002.py",
+        "noise/file_0003.py",
+        "noise/file_0004.py"
+      ],
+      "expected_files": [
+        "src/invoice.py"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 5,
+      "retrieved_tokens_estimate": 228,
+      "assembled_context_tokens_estimate": 445,
+      "retrieved_context_utf8_bytes": 904,
+      "retrieval_latency_ms": 97.20708299573744,
+      "warm_retrieval_latency_ms": 95.6416669941973,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "matching-test",
+      "trial": 2,
+      "selected_files": [
+        "src/invoice.py",
+        "tests/test_invoice.py",
+        "private.py",
+        "noise/file_0000.py",
+        "noise/file_0001.py",
+        "noise/file_0002.py",
+        "noise/file_0003.py",
+        "noise/file_0004.py"
+      ],
+      "expected_files": [
+        "src/invoice.py",
+        "tests/test_invoice.py"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 5,
+      "retrieved_tokens_estimate": 228,
+      "assembled_context_tokens_estimate": 445,
+      "retrieved_context_utf8_bytes": 904,
+      "retrieval_latency_ms": 97.59270799986552,
+      "warm_retrieval_latency_ms": 96.43362499627983,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "typescript-import",
+      "trial": 2,
+      "selected_files": [
+        "src/checkout.ts",
+        "src/money.ts",
+        "tests/test_invoice.py",
+        "noise/file_0000.py",
+        "noise/file_0001.py",
+        "noise/file_0002.py",
+        "noise/file_0003.py",
+        "noise/file_0004.py",
+        "noise/file_0005.py",
+        "src/invoice.py"
+      ],
+      "expected_files": [
+        "src/checkout.ts",
+        "src/money.ts"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 6,
+      "retrieved_tokens_estimate": 291,
+      "assembled_context_tokens_estimate": 509,
+      "retrieved_context_utf8_bytes": 1158,
+      "retrieval_latency_ms": 148.4210830021766,
+      "warm_retrieval_latency_ms": 153.84591600013664,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "pinned-priority",
+      "trial": 2,
+      "selected_files": [
+        "docs/decision.md",
+        "src/invoice.py",
+        "private.py"
+      ],
+      "expected_files": [
+        "docs/decision.md"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 0,
+      "retrieved_tokens_estimate": 78,
+      "assembled_context_tokens_estimate": 296,
+      "retrieved_context_utf8_bytes": 308,
+      "retrieval_latency_ms": 166.78054100339068,
+      "warm_retrieval_latency_ms": 168.43287499796133,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "exclusion-secret",
+      "trial": 2,
+      "selected_files": [
+        "src/invoice.py",
+        "noise/file_0000.py",
+        "noise/file_0001.py",
+        "noise/file_0002.py",
+        "noise/file_0003.py",
+        "noise/file_0004.py",
+        "noise/file_0005.py",
+        "noise/file_0006.py"
+      ],
+      "expected_files": [
+        "src/invoice.py"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 7,
+      "retrieved_tokens_estimate": 223,
+      "assembled_context_tokens_estimate": 440,
+      "retrieved_context_utf8_bytes": 884,
+      "retrieval_latency_ms": 219.99058299843455,
+      "warm_retrieval_latency_ms": 222.41483399557183,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "fresh-file",
+      "trial": 2,
+      "selected_files": [],
+      "expected_files": [
+        "src/new.py"
+      ],
+      "retrieval_success": false,
+      "expected_coverage": 0.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 0,
+      "retrieved_tokens_estimate": 0,
+      "assembled_context_tokens_estimate": 205,
+      "retrieved_context_utf8_bytes": 0,
+      "retrieval_latency_ms": 164.23433300224133,
+      "warm_retrieval_latency_ms": 164.1525829982129,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "python-symbol",
+      "trial": 3,
+      "selected_files": [
+        "src/invoice.py",
+        "tests/test_invoice.py",
+        "private.py",
+        "noise/file_0000.py",
+        "noise/file_0001.py",
+        "noise/file_0002.py",
+        "noise/file_0003.py",
+        "noise/file_0004.py"
+      ],
+      "expected_files": [
+        "src/invoice.py"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 5,
+      "retrieved_tokens_estimate": 228,
+      "assembled_context_tokens_estimate": 445,
+      "retrieved_context_utf8_bytes": 904,
+      "retrieval_latency_ms": 99.5074590027798,
+      "warm_retrieval_latency_ms": 96.84341600222979,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "matching-test",
+      "trial": 3,
+      "selected_files": [
+        "src/invoice.py",
+        "tests/test_invoice.py",
+        "private.py",
+        "noise/file_0000.py",
+        "noise/file_0001.py",
+        "noise/file_0002.py",
+        "noise/file_0003.py",
+        "noise/file_0004.py"
+      ],
+      "expected_files": [
+        "src/invoice.py",
+        "tests/test_invoice.py"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 5,
+      "retrieved_tokens_estimate": 228,
+      "assembled_context_tokens_estimate": 445,
+      "retrieved_context_utf8_bytes": 904,
+      "retrieval_latency_ms": 99.07479099638294,
+      "warm_retrieval_latency_ms": 96.68591600348009,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "typescript-import",
+      "trial": 3,
+      "selected_files": [
+        "src/checkout.ts",
+        "src/money.ts",
+        "tests/test_invoice.py",
+        "noise/file_0000.py",
+        "noise/file_0001.py",
+        "noise/file_0002.py",
+        "noise/file_0003.py",
+        "noise/file_0004.py",
+        "noise/file_0005.py",
+        "src/invoice.py"
+      ],
+      "expected_files": [
+        "src/checkout.ts",
+        "src/money.ts"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 6,
+      "retrieved_tokens_estimate": 291,
+      "assembled_context_tokens_estimate": 509,
+      "retrieved_context_utf8_bytes": 1158,
+      "retrieval_latency_ms": 149.31587500177557,
+      "warm_retrieval_latency_ms": 149.19012499740347,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "pinned-priority",
+      "trial": 3,
+      "selected_files": [
+        "docs/decision.md",
+        "src/invoice.py",
+        "private.py"
+      ],
+      "expected_files": [
+        "docs/decision.md"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 0,
+      "retrieved_tokens_estimate": 78,
+      "assembled_context_tokens_estimate": 296,
+      "retrieved_context_utf8_bytes": 308,
+      "retrieval_latency_ms": 168.216999998549,
+      "warm_retrieval_latency_ms": 168.70566699799383,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "exclusion-secret",
+      "trial": 3,
+      "selected_files": [
+        "src/invoice.py",
+        "noise/file_0000.py",
+        "noise/file_0001.py",
+        "noise/file_0002.py",
+        "noise/file_0003.py",
+        "noise/file_0004.py",
+        "noise/file_0005.py",
+        "noise/file_0006.py"
+      ],
+      "expected_files": [
+        "src/invoice.py"
+      ],
+      "retrieval_success": true,
+      "expected_coverage": 1.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 7,
+      "retrieved_tokens_estimate": 223,
+      "assembled_context_tokens_estimate": 440,
+      "retrieved_context_utf8_bytes": 884,
+      "retrieval_latency_ms": 221.3601670009666,
+      "warm_retrieval_latency_ms": 224.25949999887962,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    },
+    {
+      "task_id": "fresh-file",
+      "trial": 3,
+      "selected_files": [],
+      "expected_files": [
+        "src/new.py"
+      ],
+      "retrieval_success": false,
+      "expected_coverage": 0.0,
+      "protection_passed": true,
+      "unrelated_noise_files": 0,
+      "retrieved_tokens_estimate": 0,
+      "assembled_context_tokens_estimate": 205,
+      "retrieved_context_utf8_bytes": 0,
+      "retrieval_latency_ms": 165.62887500185752,
+      "warm_retrieval_latency_ms": 166.57308299909346,
+      "warm_index_status": {
+        "files": 357,
+        "symbols": 353,
+        "dependency_edges": 3,
+        "semantic_index_available": false,
+        "source": "persisted_index"
+      },
+      "provider_usage_tokens": null,
+      "provider_cost": null,
+      "model_task_success": null
+    }
+  ],
+  "summary": {
+    "trials": 18,
+    "retrieval_successes": 15,
+    "median_latency_ms": 156.69633349898504,
+    "median_warm_latency_ms": 158.99924949917477,
+    "total_retrieved_context_utf8_bytes": 12474,
+    "unrelated_noise_files": 69,
+    "total_retrieved_tokens_estimate": 3144,
+    "model_task_success": null,
+    "provider_cost": null,
+    "provider_requests": 0
+  },
+  "label": "baseline",
+  "source_revision": "d40230ea0b69cb1442aa4011aab7274b2d1eefc7"
+}

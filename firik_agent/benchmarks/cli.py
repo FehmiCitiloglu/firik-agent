@@ -38,6 +38,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="firik harness", description="Offline-first Harness Benchmark Lab")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor", help="Check local readiness without credentials or model API access.")
+    commands.add_parser("profiles", help="Çalışma profillerini ve kaynak sınırlarını göster.")
+    context = commands.add_parser("context", help="Proje bağlamını API isteği göndermeden incele.")
+    context.add_argument("--root", type=Path, help="Yerel proje klasörü (varsayılan: geçerli klasör).")
+    context.add_argument("--project-id", help="Mevcut veritabanındaki proje kimliği.")
+    context.add_argument("--database", type=Path, help="Proje tercihleri ve hafıza için mevcut SQLite dosyası.")
+    context.add_argument("--request", required=True, help="Bağlam seçimi yapılacak kullanıcı görevi.")
+    context.add_argument("--profile", choices=("minimal", "coding", "research", "deep-debug", "multi-agent", "local-efficient"))
+    context.add_argument("--file", action="append", default=[], help="Açıkça seçilen proje dosyası.")
+    context.add_argument("--exclude", action="append", default=[], help="Bağlama alınmayacak yol.")
     listing = commands.add_parser("list", help="List bounded bundled task manifests.")
     listing.add_argument("--suite", choices=("legacy", "offline-smoke", "coding"), default="legacy")
     listing.add_argument("--json", action="store_true")
@@ -61,6 +70,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     compare.add_argument("--output", type=Path, help="New comparison JSON file or output directory.")
     args = parser.parse_args(argv)
     try:
+        if args.command == "profiles":
+            from firik_agent.projects.harness_profiles import PROFILES, resolve_harness_profile
+            print(json.dumps([resolve_harness_profile(session_override=name) for name in PROFILES], ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "context":
+            from firik_agent.projects.context_cli import print_inspection
+            return print_inspection(args)
         if args.command == "doctor":
             result = doctor()
             print(json.dumps(result, indent=2))

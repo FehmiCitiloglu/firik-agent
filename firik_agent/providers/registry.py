@@ -41,6 +41,27 @@ class ProviderRegistry:
     def list_providers(self) -> List[str]:
         return list(self._providers.keys())
 
+    def set_model_capabilities(self, provider_name: str, model: str, evidence: Dict) -> Dict:
+        """Record host/provider evidence for one exact provider/model identity.
+
+        Native request features remain isolated in provider adapters; recording
+        metadata never enables a feature, changes an endpoint, or grants tools.
+        """
+        from firik_agent.projects.model_capabilities import model_capabilities
+        provider = self.get(provider_name)
+        if provider is None or not isinstance(model, str) or not model.strip():
+            raise ValueError("Yetenek kaydı için kayıtlı sağlayıcı ve model gereklidir.")
+        normalized = model_capabilities(evidence)
+        provider.model_metadata[model] = {"id": model, **normalized}
+        return normalized
+
+    def capabilities(self, provider_name: str, model: Optional[str] = None) -> Dict:
+        from firik_agent.projects.model_capabilities import model_capabilities
+        provider = self.get(provider_name)
+        if provider is None:
+            raise ValueError("Sağlayıcı bulunamadı.")
+        return model_capabilities(provider.model_metadata.get(model or provider.current_model))
+
     @property
     def active_name(self) -> Optional[str]:
         return self._active_provider_name
@@ -100,6 +121,15 @@ class ProviderRegistry:
             registry.register(name, OpenAIProvider(
                 api_key=get_api_key(name, provider_conf) or "local",
                 base_url=base_url, default_model=provider_conf.get("default_model", ""), name=name))
+
+        # Explicit capability evidence is local host configuration. In
+        # particular /models names alone do not establish tool/window support.
+        for name in registry.list_providers():
+            evidence_by_model = providers_conf.get(name, {}).get("model_capabilities", {})
+            if isinstance(evidence_by_model, dict):
+                for model, evidence in evidence_by_model.items():
+                    if isinstance(evidence, dict):
+                        registry.set_model_capabilities(name, model, evidence)
 
         # Set default active
         default_prov = config.get("agent", {}).get("default_provider", "firik")

@@ -14,6 +14,8 @@ FIRIK portalında **Platform**, **LLM Çıkarım** ve **Model Çıkarımı** far
 
 **Adaptive Recovery (Phase 2)**, akışlı ve normal model isteklerinde güvenli olduğu kanıtlanan hatalara sınırlı kurtarma uygular; kısmi yanıtları ve sonucu belirsiz yan etkileri otomatik tekrarlamaz. Kodlama görevinin tamamlanma sınıfı güncel doğrulama kanıtı ve mevcut kalite kapılarıyla belirlenir. [Yapılandırma, olaylar ve sınırlar](docs/ADAPTIVE_RECOVERY.md).
 
+**Context Engine (Phase 3)**, güncel hash tabanlı retrieval, açıklanabilir kaynak sıralaması, isteğe bağlı LSP ve altı çalışma profili ekler. `firik harness profiles` profilleri, `firik harness context --root . --request 'hata izini incele' --profile local-efficient` kaynak/şema önizlemesini gösterir. Masaüstünde profil seçimi ve Context Inspector aynı akışı kullanır; proje verileri ayrı güven rolündedir ve çalışma izinleri bağımsız denetlenir. [Mimari, yapılandırma ve sınırlar](docs/PHASE3_CONTEXT_ENGINE.md), [benchmark kanıtı](docs/Evidence/Phase3/README.md).
+
 Masaüstü uygulamasındaki **Kodlama Ajanı**, dosya gezgini, plan, etkinlik, terminal, test, Git ve ajan inceleyicisini tek çalışma alanında toplar. Gerçek araç yürütümü proje izinlerinden geçer; kontrol noktaları, değişiklik incelemesi, doğrulama kanıtı ve oturum geçmişi kalıcı kaydedilir. Çoklu ajan sınırları, bağlam/model bilgisinin kaynakları ve 52 gereksinimin uygulama durumu [Kodlama cockpit dokümanında](docs/CODING_COCKPIT.md) açıklanır.
 
 Python 3.10+:

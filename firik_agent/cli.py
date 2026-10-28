@@ -599,6 +599,7 @@ async def handle_slash_command(agent: Agent, cmd: str) -> bool:
 • [bold]Name:[/bold] {agent.name}
 • [bold]Active Provider:[/bold] [green]{prov.name}[/green] ([dim]{prov.base_url}[/dim])
 • [bold]Active Model:[/bold] [bold yellow]{prov.current_model}[/bold yellow]
+• [bold]Çalışma profili:[/bold] {(getattr(agent, 'harness_profile', None) or {}).get('name', 'Eski oturum varsayılanı')}
 • [bold]Conversation Turns:[/bold] {len(agent.messages)} messages in context
 • [bold]Active Skills ({len(active_skills)}):[/bold] {', '.join(active_skills) or '[dim]none[/dim]'}
 • [bold]Connected MCP Servers ({len(mcp_servers)}):[/bold] {', '.join([s['name'] for s in mcp_servers]) or '[dim]none[/dim]'}
@@ -1121,6 +1122,8 @@ def main():
     parser.add_argument("--provider", type=str, help="Provider name (firik, llmtr, openai)")
     parser.add_argument("--model", "-m", type=str, help="Model ID")
     parser.add_argument("--config", "-c", type=str, help="Path to config.yaml")
+    parser.add_argument("--harness-profile", choices=("minimal", "coding", "research", "deep-debug", "multi-agent", "local-efficient"),
+                        help="Bu oturumun bağlam ve üretim kaynak profili (izinleri değiştirmez).")
     parser.add_argument("--commands", "--list-commands", action="store_true", help="List all available slash commands and exit")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
@@ -1136,6 +1139,10 @@ def main():
         logging.basicConfig(level=logging.WARNING)
 
     agent = Agent(config_path=args.config)
+    if args.harness_profile:
+        from firik_agent.projects.harness_profiles import resolve_harness_profile
+        agent.harness_profile = resolve_harness_profile(session_override=args.harness_profile,
+                                                        user_config=agent.config.get("agent", {}))
 
     if args.provider:
         agent.providers.set_active(args.provider)

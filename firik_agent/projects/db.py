@@ -1392,6 +1392,16 @@ class ProjectDatabase:
             finally:
                 conn.close()
 
+    def delete_code_index(self, project_id: str, file_path: str) -> None:
+        """Remove one stale metadata entry without touching any repository file."""
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                conn.execute("DELETE FROM code_index WHERE project_id = ? AND file_path = ?", (project_id, file_path))
+                conn.commit()
+            finally:
+                conn.close()
+
     def get_all_code_indexes(self, project_id: str) -> List[Dict[str, Any]]:
         conn = self._get_connection()
         try:

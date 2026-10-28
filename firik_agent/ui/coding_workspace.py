@@ -300,6 +300,14 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         task_tab.grid_rowconfigure(0, weight=1)
         controls = ctk.CTkScrollableFrame(task_tab)
         controls.grid(row=0, column=0, sticky="nsew")
+        from firik_agent.projects.harness_profiles import PROFILES, resolve_harness_profile
+        ctk.CTkLabel(controls, text="Çalışma profili", anchor="w").pack(fill="x", pady=(4, 0))
+        configured_profile = resolve_harness_profile(prefs, user_config=getattr(self.service, "config", {}).get("agent", {}))
+        self.coding_profile_var = tk.StringVar(value=configured_profile["name"])
+        self.coding_profile_selector = ctk.CTkOptionMenu(controls, values=list(PROFILES),
+            variable=self.coding_profile_var,
+            command=lambda value: self._save_coding_preferences({"harness_profile": value}))
+        self.coding_profile_selector.pack(fill="x", pady=4)
         self.coding_subagents_var = tk.BooleanVar(value=prefs.get("subagents_enabled", False))
         ctk.CTkCheckBox(controls, text="Araştırma / inceleme\nalt ajanlarını kullan", variable=self.coding_subagents_var,
             command=lambda: self._save_coding_preferences({"subagents_enabled": self.coding_subagents_var.get()}), height=36).pack(fill="x", pady=4)
@@ -853,6 +861,10 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             options["provider"] = state["preferences"].get("provider", self.service.provider)
             options["previous_plan"] = state["plan"]
             options["context_items"] = state.get("context_items", [])
+            options["harness_profile"] = state.get("harness_profile")
+            options["project_context"] = state.get("project_context", "")
+            options["excluded_sources"] = state.get("excluded_sources", [])
+            options["context_pipeline"] = state.get("context_pipeline", {})
             options["selected_skills"] = state.get("selected_skills", [])
             options["excluded_paths"] = state["preferences"].get("excluded_files", state["preferences"].get("never_include_files", []))
             options["quality_gates"] = state["preferences"].get("quality_gates")
@@ -870,7 +882,11 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             if state["stopped"]:
                 finish("Çalışma durduruldu.")
                 return
-            session.system_prompt = data["system_prompt"]
+            session.system_prompt = data.get("trusted_system_prompt", data["system_prompt"])
+            state["project_context"] = data.get("project_context", "")
+            state["harness_profile"] = data.get("harness_profile", {})
+            state["excluded_sources"] = data.get("unavailable_report", [])
+            state["context_pipeline"] = data.get("context_pipeline", {})
             state["context_report"] = data.get("visibility_report", [])
             state["prepared_prompt"] = data.get("user_prompt", prompt)
             state["context_items"] = data.get("context_items", [])
