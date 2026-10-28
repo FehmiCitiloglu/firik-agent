@@ -1,3 +1,9 @@
+## v0.2.22 değişiklikleri
+
+- Kodlama ajanına gelişmiş bağlam toplama, arama, araç seçimi ve LSP desteği eklendi.
+- Bağlam sıkıştırma, uyarlanabilir çalışma profilleri ve kurtarma gözlemlenebilirliği geliştirildi.
+- Yeni bağlam hattı için testler, benchmark araçları ve teknik dokümantasyon eklendi.
+
 ## v0.2.21 değişiklikleri
 
 - Kodlama Ajanı için araştırma ve inceleme alt ajanları eklendi. Seçenek proje bazında açılır; ana ajan bağımsız görevleri dağıtır, sonuçları bekler ve birleştirir. Alt ajanlar yalnızca dosya okuma ve inceleme araçlarını kullanabilir.
