@@ -226,7 +226,7 @@ def _failure_metadata(exc: Exception, *, dispatched: bool = False) -> dict[str, 
         kind = "permission_denied"
     elif isinstance(exc, (json.JSONDecodeError, TypeError)):
         kind = "invalid_tool_arguments"
-    elif isinstance(exc, asyncio.TimeoutError):
+    elif isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
         kind = "tool_outcome_unknown" if dispatched else "tool_timeout"
     elif isinstance(exc, ValueError) and any(word in str(exc) for word in ("değişti", "silindi", "eşleşmiyor", "sürüm")):
         kind = "workspace_conflict"
@@ -896,7 +896,7 @@ class CodingToolFilter:
             return result
         except asyncio.CancelledError:
             raise
-        except asyncio.TimeoutError as exc:
+        except (asyncio.TimeoutError, TimeoutError) as exc:
             self.control.failures[failure_key] = self.control.failures.get(failure_key, 0) + 1
             metadata = _failure_metadata(exc, dispatched=dispatched)
             if metadata["requires_reconciliation"]:
