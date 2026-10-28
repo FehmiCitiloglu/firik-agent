@@ -15,7 +15,8 @@ import signal
 import sys
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from firik_agent.projects.indexer import read_project_text, safe_project_path, sanitize_secrets
 
@@ -88,7 +89,7 @@ class LSPAdapter:
             raise ValueError("LSP yalnızca proje dosyalarını okuyabilir.")
         if parsed.scheme == "file" and parsed.netloc not in {"", "localhost"}:
             raise ValueError("Uzak LSP dosya adresi reddedildi.")
-        path = safe_project_path(self.root, unquote(parsed.path) if parsed.scheme else value)
+        path = safe_project_path(self.root, url2pathname(parsed.path) if parsed.scheme else value)
         relative = path.relative_to(self.root).as_posix()
         if self.excluded(relative):
             raise ValueError("LSP dosyası kullanıcı tarafından hariç tutuldu.")

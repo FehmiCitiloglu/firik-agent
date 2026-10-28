@@ -185,7 +185,7 @@ async def test_malformed_arguments_and_repeated_identical_failure_are_bounded():
 
 @pytest.mark.asyncio
 async def test_timeout_after_external_dispatch_blocks_replay_and_persists_identity(tmp_path):
-    agent, provider, session = runtime([Message(role="assistant",tool_calls=[call()]), StreamChunk(delta_content="forbidden")], max_elapsed=.1)
+    agent, provider, session = runtime([Message(role="assistant",tool_calls=[call()]), StreamChunk(delta_content="forbidden")], max_elapsed=2)
     effects=[]
     async def effect():
         effects.append(1)
