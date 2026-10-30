@@ -1,3 +1,7 @@
+## v0.2.31 değişiklikleri
+
+- Yavaş sistemlerde harici süreç tanılama testinin zamanlama kararlılığı iyileştirildi.
+
 ## v0.2.30 değişiklikleri
 
 - Windows çalışma alanı testi satır sonu uyumluluğu düzeltildi.

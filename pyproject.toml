@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "firik-agent"
-version = "0.2.30"
+version = "0.2.31"
 
 description = "Firik Agent: desktop and CLI AI assistant with MCP, Skills, Plugins and FIRIK API support"
 readme = "README.md"

@@ -247,7 +247,10 @@ async def test_transport_hung_process_group_killed_and_diagnostics_bounded(tmp_p
     process=JsonlProcess(shutdown_timeout=.02)
     await process.start([sys.executable,"-c","import sys,time;sys.stderr.write('x'*50000);sys.stderr.flush();time.sleep(20)"] ,
                         cwd=str(tmp_path),env=clean_environment(str(tmp_path)))
-    await asyncio.sleep(.05)
+    async def wait_for_diagnostics():
+        while not process.stderr_truncated:
+            await asyncio.sleep(.01)
+    await asyncio.wait_for(wait_for_diagnostics(), timeout=5)
     await process.close()
     assert process.inspect()["returncode"] is not None
     assert len(process.stderr) <= 16384
