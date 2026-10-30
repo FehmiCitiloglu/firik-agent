@@ -1,3 +1,7 @@
+## v0.2.33 değişiklikleri
+
+- Yavaş Windows CI ortamlarında kodlama oturumu testinin bekleme süresi artırıldı.
+
 ## v0.2.32 değişiklikleri
 
 - macOS DMG oluşturulurken geçici kaynak meşgul hataları için sınırlı tekrar denemesi eklendi.

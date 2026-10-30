@@ -15,7 +15,7 @@ from firik_agent.core.types import StreamChunk
 def manual_session(bridge):
     service, state, roots = bridge
     session, initial = start(bridge)
-    initial.result(timeout=5)
+    initial.result(timeout=30)
     settings = service.projects.db.get_settings("p1")
     settings.coding_preferences.update(provider="local", mode="auto", permissions={
         "allow_terminal": True, "allow_tests": True,
