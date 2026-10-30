@@ -1,3 +1,7 @@
+## v0.2.34 değişiklikleri
+
+- Yavaş CI ortamlarında kodlama geçmişi ve kısmi yanıt testlerinin bekleme sınırları artırıldı.
+
 ## v0.2.33 değişiklikleri
 
 - Yavaş Windows CI ortamlarında kodlama oturumu testinin bekleme süresi artırıldı.

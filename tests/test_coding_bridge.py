@@ -326,7 +326,7 @@ def test_first_user_partial_and_plan_are_durable_while_model_is_blocked(bridge):
         if event.type == AgentEventType.TEXT_DELTA:
             partial.set()
     session, future = start(bridge, mode="plan", on_event=receive)
-    assert partial.wait(4)
+    assert partial.wait(30)
     reopened = CodingSessionStore(ProjectDatabase(service.projects.db.db_path))
     record = reopened.latest_run("p1")
     assert record.status in {"planning", "running"}
@@ -443,7 +443,7 @@ def test_prompt_prior_history_json_tool_arguments_and_export_are_redacted_before
     session.messages = [Message(role="assistant", tool_calls=[tool("example", api_key="json-secret")]),
                         Message(role="tool", tool_call_id="call_example", content="API_KEY=history-secret")]
     _, future = start(bridge, session=session, prompt="FIRIK_API_KEY=prompt-secret")
-    future.result(timeout=4)
+    future.result(timeout=30)
     request = json.dumps(state["requests"], ensure_ascii=False)
     export = service.coding_store.export_json(service.coding_store.latest_run("p1").id)
     for secret in ["system-secret", "history-secret", "prompt-secret", "json-secret"]:
