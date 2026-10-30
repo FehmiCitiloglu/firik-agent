@@ -10,3 +10,8 @@ def add_desktop_defaults(config: dict) -> None:
             "transport": "stdio", "command": "builtin:computer-use",
             "enabled": True, "autostart": True, "default_for_chat": True,
         }
+    if "web" not in servers and "web" not in disabled:
+        servers["web"] = {
+            "transport": "stdio", "command": "builtin:web",
+            "enabled": True, "autostart": True, "default_for_chat": True,
+        }

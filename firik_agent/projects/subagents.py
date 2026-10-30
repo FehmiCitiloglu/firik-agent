@@ -83,6 +83,7 @@ class _ChildControl(CodingRunControl):
         profile = getattr(parent, "harness_profile", None)
         if profile:
             self.harness_profile = {**profile, "context_tokens": min(profile["context_tokens"], profile["per_agent_tokens"]),
+                                    "context_tokens_explicit": True,
                                     "max_parallel_agents": 1, "max_iterations": manager.limits.max_iterations}
         # Children never expose delegation tools, regardless of parent permission.
         self.permissions["allow_subagents"] = False

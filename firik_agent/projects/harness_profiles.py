@@ -42,18 +42,29 @@ never modify permission, selected MCP tools, or a provider capability claim.
         name = preferences["harness_profile"]
     overrides = {**dict(config.get("harness_overrides") or {}),
                  **dict(preferences.get("harness_overrides") or {})}
+    context_explicit = "context_tokens" in overrides
     if isinstance(session_override, str):
         name = session_override
     elif isinstance(session_override, Mapping):
         name = session_override.get("name", session_override.get("harness_profile", name))
         overrides.update({key: value for key, value in session_override.items() if key in _BOUNDS or key == "tool_selection"})
+        if "context_tokens" in session_override:
+            # Resolved profiles travel through sessions and durable storage.
+            # Their built-in retrieval target is not a user-selected hard cap.
+            # Recognize older persisted resolved profiles without the marker.
+            resolved = session_override.get("permission_effect") == "none"
+            default_context = PROFILES.get(name, {}).get("context_tokens")
+            context_explicit = not (
+                session_override.get("context_tokens") == default_context
+                and (session_override.get("context_tokens_explicit") is False
+                     or (resolved and "context_tokens_explicit" not in session_override)))
     elif session_override is not None:
         raise ValueError("Çalışma profili metin veya yapılandırma nesnesi olmalıdır.")
     if name not in PROFILES:
         raise ValueError("Bilinmeyen çalışma profili: " + str(name))
     result = {"name": name, **PROFILES[name], "tool_selection": "dynamic",
               "fallback_policy": "permitted_inventory_on_explicit_discovery",
-              "permission_effect": "none"}
+              "permission_effect": "none", "context_tokens_explicit": context_explicit}
     for key, (low, high) in _BOUNDS.items():
         if key in overrides:
             value = overrides[key]
@@ -80,6 +91,23 @@ def output_limit(requested: int, profile: Mapping[str, Any] | None,
         if type(value) is int and value > 0:
             limit = min(limit, value)
     return limit
+
+
+def input_limit(model_budget: int, profile: Mapping[str, Any] | None,
+                context_window: int | None = None) -> int:
+    """Use model capacity for ordinary profiles, preserving explicit host caps.
+
+    Built-in context_tokens controls retrieved project context and is also the
+    conservative fallback for an unknown model. It must not shrink a verified
+    million-token model to the coding profile's 8,000-token retrieval target.
+    Explicit numeric overrides and child-agent reservations remain hard caps.
+    """
+    if not profile:
+        return model_budget
+    known = type(context_window) is int and context_window > 0
+    if known and profile.get("context_tokens_explicit") is False:
+        return model_budget
+    return min(model_budget, profile["context_tokens"])
 
 
 def profile_instructions(profile: Mapping[str, Any] | None) -> str:

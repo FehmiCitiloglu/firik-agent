@@ -1072,12 +1072,18 @@ async def run_repl(agent: Agent) -> None:
 
             activity.running = True
 
+            def report_event(event):
+                from firik_agent.core.events import AgentEventType
+                if event.type == AgentEventType.RECOVERY:
+                    activity.recovery(event.content or "", event.metadata)
+
             async def run_agent():
                 return await agent.run(
                     prompt=user_input,
                     on_thought=activity.thought,
                     on_tool_start=activity.tool_start,
                     on_tool_end=activity.tool_end,
+                    on_event=report_event,
                 )
 
             try:

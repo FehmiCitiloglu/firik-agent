@@ -237,7 +237,9 @@ class FirikService(CodingBridge):
 
     def configure_model_metadata(self, provider) -> None:
         if provider.name == self.provider and provider.base_url.rstrip("/") == self.base_url.rstrip("/"):
-            provider.model_metadata = dict(self._model_metadata) if self._model_metadata_url == self.base_url else {}
+            defaults = getattr(provider, "context_metadata_defaults", lambda: {})()
+            provider.model_metadata = {**defaults, **(self._model_metadata
+                if self._model_metadata_url == self.base_url else {})}
         # Apply the same exact-model evidence in desktop and registry paths.
         # Endpoint catalogue refreshes cannot silently erase explicit host config.
         configured = self.config.get("providers", {}).get(provider.name, {})
@@ -840,7 +842,7 @@ class FirikService(CodingBridge):
             # 1. Remove from config.yaml
             remove_mcp_server_from_config(name, str(self.config_path) if self.config_path else None)
             self.config = load_config(self.config_path)
-            if name == "computer-use":
+            if name in {"computer-use", "web"}:
                 disabled = self.config.setdefault("disabled_default_mcps", [])
                 if name not in disabled:
                     disabled.append(name)

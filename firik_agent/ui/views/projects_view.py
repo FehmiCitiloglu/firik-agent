@@ -980,7 +980,7 @@ class ProjectsView(CodingEvidenceMixin, CodingWorkspaceMixin, ctk.CTkFrame):
             return
         state["inspection_warning"] = (
             "Bazı dosyalar okunamadı veya tarama sınırına ulaşıldı; karşılaştırma kısmi."
-            if snapshot.limited or snapshot.skipped or (state["before"] and (state["before"].limited or state["before"].skipped)) else ""
+            if snapshot.inspection_incomplete or state["before"].inspection_incomplete else ""
         )
 
     def _refresh_coding_changes_async(self) -> None:
@@ -1028,7 +1028,7 @@ class ProjectsView(CodingEvidenceMixin, CodingWorkspaceMixin, ctk.CTkFrame):
             widget.destroy()
         if not snapshot.files:
             ctk.CTkLabel(self.coding_files_list, text="Gösterilecek kaynak dosya bulunamadı.").pack(anchor="w")
-        if snapshot.limited or snapshot.skipped:
+        if snapshot.inspection_incomplete:
             ctk.CTkLabel(self.coding_files_list, text="Dosya listesi kısmi; büyük ve okunamayan dosyalar atlandı.", wraplength=350).pack(anchor="w")
         for path in list(snapshot.files)[:120]:
             ctk.CTkButton(self.coding_files_list, text=path, anchor="w", height=26, fg_color="transparent",

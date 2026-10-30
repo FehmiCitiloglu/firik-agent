@@ -118,6 +118,9 @@ class MCPClient:
         if self.command == "builtin:computer-use":
             from firik_agent.computer_use.mcp_server import ComputerUseMCPServer
             self._builtin_server = await asyncio.to_thread(ComputerUseMCPServer)
+        elif self.command == "builtin:web":
+            from firik_agent.mcp.web_server import WebMCPServer
+            self._builtin_server = WebMCPServer()
         elif self.is_stdio:
             await self._connect_stdio()
         elif self.url:
@@ -217,7 +220,7 @@ class MCPClient:
                     return server.handle_request(request.model_dump())
             response = await asyncio.wait_for(asyncio.to_thread(handle), timeout=timeout)
             if response and response.get("error"):
-                raise RuntimeError(response["error"].get("message", "Computer-use MCP error"))
+                raise RuntimeError(response["error"].get("message", "Built-in MCP error"))
             return response.get("result") if response else None
 
         if self.is_stdio:
@@ -332,7 +335,7 @@ class MCPClient:
         )
 
     def stop_local_actions(self) -> None:
-        if self._builtin_server:
+        if self._builtin_server and self.command == "builtin:computer-use":
             self._builtin_server.service.stop()
 
     async def disconnect(self, grace_period: float = 3.0) -> None:

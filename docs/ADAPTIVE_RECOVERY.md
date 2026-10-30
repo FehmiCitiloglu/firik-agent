@@ -105,6 +105,7 @@ agent:
     max_requests: 100
     max_elapsed: 900
     base_delay: 0.25
+    overload_base_delay: 2
     max_delay: 30
     max_tokens: null
     max_cost: null
@@ -116,14 +117,18 @@ logical model request, so 2 permits at most 3 attempts. `run_retries` bounds
 additional attempts across the run, including context adjustment and the local
 interface fallback. `max_requests` counts actual model attempts and summary
 requests. The existing iteration limit still applies independently.
-`max_elapsed`, `base_delay` and `max_delay` use seconds. Optional `max_tokens`
+`max_elapsed`, `base_delay`, `overload_base_delay` and `max_delay` use seconds. Optional `max_tokens`
 and `max_cost` bound aggregate reported usage in USD. Non-USD cost reports do not
 establish a USD spending cap. Verified USD price metadata can supply estimates.
 A new run receives a fresh resource budget; restoring a session does not promise
 to reconstruct a cross-run billing cap.
 
 Eligible transient failures use capped exponential backoff with jitter:
-`min(max_delay, base_delay * 2**attempt) * uniform(0.5, 1.0)`. A valid numeric or
+`min(max_delay, base_delay * 2**attempt) * uniform(0.5, 1.0)`. Provider
+overload uses `max(base_delay, overload_base_delay)` as its base, giving
+the busy model server more time to recover. Other transient failures retain the
+short connection retry interval. CLI recovery notifications appear separately
+from model thinking blocks. A valid numeric or
 HTTP-date `Retry-After` is a lower bound. If honoring it would exceed the allowed
 wait or elapsed budget, recovery requests intervention instead of retrying early.
 Backoff checks cancellation frequently. Coding retries compare the live policy

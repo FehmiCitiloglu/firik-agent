@@ -14,6 +14,7 @@ from rich.console import Console
 from firik_agent.activity import ActivityLog, ActivityView
 from firik_agent import cli
 from firik_agent.core.agent import Agent
+from firik_agent.core.events import AgentEvent, AgentEventType
 
 
 def visible(view):
@@ -150,6 +151,37 @@ async def test_repl_compact_fallback_details_and_clear(monkeypatch):
         assert detail in before_details[2]
     assert '[bold]literal[/bold]' in before_details[2]
     assert 'No activity yet.' in before_details[4]
+
+
+@pytest.mark.asyncio
+async def test_repl_recovery_is_visible_as_retry_not_model_thinking(monkeypatch):
+    agent = Agent(config={'agent': {}})
+    monkeypatch.setattr(agent, 'initialize', AsyncMock())
+    output = Console(file=StringIO(), width=140)
+    monkeypatch.setattr(cli, 'console', output)
+    inputs = iter(['hello', '/details', '/exit'])
+
+    class Session:
+        async def prompt_async(self, *args):
+            return next(inputs)
+
+    async def run(**callbacks):
+        for _ in range(2):
+            callbacks['on_event'](AgentEvent(AgentEventType.RECOVERY, 'test',
+                content='Provider is busy.', metadata={
+                    'retry_eligible': True, 'delay': 2.0, 'failure_kind': 'provider_overloaded'}))
+        callbacks['on_thought']('ACTUAL MODEL REASONING')
+        return 'Final answer'
+
+    monkeypatch.setattr(cli, 'PromptSession', lambda **kwargs: Session())
+    monkeypatch.setattr(agent, 'run', run)
+    await cli.run_repl(agent)
+    rendered = output.file.getvalue()
+    assert '2 retries' in rendered
+    assert '1 thinking blocks' in rendered
+    assert '3 thinking blocks' not in rendered
+    assert 'Retrying in 2.0s.' in rendered
+    assert 'Provider is busy.' in rendered
 
 
 @pytest.mark.asyncio

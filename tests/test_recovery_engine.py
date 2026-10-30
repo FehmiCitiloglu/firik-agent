@@ -53,7 +53,7 @@ class Scripted:
 
 def runtime(steps, **limits):
     agent = Agent(config={"agent": {"context_compaction": {"enabled": False},
-                                   "recovery": {"base_delay": 0, **limits}},
+                                   "recovery": {"base_delay": 0, "overload_base_delay": 0, **limits}},
                           "providers": {}, "plugins": {}, "skills": {}})
     agent._is_initialized = True
     provider = Scripted(steps)
@@ -85,6 +85,29 @@ def test_jitter_and_retry_after_and_limits():
     assert engine.decide(context(F.PROVIDER_OVERLOADED, attempts_used=1)).delay == 2
     assert engine.decide(context(F.PROVIDER_OVERLOADED, attempts_used=2)).action == A.FAIL
     assert engine.decide(context(F.RATE_LIMITED, retry_after=99999)).action == A.INTERVENE
+
+
+def test_overload_backoff_is_longer_but_preserves_retry_and_wait_caps():
+    engine = AdaptiveRecoveryEngine(jitter=lambda: 0)
+    assert engine.decide(context(F.TRANSPORT_ERROR, phase=P.NOT_SUBMITTED)).delay == .125
+    assert engine.decide(context(F.PROVIDER_OVERLOADED)).delay == 1
+    assert engine.decide(context(F.PROVIDER_OVERLOADED, attempts_used=1)).delay == 2
+    assert engine.decide(context(F.PROVIDER_OVERLOADED, retry_after=5)).delay == 5
+    assert engine.decide(context(F.PROVIDER_OVERLOADED, retry_after=31)).action == A.INTERVENE
+    assert engine.decide(context(F.PROVIDER_OVERLOADED, attempts_used=2)).action == A.FAIL
+    assert engine.decide(context(F.PROVIDER_OVERLOADED, phase=P.PARTIAL_RESPONSE)).action == A.RECONCILE
+
+
+@pytest.mark.parametrize("value", [-1, True, float("nan"), "2"])
+def test_invalid_overload_delay_is_rejected(value):
+    with pytest.raises(ValueError, match="overload_base_delay"):
+        RecoveryLimits(overload_base_delay=value)
+
+
+def test_overload_backoff_is_configurable_without_slowing_transport_recovery():
+    engine = AdaptiveRecoveryEngine(RecoveryLimits(base_delay=.5, overload_base_delay=4), jitter=lambda: 1)
+    assert engine.decide(context(F.TRANSPORT_ERROR, phase=P.NOT_SUBMITTED)).delay == .5
+    assert engine.decide(context(F.PROVIDER_OVERLOADED)).delay == 4
 
 
 @pytest.mark.parametrize("streaming", [True, False])

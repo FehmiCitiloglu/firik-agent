@@ -46,6 +46,7 @@ class RecoveryLimits:
     max_requests: int = 100
     max_elapsed: float = 900
     base_delay: float = .25
+    overload_base_delay: float = 2
     max_delay: float = 30
     max_tokens: int | None = None
     max_cost: float | None = None
@@ -56,7 +57,7 @@ class RecoveryLimits:
             value = getattr(self, key)
             if isinstance(value, bool) or not isinstance(value, int) or value < (1 if key in {"max_requests", "repeated_tool_failures"} else 0):
                 raise ValueError(f"Invalid recovery limit: {key}")
-        for key in ("max_elapsed", "base_delay", "max_delay", "max_tokens", "max_cost"):
+        for key in ("max_elapsed", "base_delay", "overload_base_delay", "max_delay", "max_tokens", "max_cost"):
             value = getattr(self, key)
             if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))
                                       or not math.isfinite(value) or value < 0):
@@ -213,7 +214,11 @@ class AdaptiveRecoveryEngine:
         eligible = c.failure_kind in {FailureKind.TRANSPORT_ERROR, FailureKind.RATE_LIMITED,
                                      FailureKind.PROVIDER_OVERLOADED, FailureKind.STREAM_INTERRUPTED, FailureKind.TOOL_TIMEOUT}
         if safe and eligible:
-            delay = min(self.limits.max_delay, self.limits.base_delay * (2 ** c.attempts_used)) * (.5 + .5 * self.jitter())
+            # A busy model server needs a longer recovery interval than a
+            # failed connection. Keep both waits within the same run/retry caps.
+            base_delay = (max(self.limits.base_delay, self.limits.overload_base_delay)
+                          if c.failure_kind == FailureKind.PROVIDER_OVERLOADED else self.limits.base_delay)
+            delay = min(self.limits.max_delay, base_delay * (2 ** c.attempts_used)) * (.5 + .5 * self.jitter())
             if c.retry_after is not None:
                 # Never shorten a valid provider Retry-After. Fail if it exceeds
                 # our bounded run wait instead of hammering the endpoint early.

@@ -58,12 +58,72 @@ def test_firik_payload_formatting():
 
 
 @pytest.mark.asyncio
-async def test_firik_known_models():
+async def test_firik_known_models(monkeypatch):
+    native_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: native_client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(503)), **kwargs))
     prov = FirikProvider(api_key="key", base_url=DEFAULT_FIRIK_DIRECT_URL)
     models = await prov.list_models()
     model_ids = [m.id for m in models]
     assert "glm-5.3" in model_ids
     assert "deepseek-v4-flash" in model_ids
+    assert "mimo-v2.6-pro" in model_ids
+    assert all(not model.startswith("evren/") for model in model_ids)
+    gateway = FirikProvider(base_url=DEFAULT_LLMTR_GATEWAY_URL)
+    assert all(model.id.startswith("evren/") for model in await gateway.list_models())
+
+
+def test_direct_context_defaults_are_scoped_and_do_not_enable_other_capabilities():
+    from firik_agent.projects.model_capabilities import model_capabilities
+    provider = FirikProvider(default_model="mimo-v2.6-pro")
+    caps = model_capabilities(provider.model_metadata[provider.current_model])
+    assert caps["context_window"] == 1048576
+    assert caps["source"] == "verified_config"
+    assert caps["supports_tools"] is None
+    assert caps["max_output_tokens"] is None
+    assert model_capabilities(provider.model_metadata["glm-5.3"])["context_window"] == 524288
+    assert model_capabilities(provider.model_metadata["auto"])["context_window"] == 32768
+    assert "unrecognized-model" not in provider.model_metadata
+    for endpoint in ("http://localhost:8080/v1", "https://other.invalid/v1",
+                     DEFAULT_FIRIK_DIRECT_URL + "/other", DEFAULT_LLMTR_GATEWAY_URL):
+        assert not FirikProvider(base_url=endpoint).model_metadata
+
+
+def test_desktop_uses_context_defaults_without_overriding_live_or_host_evidence():
+    from firik_agent.ui.service import FirikService
+    from firik_agent.projects.model_capabilities import model_capabilities
+    service = FirikService.__new__(FirikService)
+    service.provider, service.base_url = "firik", DEFAULT_FIRIK_DIRECT_URL
+    service._model_metadata_url = service.base_url
+    service._model_metadata, service.config = {}, {}
+    provider = FirikProvider(default_model="mimo-v2.6-pro")
+    service.configure_model_metadata(provider)
+    assert model_capabilities(provider.model_metadata[provider.current_model])["context_window"] == 1048576
+    service._model_metadata = {provider.current_model: {"source": "provider", "context_length": 65536}}
+    service.configure_model_metadata(provider)
+    assert model_capabilities(provider.model_metadata[provider.current_model])["context_window"] == 65536
+    service._model_metadata[provider.current_model]["verified"] = False
+    service.configure_model_metadata(provider)
+    assert model_capabilities(provider.model_metadata[provider.current_model])["context_window"] is None
+    service.config = {"providers": {"firik": {"model_capabilities": {
+        provider.current_model: {"source": "verified_config", "context_window": 32768}}}}}
+    service.configure_model_metadata(provider)
+    assert model_capabilities(provider.model_metadata[provider.current_model])["context_window"] == 32768
+
+
+@pytest.mark.asyncio
+async def test_catalogue_replaces_static_capacity_and_preserves_revocation(monkeypatch):
+    from firik_agent.projects.model_capabilities import model_capabilities
+    row = {"id": "mimo-v2.6-pro", "context_length": 32768}
+    native_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: native_client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"data": [row]})), **kwargs))
+    provider = FirikProvider(default_model=row["id"])
+    await provider.list_models()
+    assert model_capabilities(provider.model_metadata[row["id"]])["context_window"] == 32768
+    row["verified"] = False
+    await provider.list_models()
+    assert model_capabilities(provider.model_metadata[row["id"]])["context_window"] is None
 
 
 def test_provider_registry():

@@ -20,6 +20,7 @@ class ActivityEntry:
     status: str = ""
     expanded: bool = False
     tool_name: str | None = None
+    kind: str = "thinking"
 
 
 class ActivityLog:
@@ -32,10 +33,22 @@ class ActivityLog:
         self.entries.append(ActivityEntry("Thinking", text))
         self.notify()
 
+    def recovery(self, text: str, metadata: dict[str, Any]) -> None:
+        retrying = bool(metadata.get("retry_eligible"))
+        delay = metadata.get("delay", 0)
+        wait = f" in {delay:.1f}s" if isinstance(delay, (int, float)) and delay > 0 else ""
+        detail = text + (f"\nRetrying{wait}." if retrying else "")
+        self.entries.append(ActivityEntry(
+            "Retry" if retrying else "Recovery", detail,
+            status=metadata.get("failure_kind", ""), kind="retry" if retrying else "recovery",
+        ))
+        self.notify()
+
     def tool_start(self, name: str, args: dict[str, Any]) -> None:
         self.entries.append(ActivityEntry(
             name, "Arguments:\n" + json.dumps(args, ensure_ascii=False, indent=2),
             status="running", tool_name=name,
+            kind="tool",
         ))
         self.notify()
 
@@ -58,10 +71,17 @@ class ActivityLog:
     @property
     def summary(self) -> str:
         tools = sum(entry.tool_name is not None for entry in self.entries)
-        thoughts = sum(entry.tool_name is None for entry in self.entries)
+        thoughts = sum(entry.kind == "thinking" for entry in self.entries)
+        retries = sum(entry.kind == "retry" for entry in self.entries)
+        recoveries = sum(entry.kind == "recovery" for entry in self.entries)
         active = next((e.tool_name for e in reversed(self.entries) if e.status == "running"), None)
         state = f"Running {active}" if active else "Firik düşünüyor" if self.running else "Activity"
-        return f"{state} · {tools} tool calls · {thoughts} thinking blocks"
+        detail = f"{state} · {tools} tool calls · {thoughts} thinking blocks"
+        if retries:
+            detail += f" · {retries} retries"
+        if recoveries:
+            detail += f" · {recoveries} recovery events"
+        return detail
 
     def plain_details(self) -> str:
         return "\n\n".join(f"{e.title} ({e.status or 'thinking'})\n{e.detail}" for e in self.entries)

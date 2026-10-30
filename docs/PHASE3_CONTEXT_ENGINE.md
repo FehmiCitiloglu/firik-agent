@@ -60,6 +60,9 @@ Profiller: `minimal`, `coding`, `research`, `deep-debug`, `multi-agent`, `local-
 Bağlam, çıktı, iterasyon, süre, paralellik ve alt ajan başına toplam bütçeyi belirlerler.
 Öncelik açık çalışma/oturum tercihi, proje tercihi, kullanıcı yapılandırmasıdır.
 Sayısal kullanıcı override'ları korunur. Yetkiler ayrı mevcut izin ayarlarındadır.
+Varsayılan profil `context_tokens` değeri kaynak seçimi hedefidir; bilinen model
+kapasitesini tüm istek için daraltmaz. Açık sayısal override ve alt ajan başına
+ayrılan bütçeler tüm istek için sert sınır olmaya devam eder.
 
 ```yaml
 agent:

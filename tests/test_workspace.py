@@ -60,6 +60,106 @@ def test_partial_scans_never_report_missing_files_as_deleted_or_added(tmp_path):
     assert compare_workspaces(before, skipped) == []
 
 
+def test_expected_non_source_omissions_do_not_report_a_scan_failure(tmp_path):
+    (tmp_path / "main.py").write_text("value = 1\n")
+    (tmp_path / "report.json").write_bytes(b" " * (1024 * 1024 + 1))
+    (tmp_path / "unknown-binary.dat").write_bytes(b"\x00binary")
+    (tmp_path / "legacy-text.dat").write_bytes(b"\xff\xfelegacy")
+
+    snapshot = capture_workspace(tmp_path)
+
+    assert snapshot.files == {"main.py": "value = 1\n"}
+    assert snapshot.omitted == {"report.json": "file_size", "unknown-binary.dat": "binary",
+                                "legacy-text.dat": "encoding"}
+    assert snapshot.skipped == set(snapshot.omitted)
+    assert not snapshot.limited
+    assert not snapshot.inspection_incomplete
+
+
+@pytest.mark.parametrize("replacement", [b"\x00binary", b"a" * (1024 * 1024 + 1), b"\xfflegacy"])
+def test_file_becoming_non_source_is_never_reported_as_deleted(tmp_path, replacement):
+    path = tmp_path / "source.txt"
+    path.write_text("old source\n")
+    before = capture_workspace(tmp_path)
+    path.write_bytes(replacement)
+    after = capture_workspace(tmp_path)
+
+    assert not after.inspection_incomplete
+    assert compare_workspaces(before, after) == []
+    assert compare_workspaces(after, before) == []
+
+
+def test_workspace_scan_honors_root_and_nested_repository_ignores(tmp_path):
+    (tmp_path / ".gitignore").write_text("generated/\n*.local.py\n!allowed.local.py\n")
+    (tmp_path / "generated").mkdir()
+    (tmp_path / "generated" / "huge.json").write_bytes(b"a" * (1024 * 1024 + 1))
+    (tmp_path / "blocked.local.py").write_text("ignored = True\n")
+    (tmp_path / "allowed.local.py").write_text("allowed = True\n")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / ".gitignore").write_text("cache/\n")
+    (tmp_path / "src" / "cache").mkdir()
+    (tmp_path / "src" / "cache" / "cache.py").write_text("ignored = True\n")
+    (tmp_path / "src" / "main.py").write_text("main = True\n")
+
+    snapshot = capture_workspace(tmp_path, max_files=4)
+
+    assert set(snapshot.files) == {".gitignore", "allowed.local.py", "src/.gitignore", "src/main.py"}
+    assert snapshot.ignored_paths == {"generated", "blocked.local.py", "src/cache"}
+    assert not snapshot.inspection_incomplete
+
+
+def test_new_ignore_rules_cannot_make_existing_sources_appear_deleted(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "main.py").write_text("value = 1\n")
+    before = capture_workspace(tmp_path)
+    (tmp_path / ".gitignore").write_text("src/\n")
+    after = capture_workspace(tmp_path)
+
+    assert {change["path"] for change in compare_workspaces(before, after)} == {".gitignore"}
+    assert {change["path"] for change in compare_workspaces(after, before)} == {".gitignore"}
+
+
+def test_actual_scan_limits_and_read_errors_remain_visible(tmp_path, monkeypatch):
+    from firik_agent.projects import workspace
+
+    (tmp_path / "a.py").write_text("value = 1\n")
+    (tmp_path / "b.py").write_text("value = 2\n")
+    by_files = capture_workspace(tmp_path, max_files=1)
+    by_bytes = capture_workspace(tmp_path, max_bytes=1)
+    assert by_files.inspection_incomplete and by_files.limit_reasons == {"files"}
+    assert by_bytes.inspection_incomplete and by_bytes.limit_reasons == {"bytes"}
+
+    original_open = workspace.os.open
+    def denied(path, *args, **kwargs):
+        if Path(path).name == "a.py":
+            raise PermissionError("unreadable source")
+        return original_open(path, *args, **kwargs)
+    monkeypatch.setattr(workspace.os, "open", denied)
+    unreadable = capture_workspace(tmp_path)
+    assert unreadable.inspection_incomplete
+    assert unreadable.read_errors == {"a.py"}
+    assert unreadable.skipped == {"a.py"}
+    assert "b.py" in unreadable.files
+    assert WorkspaceSnapshot(skipped={"legacy.py"}).inspection_incomplete
+
+
+def test_non_regular_files_are_omitted_without_opening_them(tmp_path, monkeypatch):
+    import os
+    from firik_agent.projects import workspace
+
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("Named pipes are unavailable")
+    os.mkfifo(tmp_path / "pipe.txt")
+    original_open = workspace.os.open
+    def guarded(path, *args, **kwargs):
+        assert Path(path).name != "pipe.txt"
+        return original_open(path, *args, **kwargs)
+    monkeypatch.setattr(workspace.os, "open", guarded)
+    snapshot = capture_workspace(tmp_path)
+    assert snapshot.omitted == {"pipe.txt": "non_regular"}
+    assert not snapshot.inspection_incomplete
+
+
 def test_newline_only_changes_are_visible():
     before = WorkspaceSnapshot(files={"main.py": "pass"})
     after = WorkspaceSnapshot(files={"main.py": "pass\n"})

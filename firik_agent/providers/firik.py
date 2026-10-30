@@ -15,14 +15,38 @@ logger = logging.getLogger(__name__)
 DEFAULT_FIRIK_DIRECT_URL = "https://evren-llmapi.ssyz.org.tr/v1"
 DEFAULT_LLMTR_GATEWAY_URL = "https://llmtr.com/v1"
 
+# Deployment limits read from the direct endpoint's /models on 2026-10-30.
+# These are exact endpoint/model fallbacks, not capabilities inferred from names.
+FIRIK_CONTEXT_WINDOWS = {
+    "glm-5.3": 524288,
+    "mimo-v2.6-pro": 1048576,
+    "deepseek-v4.1-flash": 1048576,
+    "qwen3.8-flash-next": 262144,
+    "gemma-4-31b": 262144,
+    "qwen3-vl-30b": 262144,
+    "auto": 32768,
+}
+
 FIRIK_KNOWN_MODELS = [
     # Direct Firik models
     ModelInfo(
         id="glm-5.3",
         name="GLM 5.3 (Direct Firik)",
-        context_window=512000,
+        context_window=524288,
         supports_tools=True,
         description="GLM-5.3 general reasoning and tool-calling model hosted by FIRIK",
+    ),
+    ModelInfo(
+        id="mimo-v2.6-pro",
+        name="MiMo V2.6 Pro (Direct Firik)",
+        context_window=1048576,
+        supports_tools=True,
+    ),
+    ModelInfo(
+        id="deepseek-v4.1-flash",
+        name="DeepSeek V4.1 Flash (Direct Firik)",
+        context_window=1048576,
+        supports_tools=True,
     ),
     ModelInfo(
         id="deepseek-v4-flash",
@@ -56,7 +80,7 @@ FIRIK_KNOWN_MODELS = [
     ModelInfo(
         id="auto",
         name="Firik Auto Router",
-        context_window=512000,
+        context_window=32768,
         supports_tools=True,
         description="Smart routing across FIRIK model fleet",
     ),
@@ -129,6 +153,15 @@ class FirikProvider(BaseProvider):
             default_model=default_model,
         )
         self.is_gateway = is_gateway or ("llmtr.com" in base_url)
+        self.model_metadata = self.context_metadata_defaults()
+
+    def context_metadata_defaults(self) -> Dict[str, Dict[str, Any]]:
+        """Offline capacity evidence for this deployment only; live rows win."""
+        if self.base_url != DEFAULT_FIRIK_DIRECT_URL or self.is_gateway:
+            return {}
+        return {model: {"id": model, "context_window": window, "source": "verified_config",
+                        "evidence_url": DEFAULT_FIRIK_DIRECT_URL + "/models"}
+                for model, window in FIRIK_CONTEXT_WINDOWS.items()}
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {
@@ -291,5 +324,5 @@ class FirikProvider(BaseProvider):
 
         # Fallback to local catalog
         if self.is_gateway:
-            return [m for m in FIRIK_KNOWN_MODELS if m.id.startswith("firik/")]
-        return [m for m in FIRIK_KNOWN_MODELS if not m.id.startswith("firik/")]
+            return [m for m in FIRIK_KNOWN_MODELS if m.id.startswith("evren/")]
+        return [m for m in FIRIK_KNOWN_MODELS if not m.id.startswith("evren/")]

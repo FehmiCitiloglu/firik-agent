@@ -180,6 +180,8 @@ Kullanıcı mesajı gönderildiğinde bir kez, model yanıtı tamamlandığında
 
 **Computer-use MCP** varsayılan olarak eklenir ve yeni sohbetlerde seçilir. Yerleşik sunucu uygulama içinde çalışır; harici Python veya MCP sunucusu kurulumu gerekmez. MCP yöneticisinden kapatılabilir veya kaldırılabilir; bu tercih sonraki açılışlarda korunur. **MCP** düğmesiyle yalnızca ilgili sohbetten de çıkarılabilir. Ekran, klavye ve fare işlemleri mevcut işletim sistemi izinlerini kullanır.
 
+**Web MCP** de masaüstünde varsayılan olarak yeni sohbetlere eklenir: `web_search` DuckDuckGo üzerinden bağlantı arar, `web_open` HTTP(S) sayfalarını metin olarak okur. Harici MCP kurulumu veya API anahtarı gerekmez; arama sağlayıcısının erişilebilirliği ve sayfaların sunucu tarafında okunabilir olması gerekir. JavaScript ile oluşturulan içerik, oturum açılmış sayfalar ve PDF'ler desteklenmez. MCP yöneticisinden veya sohbetin MCP seçicisinden kapatılabilir. Arama sorguları sağlayıcıya gönderilir; web araçları Docker komut sandbox'ının dışında, uygulamanın ağ erişimiyle çalışır ve yerel ağ adreslerini de açabilir. Web içeriği güvenilir talimat olarak değerlendirilmemelidir.
+
 ### Projeler: Kodlama Ajanı
 
 Projenin **Kodlama Ajanı** sekmesinde model seçimi proje bazında kaydedilir. **Değişiklikler**, her çalışma başlangıcındaki dosyalarla karşılaştırarak eklenen, değişen ve silinen dosyaları; yeşil/kırmızı satır farklarını gösterir. Araç işlemlerinden sonra ve çalışma sonunda otomatik güncellenir. Git deposu olmayan projelerde de çalışır. **İşlemler** sekmesinden araç parametreleri, komut çıktısı, çalışma süresi ve hatalar incelenebilir. **Dosyalar** alt klasörlerdeki kaynak dosyaları listeler ve satır numaralı önizleme açar.

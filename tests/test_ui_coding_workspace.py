@@ -47,6 +47,43 @@ def settle(app, seconds=0.15):
         time.sleep(0.005)
 
 
+def test_scan_omissions_do_not_mask_the_actual_run_error(workspace):
+    from firik_agent.projects.workspace import WorkspaceSnapshot
+    app, view, project, streams = workspace
+    state = view._coding_state()
+    state["before"] = WorkspaceSnapshot(files={"main.py": "print('Türkçe')\n"})
+    state["run_error"] = "Provider context limit exceeded."
+    state["status"] = "Çalışma hata ile sona erdi"
+    after = WorkspaceSnapshot(files=dict(state["before"].files), skipped={"report.json"},
+                              omitted={"report.json": "file_size"})
+    view._apply_coding_snapshot(state, after)
+    view._refresh_coding_control()
+    text = view.coding_task_label.cget("text")
+    assert "Hata: Provider context limit exceeded." in text
+    assert not state["inspection_warning"]
+    assert "tarama sınırı" not in text
+
+    after.limited = True
+    after.limit_reasons = {"files"}
+    view._apply_coding_snapshot(state, after)
+    view._refresh_coding_control()
+    text = view.coding_task_label.cget("text")
+    assert "Hata: Provider context limit exceeded." in text
+    assert "Dosya karşılaştırması:" in text and "tarama sınırına" in text
+
+
+def test_model_failure_detail_survives_final_workspace_scan(workspace):
+    app, view, project, streams = workspace
+    view.coding_input.insert(0, "main.py incele")
+    view.coding_send_btn.invoke()
+    call = streams[-1]
+    call["on_event"](AgentEvent(AgentEventType.ERROR, session_id=call["session_id"],
+                               content="Bağlam hazırlığı başarısız: deneme hatası"))
+    settle(app)
+    assert view._coding_state()["run_error"] == "Bağlam hazırlığı başarısız: deneme hatası"
+    assert "deneme hatası" in view.coding_task_label.cget("text")
+
+
 def test_phase3_profile_selector_prepares_separate_context_and_inspector(workspace):
     app, view, project, streams = workspace
     view.coding_profile_selector._dropdown_callback("local-efficient")

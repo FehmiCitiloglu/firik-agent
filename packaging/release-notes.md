@@ -1,3 +1,10 @@
+## v0.2.29 değişiklikleri
+
+- Yerleşik web arama ve sayfa okuma araçları eklendi.
+- Model bağlam kapasiteleri, bağlam sıkıştırma ve kurtarma davranışı iyileştirildi.
+- Proje çalışma alanı taraması, yok sayılan dosyalar ve eksik tarama durumları daha doğru ele alınacak şekilde geliştirildi.
+- Kodlama çalışma alanı ve işlem geçmişi güncellendi; ilgili testler genişletildi.
+
 ## v0.2.28 değişiklikleri
 
 - Windows CI üzerinde uzun süren entegrasyon testleri ve Git çalışma ağacı fixture izinleri düzeltildi.

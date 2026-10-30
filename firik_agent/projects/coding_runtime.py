@@ -183,6 +183,12 @@ def prepare_coding_messages(messages: list[Message], control: "CodingRunControl"
     system_chars = sum(len(json.dumps(message.to_dict(), ensure_ascii=False)) for message in systems)
     # This is a conservative local estimate; provider tokenization is not available.
     budget = max(0, (window - output_tokens - 1024) * 3 - schemas_chars - system_chars) if verified_window else 16_000
+    from firik_agent.projects.harness_profiles import input_limit, runtime_profile
+    profile = runtime_profile(control)
+    total_budget = (budget + schemas_chars + system_chars) // 3
+    limited = input_limit(total_budget, profile, window)
+    if limited < total_budget:
+        budget = max(0, limited * 3 - schemas_chars - system_chars)
     turns: list[list[Message]] = []
     for message in conversation:
         if message.role == "user" or not turns:

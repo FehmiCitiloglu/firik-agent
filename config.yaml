@@ -18,6 +18,10 @@ providers:
     api_key_env: FIRIK_API_KEY
     default_model: mimo-v2.6-pro
     models:
+    - id: mimo-v2.6-pro
+      name: MiMo V2.6 Pro
+      context_window: 1048576
+      supports_tools: true
     - id: glm-5.3
       name: GLM 5.3
       context_window: 512000
@@ -68,6 +72,12 @@ providers:
     api_key_env: OPENAI_API_KEY
     default_model: gpt-4o
 mcp_servers:
+  web:
+    transport: stdio
+    command: builtin:web
+    enabled: true
+    autostart: true
+    default_for_chat: true
   computer-use:
     transport: stdio
     command: builtin:computer-use

@@ -250,6 +250,8 @@ class Agent:
         # 4. Connect configured MCP servers
         mcp_conf = self.config.get("mcp_servers", {})
         for name, s_conf in mcp_conf.items():
+            if not s_conf.get("enabled", True):
+                continue
             try:
                 await self.mcp.add_server(
                     name=name,
@@ -814,14 +816,19 @@ class Agent:
                     await prepared
             caps = run_control.capabilities if run_control else model_capabilities(
                 getattr(provider, "model_metadata", {}).get(getattr(provider, "current_model", "")))
-            from firik_agent.projects.harness_profiles import output_limit
+            from firik_agent.projects.harness_profiles import input_limit, output_limit
             profile = harness_profile or self._active_harness_profile(run_control)
-            if profile and estimate_tokens(messages, schemas) > profile["context_tokens"]:
+            request_output = budget.output_reservation(messages, schemas,
+                output_limit(max_tokens, profile, caps), caps)
+            window = caps.get("context_window")
+            model_budget = (self.context_compactor.input_budget(window, request_output)
+                            if type(window) is int and window > 0
+                            else (profile or {}).get("context_tokens", self.context_compactor.fallback_budget))
+            context_budget = input_limit(model_budget, profile, window)
+            if profile and estimate_tokens(messages, schemas) > context_budget:
                 # Context controls still apply when host disables compaction;
                 # never discard a partial tool transaction to fit a profile.
                 raise RuntimeFailure(FailureKind.CONTEXT_OVERFLOW, phase=RequestPhase.NOT_SUBMITTED)
-            request_output = budget.output_reservation(messages, schemas,
-                output_limit(max_tokens, profile, caps), caps)
             budget.begin_request()
             request_id, started = uuid4().hex, time.monotonic()
             info = {**(metadata or {}), "request_id": request_id, "attempt_id": request_id,
@@ -1316,8 +1323,8 @@ class Agent:
                 recovery_budget=recovery_budget)
             budget = self.context_compactor.input_budget(window, output_tokens,
                                                          estimate_tokens(context_prefix, tools_schemas))
-            if profile:
-                budget = min(budget, profile["context_tokens"])
+            from firik_agent.projects.harness_profiles import input_limit
+            budget = input_limit(budget, profile, window)
             compaction_enabled = self.context_compactor.enabled and (run_control is None or getattr(run_control, "permit_context_compaction", True))
             if compaction_enabled and self.context_compactor.needs_compaction(state, msg_target, context_prefix, tools_schemas, budget):
                 if on_thought:
@@ -1712,8 +1719,8 @@ class Agent:
                     recovery_budget=recovery_budget)
                 budget = self.context_compactor.input_budget(window, output_tokens,
                     estimate_tokens(system_messages, tools_schemas))
-                if profile:
-                    budget = min(budget, profile["context_tokens"])
+                from firik_agent.projects.harness_profiles import input_limit
+                budget = input_limit(budget, profile, window)
                 if compaction_enabled and self.context_compactor.needs_compaction(
                         state, msg_target, system_messages, tools_schemas, budget):
                     yield event(type=AgentEventType.CONTEXT_COMPACTION_STARTED, session_id=sid,

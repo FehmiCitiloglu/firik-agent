@@ -4,6 +4,10 @@ FIRIK sohbet ve Kodlama Ajanı, her model isteğinden önce bağlam bütçesini 
 
 Sistem talimatları ve araç şemaları bütçeden düşülür. Sağlayıcının doğrulanmış kapasitesi varsa yanıt ve güvenlik payı ayrılır. Kapasite bilinmiyorsa konuşma için 6.000 tahmini tokenlık yerel bütçe kullanılır; sistem ve araç şemaları ayrıca hesaba katılır. Bu değer modelin gerçek kapasitesi değildir. Tahmin UTF-8 boyutuna dayanır; sağlayıcının token sayacı değildir.
 
+Model kapasitesi biliniyorsa çalışma profilinin varsayılan `context_tokens` değeri yalnızca projeden seçilen kaynakların hedef bütçesidir; tüm konuşmayı 8.000 tokenla sınırlamaz. Açık sayısal `harness_overrides.context_tokens` ayarı ve alt ajan bütçeleri sert sınır olarak korunur.
+
+Doğrudan FIRIK endpoint'i için 30 Ekim 2026 model kataloğundan doğrulanan sabit kapasite yedeği bulunur: `mimo-v2.6-pro` 1.048.576, `glm-5.3` 524.288, `auto` 32.768 token. Bu yedek yalnızca `https://evren-llmapi.ssyz.org.tr/v1` adresinde ve tam model kimliğiyle kullanılır. Güncel katalog kaydı ve açık kullanıcı yetenek ayarı önceliklidir; iptal edilmiş yetenek bilgisi sabit yedekle tekrar açılmaz. Başka endpoint'ler ve bilinmeyen modeller için kapasite varsayılmaz.
+
 Tam mesaj geçmişi silinmez. Modele gönderilen görünüm, eski mesajların özeti ve yakın geçmişten oluşur. Son kullanıcı isteği aynen korunur. Araç çağrısı ve sonuçları bölünmez. Uzun bir görevde tamamlanmış eski araç işlemleri de özetlenebilir. Büyük eski geçmiş, bütçeye sığan parçalarla özetlenir; sonraki sıkıştırmada önceki özet güncellenir. Özet yeni bir sistem talimatı veya izin sayılmaz. Kodlama çalışmasının kayıtlı planı, kararları ve doğrulama kanıtları ayrıca gönderilir; yürütücü izinleri geçerliliğini korur.
 
 Sohbet özeti ve konumu kalıcı sohbet kaydına yazılır. Kodlama geçmişi tam mesajları ve sıkıştırma olaylarını saklar; farklı bir oturumdan yeniden açıldığında özet gerektiğinde yeniden oluşturulur. Geçmiş değişirse eski özet önbelleği geçersiz olur. Sohbet temizlenirse özet de temizlenir.

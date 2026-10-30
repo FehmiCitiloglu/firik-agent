@@ -112,7 +112,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 "text": "\n\n".join(m["content"] for m in messages),
                 "status": STATUS_NAMES.get(record.status, "Hazır") if record else "Hazır",
                 "activities": [], "changes": [], "before": None, "snapshot": None,
-                "inspection_warning": "", "selected_change": None, "run_id": 0,
+                "inspection_warning": "", "run_error": "", "selected_change": None, "run_id": 0,
                 "mode": prefs.get("mode", "approved"), "preferences": prefs,
                 "policy": dict(prefs.get("policy", {})),
                 "permissions": {"allow_reads": True, "allow_deletes": True, "allow_edits": True,
@@ -603,7 +603,12 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             self.coding_explorer.mark_paths(context_paths=state["context_paths"], touched_paths=list(state["agent_paths"]))
         task = self.project_service.db.get_task(state["task_id"]) if state["task_id"] else None
         title = task.title if task else state["last_prompt"][:160] or "Görev seçilmedi"
-        self.coding_task_label.configure(text=f"Aktif görev\n{title}\n{state['status']}\n{state['inspection_warning']}")
+        details = [f"Aktif görev\n{title}", state["status"]]
+        if state.get("run_error"):
+            details.append("Hata: " + state["run_error"])
+        if state["inspection_warning"]:
+            details.append("Dosya karşılaştırması: " + state["inspection_warning"])
+        self.coding_task_label.configure(text="\n".join(details))
         active = [item for item in state["context_report"] if item.get("has_content") and item.get("tokens_used", 0) > 0]
         report = "\n".join(f"• {item.get('display_name', item.get('name', item.get('key')))}: ~{item.get('tokens_used', 0)} token" for item in active)
         self.coding_context_label.configure(text="Etkin bağlam\n" + report + "\n" + "\n".join(state["context_paths"][:12]))
@@ -699,7 +704,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             self.coding_mode_combo.set(MODE_NAMES[state["mode"]])
             self._save_coding_preferences({"mode": state["mode"]})
         state.update(busy=True, stopped=False, paused=False, last_prompt=prompt, before=None,
-                     changes=[], activities=[], pending_approvals={}, inspection_warning="", agent_paths={}, record=None,
+                     changes=[], activities=[], pending_approvals={}, inspection_warning="", run_error="", agent_paths={}, record=None,
                      usage={}, harness_metrics={}, usage_requests={}, model_iteration=0)
         state["run_id"] += 1
         generation = state["run_id"]
@@ -740,6 +745,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 response["content"] = text
                 state["text"] += text
             if error:
+                state["run_error"] = str(error)[:2000]
                 response["content"] += f"\nİşlem hatası: {error}"
                 state["text"] += f"\nİşlem hatası: {error}"
             state["text"] += "\n"

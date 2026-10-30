@@ -21,6 +21,7 @@ def restore_state_history(state, record, events=None):
     state["task_id"] = record.task_id
     state["last_prompt"] = record.user_request
     state["status"] = STATUS_NAMES.get(record.status, "Kayıtlı çalışma")
+    state["run_error"] = str(record.summary or "")[:2000] if record.status == "failed" else ""
     state["usage"] = deepcopy(record.usage)
     state["harness_metrics"] = deepcopy(record.usage.get("harness_metrics", {}))
     context = deepcopy(record.context_report)
@@ -132,7 +133,7 @@ class CodingHistoryMixin:
         state.update(session=session, record=None, busy=False, messages=[{"role": "system", "content": WELCOME}], text=WELCOME,
                      status="Hazır", task_id=None, plan=[], activities=[], changes=[], record_journal=[], agent_paths={},
                      context_report=[], usage={}, harness_metrics={}, decisions=[], tests=[], change_counts={}, test_counts={}, before=None,
-                     snapshot=None, selected_change=None, inspection_warning="", pending_approvals={}, last_prompt="",
+                     snapshot=None, selected_change=None, inspection_warning="", run_error="", pending_approvals={}, last_prompt="",
                      paused=False, stopped=False, future=None, documents=[])
         state["run_id"] += 1
         state["cockpit"].start(model=session.model)
