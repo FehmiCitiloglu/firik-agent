@@ -8,7 +8,7 @@ import shutil
 import pytest
 
 from firik_agent.benchmarks.coding import coding_suite
-from firik_agent.harness.comparison import (ComparativeConfiguration, ComparisonPlan, run_comparison,
+from firik_agent.harness.comparison import (_remove_workspace, ComparativeConfiguration, ComparisonPlan, run_comparison,
                                             validate_comparison_report)
 from firik_agent.harness.models import (HarnessCapability, HarnessCompletionEvidence, HarnessError, HarnessMetadata,
                                        HarnessEvent, HarnessResult, HarnessSession, HarnessUsage)
@@ -66,7 +66,7 @@ class FakeBackend:
             raise ConnectionError("RPC disconnected after a partial frame")
         if self.behavior not in {"false-completion", "failed"}:
             for name, value in self.task.evaluation.expected_files.items():
-                (self.root / name).write_text(value)
+                (self.root / name).write_bytes(value.encode("utf-8"))
         yield HarnessEvent("done", session.id, run_id, sequence=2, backend=self.configuration.backend)
 
     async def inspect_run(self, session, run_id):
@@ -238,7 +238,7 @@ async def test_uncertain_shutdown_retains_workspace_and_blocks_success():
         assert row["cleanup"] == "retained_for_cleanup" and not row["success"]
         assert Path(row["retained_workspace"]).exists()
     finally:
-        shutil.rmtree(created[0].root.parent)
+        _remove_workspace(created[0].root.parent)
 
 
 @pytest.mark.asyncio

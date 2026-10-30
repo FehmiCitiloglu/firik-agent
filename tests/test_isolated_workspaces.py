@@ -104,6 +104,7 @@ def test_concurrent_creates_use_unique_worktrees_and_metadata_lock(repo):
     assert all(manager.inspect_status(r["workspace_id"])["cleanup_eligible"] for r in records)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Safe integration requires POSIX dirfd support")
 def test_binary_untracked_and_executable_patch_is_complete(repo):
     manager = IsolatedWorkspaceManager(repo)
     record, child = create(manager)
@@ -165,6 +166,7 @@ def test_stale_target_revision_requires_new_review(repo):
     assert (repo / "b.txt").read_text() == "user committed\n"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Safe integration requires POSIX dirfd support")
 def test_three_way_merge_preserves_nonoverlapping_committed_user_edit(repo):
     manager = IsolatedWorkspaceManager(repo)
     record, child = create(manager)
@@ -202,6 +204,7 @@ def test_overlap_between_agents_is_observable(repo):
     assert (repo / "a.txt").read_text().startswith("alpha")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Safe integration requires POSIX dirfd support")
 def test_failed_integration_rolls_back_written_files(repo, monkeypatch):
     manager = IsolatedWorkspaceManager(repo)
     record, child = create(manager)
@@ -224,6 +227,7 @@ def test_failed_integration_rolls_back_written_files(repo, monkeypatch):
     assert (child / "a.txt").read_text() == "agent a\n"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Safe integration requires POSIX dirfd support")
 def test_rollback_never_overwrites_concurrent_user_edit(repo, monkeypatch):
     manager = IsolatedWorkspaceManager(repo)
     record, child = create(manager)
@@ -311,6 +315,7 @@ def test_crash_reconciliation_retains_uncertain_work_and_integration(repo):
     assert (child / "a.txt").read_text() == "partial work\n"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Safe integration requires POSIX dirfd support")
 def test_repository_hooks_filters_external_diff_and_fsmonitor_never_execute(repo, tmp_path):
     marker = tmp_path / "PWNED"
     script = tmp_path / "malicious.sh"
@@ -338,6 +343,7 @@ def test_repository_hooks_filters_external_diff_and_fsmonitor_never_execute(repo
     assert not marker.exists()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Safe integration requires POSIX dirfd support")
 def test_custom_merge_driver_cannot_execute_during_actual_three_way_merge(repo, tmp_path):
     (repo / ".gitattributes").write_text("*.txt merge=evil\n")
     commit(repo)
@@ -372,6 +378,7 @@ def test_clean_worktree_cleanup_does_not_run_repo_clean_filter(repo, tmp_path):
     assert not child.exists()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Safe integration requires POSIX dirfd support")
 def test_overlapping_workspaces_require_trusted_explicit_resolution_even_if_mergeable(repo):
     manager = IsolatedWorkspaceManager(repo)
     a, a_root = create(manager, "worker_a")
@@ -417,14 +424,28 @@ def test_hardlinked_host_file_cannot_enter_patch(repo, tmp_path):
 def test_tampered_git_pointer_and_workspace_symlink_are_rejected(repo, tmp_path):
     manager = IsolatedWorkspaceManager(repo)
     record, child = create(manager)
+    (child / ".git").chmod(0o600)
     (child / ".git").write_text(f"gitdir: {repo / '.git'}\n")
     with pytest.raises(WorkspaceError, match="association"):
         manager.inspect_status(record["workspace_id"])
     # A user-selected storage symlink must never be followed.
     link = tmp_path / "storage-link"
-    link.symlink_to(tmp_path, target_is_directory=True)
+    try:
+        link.symlink_to(tmp_path, target_is_directory=True)
+    except OSError:
+        if os.name != "nt":
+            raise
+        pytest.skip("Windows account cannot create symlinks")
     with pytest.raises(WorkspaceError, match="symlink"):
         IsolatedWorkspaceManager(repo, link)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows integration guard")
+def test_windows_integration_refuses_unsafe_writes(repo):
+    manager = IsolatedWorkspaceManager(repo)
+    with pytest.raises(WorkspaceError, match="POSIX dirfd"):
+        manager._write_content("a.txt", b"changed", "100644")
+    assert (repo / "a.txt").read_text() == "alpha\nmiddle\nomega\n"
 
 
 def test_integration_refuses_parent_symlink_even_if_ignored(repo, tmp_path):

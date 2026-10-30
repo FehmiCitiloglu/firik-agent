@@ -1,3 +1,7 @@
+## v0.2.27 değişiklikleri
+
+- Windows üzerinde güvenli entegrasyon sınırları ve platforma özgü benchmark doğrulamaları düzeltildi.
+
 ## v0.2.26 değişiklikleri
 
 - Windows test ve geçici çalışma alanı temizleme uyumluluğu iyileştirildi.

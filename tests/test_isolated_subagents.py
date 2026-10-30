@@ -1,6 +1,7 @@
 """Delegation cannot grant capabilities or write directly into the user checkout."""
 import asyncio
 import json
+import os
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
@@ -138,6 +139,7 @@ async def test_cancelled_child_preserves_local_work_and_parent_approvals(repo):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="Safe integration requires POSIX dirfd support")
 async def test_review_and_integration_require_human_and_policy(repo):
     owner = manager(repo)
     async def worker(assignment, tools):
@@ -224,6 +226,7 @@ async def test_parent_policy_tightened_during_child_approval_prevents_write(repo
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="Safe integration requires POSIX dirfd support")
 async def test_conflict_resolution_requires_human_inspection_of_both_versions(repo):
     owner = manager(repo)
     async def worker(assignment, tools):
