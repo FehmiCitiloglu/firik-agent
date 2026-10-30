@@ -61,7 +61,7 @@ def test_partial_scans_never_report_missing_files_as_deleted_or_added(tmp_path):
 
 
 def test_expected_non_source_omissions_do_not_report_a_scan_failure(tmp_path):
-    (tmp_path / "main.py").write_text("value = 1\n")
+    (tmp_path / "main.py").write_bytes(b"value = 1\n")
     (tmp_path / "report.json").write_bytes(b" " * (1024 * 1024 + 1))
     (tmp_path / "unknown-binary.dat").write_bytes(b"\x00binary")
     (tmp_path / "legacy-text.dat").write_bytes(b"\xff\xfelegacy")

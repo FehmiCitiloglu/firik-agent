@@ -1,3 +1,7 @@
+## v0.2.30 değişiklikleri
+
+- Windows çalışma alanı testi satır sonu uyumluluğu düzeltildi.
+
 ## v0.2.29 değişiklikleri
 
 - Yerleşik web arama ve sayfa okuma araçları eklendi.
