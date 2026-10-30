@@ -1,3 +1,7 @@
+## v0.2.32 değişiklikleri
+
+- macOS DMG oluşturulurken geçici kaynak meşgul hataları için sınırlı tekrar denemesi eklendi.
+
 ## v0.2.31 değişiklikleri
 
 - Yavaş sistemlerde harici süreç tanılama testinin zamanlama kararlılığı iyileştirildi.

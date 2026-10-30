@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import time
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,23 @@ VERSION = version("firik-agent")
 
 def run(*args):
     subprocess.run([str(a) for a in args], check=True, cwd=ROOT)
+
+
+def create_dmg(stage, destination):
+    command = ["hdiutil", "create", "-volname", "firik-agent", "-srcfolder", str(stage),
+               "-ov", "-format", "UDZO", str(destination)]
+    for attempt in range(3):
+        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
+        if result.returncode == 0:
+            return
+        if "resource busy" not in result.stderr.lower() or attempt == 2:
+            raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+        destination.unlink(missing_ok=True)
+        time.sleep(5 * (attempt + 1))
 
 
 def linux():
@@ -79,8 +97,7 @@ def macos(arch):
     stage.mkdir(parents=True, exist_ok=True)
     shutil.copytree(ROOT / "dist/firik-agent.app", stage / "firik-agent.app", symlinks=True, dirs_exist_ok=True)
     (stage / "Applications").symlink_to("/Applications", target_is_directory=True)
-    run("hdiutil", "create", "-volname", "firik-agent", "-srcfolder", stage, "-ov", "-format", "UDZO",
-        OUT / f"firik-agent-{VERSION}-macos-{arch}.dmg")
+    create_dmg(stage, OUT / f"firik-agent-{VERSION}-macos-{arch}.dmg")
     run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", ROOT / "dist/firik-agent.app",
         OUT / f"firik-agent-{VERSION}-macos-{arch}.zip")
 
