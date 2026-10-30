@@ -75,8 +75,9 @@ async def test_real_git_commit_then_crash_before_result_commit_remains_unknown(r
     empty_hooks = tmp_path / "empty-hooks"
     empty_hooks.mkdir()
     subprocess.run(["git", "init", "--quiet", str(root)], check=True, capture_output=True)
-    command = shlex.join(["git", "-c", "user.name=Boundary Fixture", "-c", "user.email=fixture@example.invalid",
-                          "-c", f"core.hooksPath={empty_hooks}", "commit", "--allow-empty", "-m", "durable boundary"])
+    args = ["git", "-c", "user.name=Boundary Fixture", "-c", "user.email=fixture@example.invalid",
+            "-c", f"core.hooksPath={empty_hooks}", "commit", "--allow-empty", "-m", "durable boundary"]
+    command = subprocess.list2cmdline(args) if sys.platform == "win32" else shlex.join(args)
     recovery.record_workspace(run.id, root)
     approvals = approve_local_fixture_commands(control)
     tools, agent = CodingToolFilter(root, control), offline_agent()
@@ -108,11 +109,11 @@ async def test_real_git_commit_then_crash_before_result_commit_remains_unknown(r
 
 
 @pytest.mark.asyncio
-async def test_cancelled_real_quality_gate_never_becomes_passing_evidence(runtime, tmp_path):
+async def test_cancelled_real_quality_gate_never_becomes_passing_evidence(runtime, tmp_path, python_command):
     root, store, run, control, journal, recovery = runtime
     marker = tmp_path / "quality-gate-started"
     script = f"from pathlib import Path; import time; Path({str(marker)!r}).write_text('started'); time.sleep(30)"
-    command = shlex.join([sys.executable, "-c", script])
+    command = python_command("-c", script)
     approvals = approve_local_fixture_commands(control)
     tools = CodingToolFilter(root, control)
     tools.configure_quality_gates([{"id": "interrupted", "kind": "tests", "command": command}])

@@ -44,10 +44,10 @@ class MockDocker(DockerExecutionBackend):
 
 
 @pytest.mark.asyncio
-async def test_host_existing_shell_and_structured_streams(tmp_path):
+async def test_host_existing_shell_and_structured_streams(tmp_path, python_command):
     backend = HostExecutionBackend()
     workspace = await backend.create_workspace(tmp_path)
-    result = await backend.execute_command(workspace, CommandRequest("printf hello; printf error >&2"))
+    result = await backend.execute_command(workspace, CommandRequest(python_command("-c", "import sys; sys.stdout.write('hello'); sys.stderr.write('error')")))
     assert result.exit_code == 0
     assert result.stdout == "hello" and result.stderr == "error"
     assert result.boundary == "host" and result.network == "host"
@@ -59,10 +59,10 @@ async def test_host_existing_shell_and_structured_streams(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_timeout_and_output_bound(tmp_path):
+async def test_timeout_and_output_bound(tmp_path, python_command):
     backend = HostExecutionBackend(ExecutionConfig(max_timeout=2, output_limit=1024))
     workspace = await backend.create_workspace(tmp_path)
-    result = await backend.execute_command(workspace, CommandRequest("printf '%02000d' 0; sleep 30", timeout=.05))
+    result = await backend.execute_command(workspace, CommandRequest(python_command("-c", "import sys,time; print('x'*2000, flush=True); time.sleep(30)"), timeout=1))
     assert result.timed_out and len(result.stdout.encode()) <= 1024 and result.truncated
     assert backend.commands[result.command_id].process.returncode is not None
 

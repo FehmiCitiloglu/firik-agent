@@ -1,3 +1,8 @@
+## v0.2.26 değişiklikleri
+
+- Windows test ve geçici çalışma alanı temizleme uyumluluğu iyileştirildi.
+- Python 3.10 test uyumluluğu ve macOS noter servisindeki geçici bağlantı hatalarına karşı tekrar denemesi eklendi.
+
 ## v0.2.24 değişiklikleri
 
 - Windows üzerinde LSP dosya adresleri ve platformlar arası test uyumluluğu düzeltildi.

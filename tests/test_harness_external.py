@@ -15,6 +15,10 @@ from firik_agent.harness.transport import JsonlProcess, TransportError
 
 PROVIDER = {"name": "openai", "model": "fixture-model", "api_key": "explicit-fixture-key", "allow_live": True}
 
+# The external transport intentionally fails closed on Windows until process-tree
+# cleanup is supported. These protocol fixtures require executable POSIX scripts.
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="External harness execution is disabled on Windows")
+
 
 @pytest.fixture
 def fake_pi(tmp_path):

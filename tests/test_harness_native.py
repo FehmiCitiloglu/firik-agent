@@ -100,7 +100,7 @@ async def test_timeout_closes_generator_and_retains_error():
     backend = NativeHarnessBackend(runtime(script))
     session = await backend.initialize_session(policy=policy(timeout_seconds=0.02))
     rid = await backend.execute_task(session, HarnessTask("task"))
-    with pytest.raises(TimeoutError):
+    with pytest.raises(asyncio.TimeoutError):
         _ = [event async for event in backend.stream_events(session, rid)]
     result = await backend.inspect_run(session, rid)
     assert result.status == "failed" and result.errors[0].code == "timeout"

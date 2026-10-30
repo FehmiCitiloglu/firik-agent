@@ -29,6 +29,7 @@ def repo(tmp_path):
     root = tmp_path / "project with spaces"
     root.mkdir()
     git(root, "init", "--initial-branch=main")
+    git(root, "config", "core.autocrlf", "false")
     git(root, "config", "user.name", "Test")
     git(root, "config", "user.email", "test@example.invalid")
     (root / "a.txt").write_text("alpha\nmiddle\nomega\n")

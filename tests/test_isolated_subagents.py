@@ -21,6 +21,7 @@ def git(root, *args):
 @pytest.fixture
 def repo(tmp_path):
     git(tmp_path, "init", "-q")
+    git(tmp_path, "config", "core.autocrlf", "false")
     git(tmp_path, "config", "user.email", "test@example.invalid")
     git(tmp_path, "config", "user.name", "Test")
     (tmp_path / "a.py").write_text("value = 1\n")

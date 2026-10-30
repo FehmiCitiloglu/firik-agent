@@ -13,8 +13,10 @@ from datetime import datetime, timezone
 import inspect
 import json
 import math
+import os
 from pathlib import Path
 import shutil
+import stat
 import statistics
 import tempfile
 import time
@@ -28,6 +30,19 @@ from firik_agent.benchmarks.fixtures import fixture_revision
 from firik_agent.benchmarks.manifests import EVALUATOR_VERSION, StrictModel
 from firik_agent.benchmarks.models import BenchmarkSuite, TaskSpecification, fingerprint
 from firik_agent.projects.coding_sessions import redact_sensitive
+
+
+def _remove_workspace(directory: Path) -> None:
+    def retry_readonly(function, path, error):
+        if os.name != "nt" or not isinstance(error[1], PermissionError):
+            raise error[1]
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode):
+            raise error[1]
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+        function(path)
+
+    shutil.rmtree(directory, onerror=retry_readonly)
 
 
 class ComparativeConfiguration(StrictModel):
@@ -318,7 +333,7 @@ async def _trial(plan, configuration, task, repetition, backend_factory):
                             "evaluator_sha256": evaluator_hash, "independent": True}
             if cleanup_ok:
                 try:
-                    await asyncio.to_thread(shutil.rmtree, directory)
+                    await asyncio.to_thread(_remove_workspace, directory)
                 except Exception as error:
                     cleanup_ok = False
                     errors.append({"code": "workspace_cleanup_failed", "message": redact_sensitive(str(error))})

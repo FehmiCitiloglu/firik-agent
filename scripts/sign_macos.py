@@ -12,6 +12,7 @@ import plistlib
 import re
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "dist/firik-agent.app"
@@ -31,6 +32,19 @@ def run(*args, capture=False, env=None):
         [str(arg) for arg in args], cwd=ROOT, check=True, env=env,
         capture_output=capture, text=True,
     )
+
+
+def stapler(action, path):
+    # Apple's ticket service may temporarily lose a network connection (EX_NOHOST).
+    # Keep validation mandatory and retry only that transient failure.
+    for attempt in range(3):
+        try:
+            run("xcrun", "stapler", action, path)
+            return
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode != 68 or attempt == 2:
+                raise
+            time.sleep(10 * (attempt + 1))
 
 
 def notarize(path, profile):
@@ -90,15 +104,15 @@ def main():
     upload = LOGS / f"firik-agent-{app_version}-{arch}-notary.zip"
     run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", APP, upload)
     notarize(upload, args.profile)
-    run("xcrun", "stapler", "staple", APP)
-    run("xcrun", "stapler", "validate", APP)
+    stapler("staple", APP)
+    stapler("validate", APP)
     # Package after stapling so the ZIP and DMG both contain the offline ticket.
     run(sys.executable, "scripts/package_desktop.py", arch)
     dmg = OUT / f"firik-agent-{app_version}-macos-{arch}.dmg"
     run("codesign", "--force", "--timestamp", "--sign", identity, dmg)
     notarize(dmg, args.profile)
-    run("xcrun", "stapler", "staple", dmg)
-    run("xcrun", "stapler", "validate", dmg)
+    stapler("staple", dmg)
+    stapler("validate", dmg)
     run("codesign", "--verify", "--deep", "--strict", "--verbose=2", APP)
     run("spctl", "--assess", "--type", "execute", "--verbose=2", APP)
     run("spctl", "--assess", "--type", "open", "--context", "context:primary-signature", "--verbose=2", dmg)
