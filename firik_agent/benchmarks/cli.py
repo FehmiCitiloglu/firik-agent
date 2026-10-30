@@ -35,6 +35,12 @@ def doctor() -> dict:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    # Preserve the existing lab routes and their early offline dispatch.
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    from firik_agent.harness.cli import COMMANDS
+    if arguments and arguments[0] in COMMANDS:
+        from firik_agent.harness.cli import main as harness_main
+        return harness_main(arguments)
     parser = argparse.ArgumentParser(prog="firik harness", description="Offline-first Harness Benchmark Lab")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor", help="Check local readiness without credentials or model API access.")

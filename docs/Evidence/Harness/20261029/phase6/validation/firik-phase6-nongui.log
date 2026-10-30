@@ -1,0 +1,58 @@
+.......................................F................................ [  5%]
+..........................................................F............. [ 11%]
+........................................................................ [ 17%]
+........................................................................ [ 23%]
+........................................................................ [ 29%]
+........................................................................ [ 35%]
+...............................................s........F.F............. [ 40%]
+........................................................................ [ 46%]
+........................................................................ [ 52%]
+........................................................................ [ 58%]
+........................................................................ [ 64%]
+........................................................................ [ 70%]
+........................................................................ [ 75%]
+........................................................................ [ 81%]
+........................................................................ [ 87%]
+........................................................................ [ 93%]
+...FF.....................................................s............. [ 99%]
+........                                                                 [100%]
+=================================== FAILURES ===================================
+________ test_expanded_offline_faults_have_objective_native_evaluators _________
+tests/benchmarks/test_runner.py:29: in test_expanded_offline_faults_have_objective_native_evaluators
+    assert report["summary"]["fixtures_passed"] == len(report["results"])
+E   AssertionError: assert 19 == 20
+E    +  where 20 = len([{'task_id': 'guarded-edit', 'manifest_sha256': '514788a6c0a30e51271c8361c0d9357bfdb2110741c056228acb164b88732914', 't...ace2ca84035c9685fa8780e3d5808f284721adf47ca2', 'trial': 1, 'run_id': 'run_4bcd75b684324209b77a9cfca26221ba', ...}, ...])
+_____ test_builtin_suite_real_runtime_objective_checks_and_failure_labels ______
+tests/test_benchmarks.py:35: in test_builtin_suite_real_runtime_objective_checks_and_failure_labels
+    assert report["summary"]["fixtures_passed"] == 7
+E   assert 6 == 7
+___ test_model_crash_never_resubmits_on_recovery[before_model_request-True] ____
+tests/test_durable_execution.py:120: in test_model_crash_never_resubmits_on_recovery
+    with pytest.raises(Crash):
+         ^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE Crash
+____ test_model_crash_never_resubmits_on_recovery[after_model_output-True] _____
+tests/test_durable_execution.py:120: in test_model_crash_never_resubmits_on_recovery
+    with pytest.raises(Crash):
+         ^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE Crash
+___ test_cancellation_at_fallback_boundary_never_starts_second_request[True] ___
+tests/test_request_metrics.py:282: in test_cancellation_at_fallback_boundary_never_starts_second_request
+    with pytest.raises(asyncio.CancelledError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE CancelledError
+------------------------------ Captured log call -------------------------------
+WARNING  firik_agent.core.agent:agent.py:981 Streaming interface unavailable (NotImplementedError); using same-provider chat()
+______________ test_task_cancellation_finalizes_in_flight_request ______________
+tests/test_request_metrics.py:309: in test_task_cancellation_finalizes_in_flight_request
+    finish, = requests(events)
+    ^^^^^^^
+E   ValueError: not enough values to unpack (expected 1, got 0)
+=========================== short test summary info ============================
+FAILED tests/benchmarks/test_runner.py::test_expanded_offline_faults_have_objective_native_evaluators
+FAILED tests/test_benchmarks.py::test_builtin_suite_real_runtime_objective_checks_and_failure_labels
+FAILED tests/test_durable_execution.py::test_model_crash_never_resubmits_on_recovery[before_model_request-True]
+FAILED tests/test_durable_execution.py::test_model_crash_never_resubmits_on_recovery[after_model_output-True]
+FAILED tests/test_request_metrics.py::test_cancellation_at_fallback_boundary_never_starts_second_request[True]
+FAILED tests/test_request_metrics.py::test_task_cancellation_finalizes_in_flight_request
+6 failed, 1224 passed, 2 skipped in 115.08s (0:01:55)

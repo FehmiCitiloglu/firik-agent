@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "ready": true,
+  "git_available": true,
+  "offline_suite": {
+    "id": "offline-smoke",
+    "tasks": 20
+  },
+  "coding_suite": {
+    "id": "coding",
+    "tasks": 40,
+    "version": "1.0.0",
+    "fingerprint": "3963f0041a3a288c3c372222c207440f4c3f2887eef3fb8a0eba3b430c6236da"
+  },
+  "offline_network": "denied",
+  "repository_execution": "disabled",
+  "evaluator": "host-controlled exact source and AST; repository code is never executed",
+  "live": "explicit --allow-live, --provider and --model required; not probed",
+  "sandbox": "no OS sandbox; arbitrary fixture commands are disabled"
+}

@@ -6,7 +6,7 @@ set -euo pipefail
 # the same isolated venv, command launchers, and persistent user PATH.
 FIRIK_INSTALL_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "Firik kurulumu: firik ve firik-agent PATH'e eklenecek; venv aktivasyonu gerekmeyecek."
+echo "Firik kurulumu: firik, firik-agent ve firik-gui PATH'e eklenecek; venv aktivasyonu gerekmeyecek."
 echo "Kurulumdan sonra yeni terminal açın veya gösterilen PATH komutunu bir kez çalıştırın."
 
 # exec preserves the Python installer's exit status and forwarded arguments.

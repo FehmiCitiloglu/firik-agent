@@ -388,6 +388,7 @@ class MCPConnectionManager:
                 description=f"[{server_name} MCP tool] {t.description or t.name}",
                 parameters=t.inputSchema,
                 source=f"mcp:{server_name}",
+                execution_boundary="remote_mcp",
             )
 
             orig_tool_name = t.name

@@ -69,6 +69,10 @@ class ProviderRegistry:
     @classmethod
     def from_config(cls, config: Dict) -> "ProviderRegistry":
         """Factory creating registry populated from config.yaml."""
+        # Preserve legacy explicit Agent(config=...) dotenv support without
+        # importing credentials when a harness is only discovered or inspected.
+        from firik_agent.config import load_dotenv
+        load_dotenv()
         registry = cls()
         providers_conf = config.get("providers", {})
 

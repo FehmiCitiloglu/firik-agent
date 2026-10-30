@@ -247,7 +247,7 @@ class FirikService(CodingBridge):
         if isinstance(rows, dict):
             from firik_agent.projects.model_capabilities import model_capabilities
             for model, evidence in rows.items():
-                if isinstance(evidence, dict) and (evidence.get("verified") is True
+                if isinstance(evidence, dict) and (isinstance(evidence.get("verified"), bool)
                         or evidence.get("source") in {"provider", "verified_probe", "verified_config"}):
                     provider.model_metadata[model] = {"id": model, **model_capabilities(evidence)}
 
@@ -264,13 +264,21 @@ class FirikService(CodingBridge):
                     data = await client.models()
                     models = []
                     rows = data.get("data", []) if isinstance(data, dict) else data if isinstance(data, list) else []
-                    self._model_metadata = {item["id"]: item for item in rows
-                                            if isinstance(item, dict) and item.get("id")}
+                    if not isinstance(rows, list):
+                        rows = []
+                    # These rows came from this endpoint's catalogue. Preserve
+                    # their provenance so context limits are usable by the same
+                    # capability gate as the CLI, including explicit revocations.
+                    self._model_metadata = {item["id"]: {**item, "source": "provider"} for item in rows
+                                            if isinstance(item, dict) and isinstance(item.get("id"), str)
+                                            and item["id"]}
                     self._model_metadata_url = catalogue_url
                     if isinstance(data, dict) and "data" in data:
-                        models = [item.get("id") for item in data["data"] if item.get("id")]
+                        models = list(self._model_metadata)
                     elif isinstance(data, list):
-                        models = [item.get("id") if isinstance(item, dict) else str(item) for item in data]
+                        models = [item["id"] if isinstance(item, dict) else item for item in rows
+                                  if (isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"])
+                                  or (isinstance(item, str) and item)]
                     return models or VARSAYILAN_MODELLER
 
             try:

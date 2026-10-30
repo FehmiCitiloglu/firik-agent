@@ -1,0 +1,108 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.2, pytest-9.1.1, pluggy-1.6.0 -- /Users/alien/Development/evren/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/alien/Development/evren
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 5 items
+
+../../../../../../../Users/alien/Development/evren/tests/test_ui_coding_history.py::test_subagent_record_reopens_as_one_passive_card ERROR [ 20%]
+
+==================================== ERRORS ====================================
+______ ERROR at setup of test_subagent_record_reopens_as_one_passive_card ______
+
+tmp_path = PosixPath('/private/var/folders/0d/sq553vp1129djcgmz57s2jkw0000gn/T/pytest-of-alien/pytest-148/test_subagent_record_reopens_a0')
+
+    @pytest.fixture
+    def history(tmp_path):
+        db = ProjectDatabase(tmp_path / "projects.db")
+        for identifier in ("p1", "p2"):
+            db.create_project(Project(id=identifier, name=identifier, local_path=str(tmp_path)))
+            db.save_task(Task(id=f"t-{identifier}", project_id=identifier, title=f"Görev {identifier}"))
+        store = CodingSessionStore(db)
+        first = store.create_run("p1", task_id="t-p1", session_id="c1", model="saved-model", user_request="Türkçe isteğim")
+        store.record_message(first.id, "user", "Türkçe isteğim")
+        store.record_message(first.id, "assistant", "Türkçe yanıtım")
+        store.update_run(first.id, plan=[{"id": "s1", "title": "Kaydı incele", "status": "in_progress"}],
+                         context_report=[{"key": "task", "display_name": "Görev", "has_content": True, "tokens_used": 25}],
+                         usage={"total_tokens": 42})
+        store.record_file_change(first.id, {"path": "main.py", "kind": "modified", "before_hash": "a", "after_hash": "b",
+            "diff": "--- a/main.py\n+++ b/main.py\n@@ -1 +1 @@\n-eski\n+yeni\n"})
+        store.record_test(first.id, {"command": "pytest", "executed": True, "exit_code": 0, "output": "1 passed"})
+        store.record_test(first.id, {"command": "lint", "executed": True, "exit_code": 2, "output": "failed"})
+        store.record_test(first.id, {"command": "build", "executed": False, "output": "SDK yok"})
+        store.record_decision(first.id, {"kind": "plan", "approved": True})
+        second = store.create_run("p2", task_id="t-p2", session_id="c2", user_request="Diğer projenin kaydı")
+        store.finish_run(second.id, summary="İkinci proje")
+        reopened = CodingSessionStore(ProjectDatabase(db.db_path))
+        reopened.recover_interrupted()
+        service = CodingBridge()
+        service.coding_store = reopened
+        service.projects = SimpleNamespace(db=reopened.db)
+        service.sessions, service._coding_filters = {}, {}
+        service.default_model = "default"
+        service._coding_known_secrets = ()
+>       app = ctk.CTk()
+              ^^^^^^^^^
+
+/Users/alien/Development/evren/tests/test_ui_coding_history.py:80: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <customtkinter.windows.ctk_tk.CTk object .>, fg_color = None, kwargs = {}
+
+    def __init__(self,
+                 fg_color: Optional[Union[str, Tuple[str, str]]] = None,
+                 **kwargs):
+    
+        self._enable_macos_dark_title_bar()
+    
+        # call init methods of super classes
+>       CTK_PARENT_CLASS.__init__(self, **pop_from_dict_by_set(kwargs, self._valid_tk_constructor_arguments))
+
+/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/customtkinter/windows/ctk_tk.py:40: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <customtkinter.windows.ctk_tk.CTk object .>, screenName = None
+baseName = '__main__', className = 'Tk', useTk = True, sync = False, use = None
+
+    def __init__(self, screenName=None, baseName=None, className='Tk',
+                 useTk=True, sync=False, use=None):
+        """Return a new top level widget on screen SCREENNAME. A new Tcl interpreter will
+        be created. BASENAME will be used for the identification of the profile file (see
+        readprofile).
+        It is constructed from sys.argv[0] without extensions if None is given. CLASSNAME
+        is the name of the widget class."""
+        self.master = None
+        self.children = {}
+        self._tkloaded = False
+        # to avoid recursions in the getattr code in case of failure, we
+        # ensure that self.tk is always _something_.
+        self.tk = None
+        if baseName is None:
+            import os
+            baseName = os.path.basename(sys.argv[0])
+            baseName, ext = os.path.splitext(baseName)
+            if ext not in ('.py', '.pyc'):
+                baseName = baseName + ext
+        interactive = False
+>       self.tk = _tkinter.create(screenName, baseName, className, interactive, wantobjects, useTk, sync, use)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       _tkinter.TclError: Can't find a usable init.tcl in the following directories: 
+E           /tools/deps/lib/tcl8.6 /Users/alien/Development/evren/.venv/lib/tcl8.6 /Users/alien/Development/evren/lib/tcl8.6 /Users/alien/Development/evren/.venv/library /Users/alien/Development/evren/library /Users/alien/Development/evren/tcl8.6.14/library /Users/alien/Development/tcl8.6.14/library
+E       
+E       
+E       
+E       This probably means that Tcl wasn't installed properly.
+
+/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/tkinter/__init__.py:2459: TclError
+- generated xml file: /tmp/firik-phase6-gui-tests/test_ui_coding_history-diagnostic.xml -
+=========================== short test summary info ============================
+ERROR ../../../../../../../Users/alien/Development/evren/tests/test_ui_coding_history.py::test_subagent_record_reopens_as_one_passive_card - _tkinter.TclError: Can't find a usable init.tcl in the following directories: 
+    /tools/deps/lib/tcl8.6 /Users/alien/Development/evren/.venv/lib/tcl8.6 /Users/alien/Development/evren/lib/tcl8.6 /Users/alien/Development/evren/.venv/library /Users/alien/Development/evren/library /Users/alien/Development/evren/tcl8.6.14/library /Users/alien/Development/tcl8.6.14/library
+
+
+
+This probably means that Tcl wasn't installed properly.
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+=============================== 1 error in 0.30s ===============================

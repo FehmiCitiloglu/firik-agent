@@ -151,10 +151,104 @@ async def test_nonstream_loop_uses_same_compaction():
 @pytest.mark.asyncio
 async def test_oversized_active_input_stops_without_destroying_history():
     history = [Message(role="user", content="x" * 20000)]
-    state = CompactionState()
+    state, compactor, provider = CompactionState(), compressor(), SummaryProvider()
+    assert compactor.needs_compaction(state, history, [], [], 3000)
     with pytest.raises(ValueError, match="bağlam bütçesine"):
-        await compressor().compact(state, history, [], [], 3000, SummaryProvider())
+        await compactor.compact(state, history, [], [], 3000, provider)
     assert state.cursor == 0 and len(history[0].content) == 20000
+    assert not provider.requests
+
+
+def test_small_request_skips_compaction_candidate_planning(monkeypatch):
+    compactor = compressor()
+    def unexpected_plan(*args):
+        raise AssertionError("A small request must not scan compaction candidates")
+    monkeypatch.setattr(compactor, "_plan_compaction", unexpected_plan)
+    assert not compactor.needs_compaction(CompactionState(), [Message(role="user", content="Hello")], [], [], 3000)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ratio", [.8, .95])
+async def test_fitting_active_input_above_soft_trigger_needs_no_summary(ratio):
+    compactor, state, provider = compressor(), CompactionState(), SummaryProvider()
+    history = [Message(role="user", content="x" * int(3000 * ratio * 3))]
+    original = history[0].content
+    assert 2250 < estimate_tokens(history) <= 3000
+    assert not compactor.needs_compaction(state, history, [], [], 3000)
+    details = await compactor.compact(state, history, [], [], 3000, provider)
+    assert details["compacted"] is False and details["summary_requests"] == 0
+    assert state == CompactionState() and history[0].content == original
+    assert not provider.requests
+
+
+@pytest.mark.asyncio
+async def test_fitting_active_input_is_not_rejected_when_history_cannot_reach_soft_trigger():
+    compactor, state, provider = compressor(), CompactionState(), SummaryProvider()
+    history = [Message(role="user", content="Earlier question"),
+               Message(role="assistant", content="Earlier answer"),
+               Message(role="user", content="x" * 7200)]
+    assert estimate_tokens(history) < 3000
+    assert not compactor.needs_compaction(state, history, [], [], 3000)
+    details = await compactor.compact(state, history, [], [], 3000, provider)
+    assert details["compacted"] is False
+    assert not provider.requests and state == CompactionState()
+
+
+@pytest.mark.asyncio
+async def test_oversized_history_can_fit_hard_budget_above_soft_trigger():
+    compactor, state, provider = compressor(), CompactionState(), SummaryProvider()
+    history = [Message(role="user", content="x" * 4000),
+               Message(role="assistant", content="y" * 4000),
+               Message(role="user", content="z" * 7200)]
+    original = list(history)
+    assert estimate_tokens(history) > 3000
+    assert compactor.needs_compaction(state, history, [], [], 3000)
+    details = await compactor.compact(state, history, [], [], 3000, provider)
+    assert details["compacted"] is True
+    assert 2250 < details["after_tokens_estimate"] <= 3000
+    assert state.view(history)[-1] == original[-1] and history == original
+    assert not compactor.needs_compaction(state, history, [], [], 3000)
+
+
+@pytest.mark.asyncio
+async def test_summary_missing_soft_target_preserves_fitting_original_view():
+    class LongerSummaryProvider(SummaryProvider):
+        async def chat(self, **kwargs):
+            self.requests.append(kwargs)
+            return Message(role="assistant", content="s" * 1100)
+    compactor, state, provider = compressor(), CompactionState(), LongerSummaryProvider()
+    history = [Message(role="user", content="x" * 1100),
+               Message(role="assistant", content="y" * 1100),
+               Message(role="user", content="z" * 5500)]
+    assert estimate_tokens(history) < 3000
+    assert compactor.needs_compaction(state, history, [], [], 3000)
+    details = await compactor.compact(state, history, [], [], 3000, provider)
+    assert details["compacted"] is False and details["summary_requests"] == 1
+    assert state == CompactionState() and state.view(history) == history
+    assert details["after_tokens_estimate"] == details["before_tokens_estimate"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_agent_sends_fitting_long_prompt_without_compaction_events(streaming):
+    agent = Agent(config={"agent": {}, "providers": {}, "plugins": {}, "skills": {}})
+    agent._is_initialized = True
+    provider = SummaryProvider()
+    provider.model_metadata = {"test": {"source": "provider", "context_window": 9000}}
+    agent.providers.register("summary", provider, set_active=True)
+    prompt = "x" * 14000
+    events = []
+    if streaming:
+        events = [event async for event in agent.run_stream(prompt)]
+        request = provider.streams[0]
+    else:
+        await agent.run(prompt, on_event=events.append)
+        request = provider.requests[0]
+    assert request["messages"][-1].content == prompt
+    assert estimate_tokens(request["messages"]) <= agent.context_compactor.input_budget(9000, 2048)
+    assert not any(event.type.value in {"context_compaction_started", "context_compacted", "error"}
+                   for event in events)
+    assert agent.compaction == CompactionState()
 
 
 def test_verified_capacity_output_reserve_and_unknown_budget():

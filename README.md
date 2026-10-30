@@ -16,6 +16,10 @@ FIRIK portalında **Platform**, **LLM Çıkarım** ve **Model Çıkarımı** far
 
 **Context Engine (Phase 3)**, güncel hash tabanlı retrieval, açıklanabilir kaynak sıralaması, isteğe bağlı LSP ve altı çalışma profili ekler. `firik harness profiles` profilleri, `firik harness context --root . --request 'hata izini incele' --profile local-efficient` kaynak/şema önizlemesini gösterir. Masaüstünde profil seçimi ve Context Inspector aynı akışı kullanır; proje verileri ayrı güven rolündedir ve çalışma izinleri bağımsız denetlenir. [Mimari, yapılandırma ve sınırlar](docs/PHASE3_CONTEXT_ENGINE.md), [benchmark kanıtı](docs/Evidence/Phase3/README.md).
 
+**Sandbox ve izole ajan çalışma alanları (Phase 5)**, isteğe bağlı Docker komut yürütmesi, kapalı ağ varsayılanı, kaynak sınırları ve ajan başına Git worktree ekler. `firik-agent sandbox doctor` Docker önkoşulunu denetler; Docker seçimi hata halinde host'a dönmez. Alt ajan farkları inceleme ve ayrı entegrasyon onayı gerektirir. Docker yalnız komut sınırını kapsar; host dosya araçları, MCP ve bilgisayar kullanımı bağımsız izinlere tabidir. [Kullanım, gerçek garantiler ve platform sınırları](docs/SANDBOXED_EXECUTION.md).
+
+**Pluggable Harness (Phase 6)**, mevcut native döngüyü ortak yaşam döngüsüne bağlar; `firik-agent harness backends` sürüm, kullanılabilirlik ve gerçek yetenekleri gösterir. Pi yalnız açık izinli araçsız metin görevlerinde desteklenir; Codex güvenli izin eşlemesi doğrulanana kadar kullanılamaz. Masaüstünde **Harness / Benchmark**, izole deneyler ve kanıta dayalı öneriler bulunur; otomatik backend geçişi kapalıdır. [Mimari ve geçiş notları](docs/PLUGGABLE_HARNESSES.md), [kullanım](docs/HARNESS_DESKTOP.md), [uygulama ve doğrulama raporu](docs/PHASE6_IMPLEMENTATION_REPORT.md).
+
 Masaüstü uygulamasındaki **Kodlama Ajanı**, dosya gezgini, plan, etkinlik, terminal, test, Git ve ajan inceleyicisini tek çalışma alanında toplar. Gerçek araç yürütümü proje izinlerinden geçer; kontrol noktaları, değişiklik incelemesi, doğrulama kanıtı ve oturum geçmişi kalıcı kaydedilir. Çoklu ajan sınırları, bağlam/model bilgisinin kaynakları ve 52 gereksinimin uygulama durumu [Kodlama cockpit dokümanında](docs/CODING_COCKPIT.md) açıklanır.
 
 Python 3.10+:
@@ -37,9 +41,11 @@ make install
 python install.py
 ```
 
+Kurulum betiği masaüstü uygulamasını PyInstaller ile yerel olarak derler ve kullanıcı uygulama menüsüne ekler: macOS’ta `~/Applications`, Windows’ta Başlat menüsü, Linux’ta uygulama menüsü. Derlenen uygulama kaynak klasöründen bağımsızdır; macOS kaynak derlemesi noter onaylı değildir. Python kurulumunda Tkinter bulunmalıdır (Linux’ta ör. `python3-tk`). Derleme veya Tkinter hatası kurulumun başarısız olmasına yol açar. Hazır imzalı paketler için [GitHub Releases](https://github.com/FehmiCitiloglu/firik-agent/releases/latest) kullanılabilir.
+
 Kurulum betiği `uv` (varsa) veya Python'un yerleşik `venv` + `pip` modülünü kullanarak sanal ortamı kurar ve bağımlılıkları yükler. `.env` oluşturmaz; mevcut dosyanıza dokunmaz.
 
-**Venv'i aktive etmeniz gerekmez.** Kurulum, `firik` ve `firik-agent` komutlarını macOS/Linux'ta `~/.local/bin`, Windows'ta `%LOCALAPPDATA%\FIRIK\bin` üzerinden erişilebilir yapar ve kullanıcı PATH ayarını kaydeder. macOS/Linux'ta kullanılan kabuğun zsh, bash veya fish başlangıç dosyası güncellenir. Diğer kabuklarda `~/.profile` güncellenir; kabuğunuz bu dosyayı okumuyorsa PATH'i kendi başlangıç dosyanıza ekleyin.
+**Venv'i aktive etmeniz gerekmez.** Kurulum, `firik`, `firik-agent` ve `firik-gui` komutlarını macOS/Linux'ta `~/.local/bin`, Windows'ta `%LOCALAPPDATA%\FIRIK\bin` üzerinden erişilebilir yapar ve kullanıcı PATH ayarını kaydeder. macOS/Linux'ta kullanılan kabuğun zsh, bash veya fish başlangıç dosyası güncellenir. Diğer kabuklarda `~/.profile` güncellenir; kabuğunuz bu dosyayı okumuyorsa PATH'i kendi başlangıç dosyanıza ekleyin.
 
 İlk kurulumdan sonra **yeni bir terminal açın** veya kurulumun sonunda gösterilen PATH komutunu mevcut terminalde bir kez çalıştırın. Kurulum betiği, kendisini başlatan terminalin ortamını doğrudan değiştiremez. Sonrasında `firik --help` ve `firik-agent --commands` herhangi bir klasörden çalışır; bağımlılıklar projenin `.venv` ortamında kalır. Proje klasörünü veya `.venv` dizinini silmeyin; projeyi taşırsanız `.venv` ortamını yeniden oluşturup kurulumu tekrar çalıştırın. `config.yaml` gibi göreli dosya yolları komutu çalıştırdığınız klasöre göre değerlendirilir.
 

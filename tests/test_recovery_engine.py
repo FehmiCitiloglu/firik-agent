@@ -348,7 +348,8 @@ async def test_signature_argument_error_is_proven_not_dispatched():
     registry=ToolRegistry();effects=[]
     registry.register(ToolDefinition(name="effect",description="mutate"), lambda required:effects.append(required))
     result=await registry.execute(call(arguments='{"unexpected":1}'))
-    assert result.is_error and result.metadata=={"failure_kind":"invalid_tool_arguments","request_phase":"tool_not_dispatched"}
+    assert result.is_error and result.metadata=={"failure_kind":"invalid_tool_arguments", "request_phase":"tool_not_dispatched",
+                                               "execution_boundary":"host"}
     assert effects==[]
 
 

@@ -50,6 +50,8 @@ class HistoryView(CodingHistoryMixin, ctk.CTkFrame):
 
 @pytest.fixture
 def history(tmp_path):
+    from firik_agent.ui.app import _ensure_tk_environment
+    _ensure_tk_environment()
     db = ProjectDatabase(tmp_path / "projects.db")
     for identifier in ("p1", "p2"):
         db.create_project(Project(id=identifier, name=identifier, local_path=str(tmp_path)))

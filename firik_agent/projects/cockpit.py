@@ -126,6 +126,7 @@ class CockpitState:
     context: dict[str, Any] = field(default_factory=dict)
     summary: dict[str, Any] = field(default_factory=dict)
     approvals: dict[str, dict[str, Any]] = field(default_factory=dict)
+    execution_steps: dict[str, dict[str, Any]] = field(default_factory=dict)
     plan: list[dict[str, Any]] = field(default_factory=list)
     run_id: str = ""
     revision: int = 0
@@ -145,6 +146,7 @@ class CockpitState:
         self.tests.clear()
         self.agents.clear()
         self.approvals.clear()
+        self.execution_steps.clear()
         self.context.clear()
         self.summary.clear()
         self._requests.clear()
@@ -200,19 +202,38 @@ class CockpitState:
                     ("type", "timestamp", "tool_name", "server_name", "content", "arguments", "duration_ms", "metadata")}
         data = redact_sensitive(data)
         kind = _kind(data.get("type", data.get("event_type")))
+        if kind in {"execution_step", "execution_reconciled"}:
+            # Native journal events carry their typed fields at the top level.
+            # Preserve attempt/version identity when replay is bounded or repeated.
+            details = {**data, **(data.get("metadata") or {})}
+            identifier = details.get("attempt_id")
+            if identifier:
+                previous = self.execution_steps.get(identifier)
+                if previous and previous.get("version", -1) >= details.get("version", 0):
+                    return
+                if len(self.execution_steps) < 20000 or identifier in self.execution_steps:
+                    self.execution_steps[identifier] = details
+            state = details.get("state", "needs_reconciliation")
+            self._append(kind, str(details.get("agent_id") or "orchestrator"), time.time(),
+                status=state, title=details.get("operation", "Kalıcı yürütme adımı"), metadata=details)
+            self.revision += 1
+            return
         # Subagent envelopes recurse below; observe only the normalized child
         # event so starts, usage frames and terminal metrics count once.
         if kind != "subagent_event":
             self._run_metrics.observe(data)
             self._metric_protocol = self._metric_protocol or bool((data.get("metadata") or {}).get("request_id")) or kind == "model_request_finished"
         metadata = data.get("metadata") or {}
+        if isinstance(metadata.get("execution"), dict):
+            self.summary["execution"] = metadata["execution"]
         agent_id = str(metadata.get("agent_id") or "orchestrator")
         stamp = data.get("timestamp") or time.time()
         if not isinstance(stamp, (int, float)):
             stamp = time.time()
         if kind == "subagent_event":
             fields = {key: metadata[key] for key in
-                      ("name", "role", "status", "task", "model", "provider", "elapsed_sec") if key in metadata}
+                      ("name", "role", "status", "task", "model", "provider", "elapsed_sec",
+                       "workspace_id", "workspace_path", "proposal_id", "execution_backend") if key in metadata}
             parent = metadata.get("parent_agent_id", "orchestrator")
             fields["parent_id"] = parent if parent in self.agents else "orchestrator"
             agent = self._agent(agent_id, **fields)
@@ -396,10 +417,11 @@ class CockpitState:
     def finish(self, status: str, changes: list[dict[str, Any]] | None = None) -> None:
         changes = changes or []
         completion_classification = self.summary.get("completion_classification")
+        execution = self.summary.get("execution")
         self._agent("orchestrator", status=status)
         for item in self.timeline + self.terminal:
             if item.get("status") == "running":
-                item["status"] = "cancelled" if status == "cancelled" else "failed"
+                item["status"] = "outcome_unknown" if status in {"interrupted", "blocked"} else "cancelled" if status == "cancelled" else "failed"
         totals: dict[str, Any] = {}
         for agent in self.agents.values():
             for key, value in agent["usage"].items():
@@ -411,6 +433,13 @@ class CockpitState:
             "usage": totals, "cost": totals.get("cost_usd", totals.get("cost")),
             "duration_sec": max(0, time.time() - self._started) if self._started else 0,
             "tests": self.tests.copy(), "completed_steps": sum(s.get("status") == "completed" for s in self.plan)}
+        uncertain = [item for item in self.execution_steps.values() if item.get("state") in {
+            "outcome_unknown", "needs_reconciliation", "running", "dispatching"}]
+        self.summary["uncertain_operations"] = len(uncertain)
+        if execution is not None:
+            self.summary["execution"] = execution
+        if uncertain:
+            self.summary["durable_lifecycle_state"] = "needs_reconciliation"
         if completion_classification:
             self.summary["completion_classification"] = completion_classification
         metrics = self.metrics_snapshot()

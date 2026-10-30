@@ -208,7 +208,8 @@ def test_subagent_failure_is_returned_without_terminating_parent(bridge):
     service, state, roots = bridge
     async def script(iteration, messages):
         if "Araştırma uzmanısın" in messages[0].content:
-            raise RuntimeError("alt sağlayıcı hatası")
+            from firik_agent.core.failures import FailureKind, RequestPhase, RuntimeFailure
+            raise RuntimeFailure(FailureKind.AUTHENTICATION_FAILED, phase=RequestPhase.NOT_SUBMITTED)
             yield
         if iteration == 1:
             yield StreamChunk(tool_calls=[tool("spawn_subagent", role="review", task="main.py incele")])
@@ -226,6 +227,32 @@ def test_subagent_failure_is_returned_without_terminating_parent(bridge):
     assert not errors
     record = service.coding_store.latest_run("p1")
     assert record.decisions[-1]["status"] == "failed"
+
+
+def test_unknown_child_request_blocks_completion_without_replaying_child(bridge):
+    service, state, roots = bridge
+    async def script(iteration, messages):
+        if "Araştırma uzmanısın" in messages[0].content:
+            raise RuntimeError("response disappeared after submission")
+            yield
+        if iteration == 1:
+            yield StreamChunk(tool_calls=[tool("spawn_subagent", role="review", task="main.py incele")])
+        elif iteration == 2:
+            spawned = next(json.loads(m.content) for m in messages if m.name == "spawn_subagent")
+            yield StreamChunk(tool_calls=[tool("wait_subagent", agent_id=spawned["agent_id"])])
+        else:
+            result = next(json.loads(m.content) for m in messages if m.name == "wait_subagent")
+            assert result["status"] == "outcome_unknown" and result["passed"] is False
+            yield StreamChunk(delta_content="Alt ajan sonucu belirsiz; uzlaştırma gerekiyor.")
+    state["script"] = script
+    _, future = start(bridge, options={"subagents_enabled": True})
+    future.result(timeout=8)
+    record = service.coding_store.latest_run("p1")
+    assert record.status == "blocked"
+    child_calls = [request for request in state["requests"] if "Araştırma uzmanısın" in request["messages"][0]["content"]]
+    assert len(child_calls) == 1
+    report = service._coding_recovery_controller().inspect(record.id, project_id="p1")
+    assert report["uncertain_operations"] and not report["resume_eligible"]
 
 
 def test_real_agent_approval_edit_diff_test_evidence_provider_and_sqlite_history(bridge, python_command):
@@ -429,15 +456,92 @@ def test_resume_revalidates_actual_hash_and_keeps_concurrent_user_edit(bridge):
     source = roots["p1"] / "main.py"
     previous = service.coding_store.create_run("p1", task_id="t-p1", session_id=session.session_id)
     service.coding_store.record_file_change(previous.id, {"path": "main.py", "after_hash": hashlib.sha256(source.read_bytes()).hexdigest()})
+    controller = service._coding_recovery_controller()
+    controller.record_workspace(previous.id, roots["p1"])
     service.coding_store.finish_run(previous.id, "interrupted")
     source.write_text("# Kullanıcının yeni düzenlemesi\n", encoding="utf-8", newline="\n")
-    _, future = start(bridge, session=session)
+    errors = []
+    _, denied = start(bridge, session=session,
+        options={"resume_run_id": previous.id, "resume_approved": True}, on_error=errors.append)
+    denied.result(timeout=4)
+    assert errors and not state["requests"]
+    controller.reconcile_workspace(previous.id, project_id="p1", approved=True, evidence="Kullanıcı düzenlemesi incelendi")
+    _, future = start(bridge, session=session, options={"resume_run_id": previous.id, "resume_approved": True})
     future.result(timeout=4)
     resumed = service.coding_store.latest_run("p1")
     checkpoint = next(c for c in resumed.checkpoints if c.get("kind") == "resume_revalidation")
     assert resumed.resumed_from == previous.id and checkpoint["files"][0]["matches"] is False
     assert "değişen dosyaları yeniden oku" in state["requests"][0]["messages"][0]["content"]
     assert source.read_text(encoding="utf-8") == "# Kullanıcının yeni düzenlemesi\n"
+
+
+def test_repeated_explicit_resume_does_not_dispatch_or_overwrite_completed_continuation(bridge):
+    service, state, roots = bridge
+    session = service.get_or_create_session()
+    previous = service.coding_store.create_run("p1", task_id="t-p1", session_id=session.session_id)
+    service._coding_recovery_controller().record_workspace(previous.id, roots["p1"])
+    service.coding_store.finish_run(previous.id, "interrupted")
+    options = {"resume_run_id": previous.id, "resume_approved": True}
+    _, first = start(bridge, session=session, options=options)
+    first.result(timeout=4)
+    completed = service.coding_store.latest_run("p1")
+    assert completed.resumed_from == previous.id and completed.status == "completed"
+    count = len(state["requests"])
+    errors = []
+    _, repeated = start(bridge, session=session, options=options, on_error=errors.append)
+    repeated.result(timeout=4)
+    assert errors and len(state["requests"]) == count
+    assert service.coding_store.get_run(completed.id).status == "completed"
+    assert len(service.coding_store.list_runs("p1")) == 2
+
+
+def test_new_prompt_does_not_implicitly_resume_interrupted_run(bridge):
+    service, state, roots = bridge
+    session = service.get_or_create_session()
+    previous = service.coding_store.create_run("p1", task_id="t-p1", session_id=session.session_id)
+    service.coding_store.finish_run(previous.id, "interrupted")
+    _, fresh = start(bridge, session=session, prompt="Yeni isteği incele")
+    fresh.result(timeout=4)
+    record = service.coding_store.latest_run("p1")
+    assert record.id != previous.id and record.resumed_from is None
+    assert service.coding_store.get_run(previous.id).status == "interrupted"
+
+
+def test_exact_prepared_continuation_can_start_after_passive_startup_recovery(bridge):
+    service, state, roots = bridge
+    session = service.get_or_create_session()
+    previous = service.coding_store.create_run("p1", task_id="t-p1", session_id=session.session_id)
+    controller = service._coding_recovery_controller()
+    controller.record_workspace(previous.id, roots["p1"])
+    service.coding_store.finish_run(previous.id, "interrupted")
+    prepared = controller.prepare_resume(previous.id, project_id="p1", current_permissions={}, approved=True)
+    service.coding_store.recover_interrupted()
+    assert service.coding_store.get_run(prepared.id).status == "queued"
+    _, future = start(bridge, session=session, options={"resume_run_id": previous.id,
+        "resume_approved": True, "resume_prepared_run_id": prepared.id})
+    future.result(timeout=4)
+    completed = service.coding_store.latest_run("p1")
+    assert completed.id == prepared.id and completed.status == "completed"
+    assert len(state["requests"]) == 1 and len(service.coding_store.list_runs("p1")) == 2
+
+
+def test_resume_uses_durable_source_messages_instead_of_stale_live_session(bridge):
+    service, state, roots = bridge
+    session = service.get_or_create_session()
+    previous = service.coding_store.create_run("p1", task_id="t-p1", session_id=session.session_id)
+    service.coding_store.record_message(previous.id, "user", "durable-source-request")
+    service.coding_store.record_message(previous.id, "assistant", "durable-source-outcome")
+    service._coding_recovery_controller().record_workspace(previous.id, roots["p1"])
+    service.coding_store.finish_run(previous.id, "interrupted")
+    session.messages = [Message(role="user", content="stale-live-session")]
+    _, future = start(bridge, session=session, options={"resume_run_id": previous.id, "resume_approved": True})
+    future.result(timeout=4)
+    request = json.dumps(state["requests"][0]["messages"])
+    assert "durable-source-request" in request and "durable-source-outcome" in request
+    assert "stale-live-session" not in request
+    current = service.coding_store.latest_run("p1")
+    assert any(decision.get("kind") == "resume_authorized" for decision in current.decisions)
+    assert "durable-source-outcome" in json.dumps(current.messages)
 
 
 def test_project_legacy_denials_override_selected_tool_permissions(bridge):

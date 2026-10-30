@@ -73,6 +73,7 @@ class RecoveryBudget:
     cost: float = 0
     unknown_usage_requests: int = 0
     metadata_requests: int = 0
+    context_capacity_lookups: set[tuple[int, str, str]] = field(default_factory=set, repr=False)
 
     def snapshot(self) -> dict[str, Any]:
         return {"requests_used": self.requests, "requests_remaining": max(0, self.limits.max_requests - self.requests),
@@ -265,11 +266,29 @@ def operation_fingerprint(name: str, arguments: str) -> str:
 
 class BudgetedCompactionProvider:
     """Keep the existing compactor, while applying the same resource reserve."""
-    def __init__(self, provider, budget: RecoveryBudget, capabilities: dict[str, Any]):
+    def __init__(self, provider, budget: RecoveryBudget, capabilities: dict[str, Any], run_control=None):
         self.provider, self.budget, self.capabilities = provider, budget, capabilities
+        self.run_control = run_control
         self.name, self.current_model = getattr(provider, "name", ""), getattr(provider, "current_model", "")
 
     async def chat(self, **kwargs):
         kwargs["max_tokens"] = self.budget.output_reservation(kwargs["messages"], kwargs.get("tools") or [],
                                                             kwargs.get("max_tokens"), self.capabilities)
-        return await self.provider.chat(**kwargs)
+        control = self.run_control
+        intent = control.durable_begin("model:compaction", side_effect="external_side_effect",
+            input_data={"messages": [m.to_dict() for m in kwargs["messages"]],
+                        "max_tokens": kwargs["max_tokens"]},
+            metadata={"kind": "model", "paid_request": True, "compaction": True}) if control else None
+        if intent:
+            control.durable_transition(intent["attempt_id"], "dispatching")
+            control.durable_transition(intent["attempt_id"], "running")
+        try:
+            result = await self.provider.chat(**kwargs)
+        except BaseException:
+            if intent:
+                control.durable_finish(intent["attempt_id"], "outcome_unknown")
+            raise
+        if intent:
+            control.durable_boundary("after_model_output", attempt_id=intent["attempt_id"])
+            control.durable_finish(intent["attempt_id"], result={"response": result.to_dict()})
+        return result

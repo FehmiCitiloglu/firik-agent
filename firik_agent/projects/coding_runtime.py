@@ -5,7 +5,7 @@ import ast
 import asyncio
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import difflib
 import hashlib
@@ -26,6 +26,7 @@ from firik_agent.core.events import AgentEvent, AgentEventType
 from firik_agent.core.completion import CompletionController, legacy_status
 from firik_agent.core.session import ChatSession
 from firik_agent.core.shell import run_shell
+from firik_agent.core.execution import ExecutionConfig, CommandRequest, build_backend
 from firik_agent.core.tools import ToolRegistry
 from firik_agent.core.types import Message, ToolCall, ToolDefinition, ToolResult
 from firik_agent.projects.indexer import (IGNORED_DIRS, IGNORED_EXTENSIONS, is_sensitive_file,
@@ -242,6 +243,12 @@ class _CodingRegistry(ToolRegistry):
     """Translate and redact handler errors before they reach logs or the model."""
 
     async def execute(self, tool_call: ToolCall) -> ToolResult:
+        result = await self._execute_coding(tool_call)
+        definition = self.get_tool(tool_call.function.name)
+        result.metadata["execution_boundary"] = definition.execution_boundary if definition else "unknown"
+        return result
+
+    async def _execute_coding(self, tool_call: ToolCall) -> ToolResult:
         name = tool_call.function.name
         dispatched = False
         try:
@@ -279,6 +286,8 @@ class _CodingRegistry(ToolRegistry):
             return ToolResult(tool_call_id=tool_call.id, name=name, content=content, is_error=failed)
         except asyncio.CancelledError:
             raise
+        except DurableExecutionError:
+            raise
         except FileNotFoundError:
             return ToolResult(tool_call_id=tool_call.id, name=name, content="Dosya veya çalışma klasörü bulunamadı.", is_error=True)
         except UnicodeError:
@@ -288,6 +297,10 @@ class _CodingRegistry(ToolRegistry):
                               is_error=True, metadata=_failure_metadata(exc, dispatched=dispatched))
 
 
+class DurableExecutionError(RuntimeError):
+    """Persistence failed: stop execution without claiming that an effect failed."""
+
+
 class CodingRunControl:
     """Thread-safe UI decisions and async checkpoints for one project/session run."""
 
@@ -295,11 +308,22 @@ class CodingRunControl:
                  mode: str = "approved", permissions: Optional[Dict[str, bool]] = None,
                  on_event: Optional[Callable[[AgentEvent], None]] = None,
                  run_id: Optional[str] = None, policy: Optional[Dict[str, str]] = None,
-                 inherited_policy: Optional[Dict[str, str]] = None, excluded_paths: Optional[list[str]] = None):
+                 inherited_policy: Optional[Dict[str, str]] = None, excluded_paths: Optional[list[str]] = None,
+                 execution_config: ExecutionConfig | dict | None = None):
         if mode not in MODES:
             raise ValueError("Geçersiz kodlama çalışma modu.")
         self.session_id, self.project_id, self.task_id = session_id, project_id, task_id
         self.mode = mode
+        self.execution_config = (execution_config if isinstance(execution_config, ExecutionConfig)
+                                 else ExecutionConfig(**(execution_config or {})))
+        self.execution_status = {"backend": self.execution_config.backend,
+            "boundary": "host" if self.execution_config.backend == "host" else "sandbox",
+            "available": True if self.execution_config.backend == "host" else None,
+            "state": "configured", "network": ("host" if self.execution_config.backend == "host" else
+                                                    "bridge" if self.execution_config.network else "none"),
+            "resource_enforcement": "container" if self.execution_config.backend == "docker" else "timeout_and_output_only",
+            "profile": self.execution_config.profile, "workspace_id": None, "running_processes": [],
+            "limits": asdict(self.execution_config), "external_tools_sandboxed": False}
         self.run_id = run_id or f"run_{uuid4().hex}"
         self._actor_context: ContextVar[Optional[str]] = ContextVar(f"coding_actor_{self.run_id}", default=None)
         self.permissions = {"allow_reads": True, "allow_edits": True, "allow_deletes": True,
@@ -337,6 +361,73 @@ class CodingRunControl:
         self.workspace_revision = 0
         self.completion = CompletionController()
         self.unresolved_operations: list[dict[str, Any]] = []
+        self.execution_journal = None
+        self.journal_run_id = self.run_id
+        self.workspace_root: Optional[str] = None
+        self.durable_parent_step: Optional[str] = None
+        self._durable_tool = ContextVar(f"durable_tool_{self.run_id}", default=None)
+        # Explicit test hooks only; never random failure injection in production.
+        self.durability_fault_hook = None
+
+    def attach_journal(self, journal, *, run_id=None, workspace_root=None) -> None:
+        """Bind to the existing run database before any operation is dispatched."""
+        from firik_agent.projects.coding_sessions import CodingSessionStore
+        identity = run_id or self.run_id
+        owner = CodingSessionStore(journal.db).get_run(identity)
+        if owner is None or (owner.session_id, owner.project_id, owner.task_id) != (
+                self.session_id, self.project_id, self.task_id):
+            raise DurableExecutionError("Execution journal does not belong to this project, task and session.")
+        project = journal.db.get_project(self.project_id)
+        if workspace_root and (project is None or Path(project.local_path).resolve() != Path(workspace_root).resolve()):
+            raise DurableExecutionError("Execution workspace does not match the owning project.")
+        self.execution_journal = journal
+        self.journal_run_id = identity
+        self.resumed_from = owner.resumed_from
+        self.workspace_root = str(Path(workspace_root).resolve()) if workspace_root else None
+
+    def durable_boundary(self, name: str, **data: Any) -> None:
+        if self.durability_fault_hook is not None:
+            self.durability_fault_hook(name, data)
+
+    def durable_begin(self, operation: str, *, attempt_id=None, step_id=None,
+                      input_data=None, side_effect="unknown", metadata=None):
+        if self.execution_journal is None:
+            return None
+        try:
+            self.durable_boundary("before_intent", operation=operation)
+            row = self.execution_journal.begin(self.journal_run_id, operation,
+                attempt_id=attempt_id, step_id=step_id, parent_step_id=self.durable_parent_step,
+                agent_id=self.actor_metadata().get("agent_id", self.run_id), input_data=input_data,
+                side_effect=side_effect, permission_context={"policy": self.policy_snapshot(),
+                    "permissions": dict(self.permissions), "mode": self.mode},
+                workspace_revision=self.workspace_revision, metadata=metadata)
+            self.durable_boundary("after_intent", attempt_id=row["attempt_id"])
+            return row
+        except Exception as exc:
+            raise DurableExecutionError("Execution intent could not be persisted; dispatch stopped.") from exc
+
+    def durable_transition(self, attempt_id, state, *, result=None, error=None, metadata=None):
+        if self.execution_journal is None or not attempt_id:
+            return None
+        try:
+            self.durable_boundary("before_" + state, attempt_id=attempt_id)
+            row = self.execution_journal.transition(self.journal_run_id, attempt_id, state,
+                result=result, error=error, metadata=metadata)
+            self.durable_boundary("after_" + state, attempt_id=attempt_id)
+            return row
+        except Exception as exc:
+            raise DurableExecutionError("Execution outcome could not be persisted; inspect the durable journal before continuing.") from exc
+
+    def durable_finish(self, attempt_id, state="completed", *, result=None, error=None,
+                       capture_workspace=False, metadata=None):
+        details = dict(metadata or {})
+        if self.execution_journal is not None and capture_workspace and self.workspace_root:
+            from firik_agent.projects.resume import capture_workspace as capture
+            try:
+                details["workspace_manifest"] = capture(self.workspace_root)
+            except Exception as exc:
+                raise DurableExecutionError("Workspace evidence could not be persisted; reconciliation is required.") from exc
+        return self.durable_transition(attempt_id, state, result=result, error=error, metadata=details)
 
     @contextmanager
     def actor(self, agent_id: str):
@@ -360,8 +451,7 @@ class CodingRunControl:
     def permission_decision(self, action: str) -> str:
         """Effective live policy, narrowed by parent grants and immutable limits.
 
-        This host has no shell sandbox. All terminal commands retain per-call
-        approval even if an autonomous/custom policy asks to allow them.
+        All terminal commands retain per-call approval, including Docker runs.
         """
         action = _policy_action(action)
         if action not in POLICY_ACTIONS:
@@ -408,7 +498,8 @@ class CodingRunControl:
         with self._lock:
             self.policy = cleaned
         self.emit(AgentEventType.POLICY_UPDATED, "İzin politikası güncellendi.", policy=self.policy_snapshot(),
-                  sandbox="none", shell_requires_approval=True)
+                  sandbox=self.execution_config.backend if self.execution_config.backend == "docker" else "none",
+                  execution=dict(self.execution_status), shell_requires_approval=True)
 
     async def authorize(self, action: str, tool_name: str, arguments: dict[str, Any], reason: str) -> None:
         await self.checkpoint()
@@ -431,6 +522,8 @@ class CodingRunControl:
                                    "task_id": self.task_id, **metadata, **self.actor_metadata()}))
             try:
                 self.on_event(event)
+            except DurableExecutionError:
+                raise
             except Exception:
                 logger.exception("Kodlama olayı teslim edilemedi.")
 
@@ -474,6 +567,9 @@ class CodingRunControl:
         if len(json.dumps(arguments, ensure_ascii=False)) > MAX_OUTPUT_CHARS:
             raise ValueError("Onaylanacak işlem çok büyük. İncelenebilir küçük işlemlere bölün.")
         display = safe_payload(arguments)
+        intent = self.durable_begin("approval:" + tool_name, attempt_id=request_id,
+            step_id=request_id, input_data=arguments, side_effect="idempotent_state_inspection",
+            metadata={"kind": "approval", "pending": True, "tool_name": tool_name})
         with self._lock:
             self.pending_approvals[request_id] = {"tool_name": tool_name, "arguments": display,
                                                  "reason": reason, "created_at": time.time(), **self.actor_metadata()}
@@ -490,6 +586,11 @@ class CodingRunControl:
                 await asyncio.sleep(0.025)
             self.emit(AgentEventType.APPROVAL_DECIDED, "İşlem onaylandı." if allowed else "İşlem reddedildi.",
                       request_id=request_id, allowed=allowed, tool_name=tool_name)
+            if intent:
+                self.durable_transition(request_id, "dispatching")
+                self.durable_transition(request_id, "running")
+                self.durable_finish(request_id, result={"allowed": allowed},
+                    metadata={"pending": False, "grant_scope": "this_live_operation_only"})
             self.decisions.append({"request_id": request_id, "tool_name": tool_name, "allowed": allowed,
                                    "arguments_hash": _digest(json.dumps(arguments, sort_keys=True).encode()),
                                    "timestamp": time.time(), **self.actor_metadata()})
@@ -505,7 +606,9 @@ class CodingRunControl:
         with self._lock:
             return {"run_id": self.run_id, "session_id": self.session_id, "project_id": self.project_id, "task_id": self.task_id,
                     "mode": self.mode, "permissions": dict(self.permissions), "state": self.state,
-                    "policy": self.policy_snapshot(), "sandbox": "none", "workspace_revision": self.workspace_revision,
+                    "policy": self.policy_snapshot(),
+                    "sandbox": "docker" if self.execution_config.backend == "docker" else "none",
+                    "execution": dict(self.execution_status), "workspace_revision": self.workspace_revision,
                     "excluded_paths": list(self.excluded_paths),
                     "completion": self.completion.snapshot(),
                     "unresolved_operations": [dict(item) for item in self.unresolved_operations],
@@ -531,7 +634,8 @@ class _Change:
 class CodingToolFilter:
     """Owns an isolated registry. It never inherits unrestricted meta/plugin handlers."""
 
-    READ_TOOLS = {"read_file", "list_files", "search_project", "search_symbols", "git_status", "git_diff"}
+    READ_TOOLS = {"read_file", "list_files", "search_project", "search_symbols", "git_status", "git_diff",
+                  "inspect_execution", "collect_execution_artifacts"}
     EDIT_TOOLS = {"edit_file", "write_file", "apply_patch", "delete_file", "undo_change"}
     STATE_TOOLS = {"update_plan", "record_verification", "discover_quality_gates", "run_quality_gate"}
     META_TOOLS = {"discover_tools"}
@@ -544,6 +648,9 @@ class CodingToolFilter:
             raise ValueError("Proje kökü bir klasör olmalıdır.")
         safe_project_path(self.root, ".")
         self.control = control
+        self.execution_backend = build_backend(control.execution_config)
+        self.execution_workspace = None
+        self._execution_lock = asyncio.Lock()
         self.tools = _CodingRegistry()
         self.mcp_registry = mcp_registry
         self.trusted_mcp_tools = set(trusted_mcp_tools or ())
@@ -632,6 +739,9 @@ class CodingToolFilter:
             # A failed durable checkpoint must prevent the mutation. The exact
             # expected bytes are checked again below after the hook returns.
             self.before_file_mutation(str(path.relative_to(self.root)))
+            if self.control.cancel_event.is_set():
+                raise asyncio.CancelledError
+        self.control.durable_boundary("before_filesystem_mutation", path=str(path.relative_to(self.root)))
         with self._parent(path) as parent:
             target = path.name if parent is not None else path
             # Validate the exact bytes again immediately before the mutation.
@@ -642,6 +752,9 @@ class CodingToolFilter:
                 raise ValueError("Dosya bu sırada silindi; işlem durduruldu.")
             if content is None:
                 os.unlink(target, dir_fd=parent)
+                if parent is not None:
+                    os.fsync(parent)
+                self.control.durable_boundary("after_filesystem_mutation", path=str(path.relative_to(self.root)))
                 return
             temp_name = f".firik-change-{uuid4().hex}.tmp"
             temporary = temp_name if parent is not None else path.parent / temp_name
@@ -665,6 +778,9 @@ class CodingToolFilter:
                     if self._read_bytes(str(path)) != expected:
                         raise ValueError("Dosya bu sırada değişti; kullanıcı düzenlemesi korunuyor.")
                     os.replace(temporary, target, src_dir_fd=parent, dst_dir_fd=parent)
+                if parent is not None:
+                    os.fsync(parent)
+                self.control.durable_boundary("after_filesystem_mutation", path=str(path.relative_to(self.root)))
             finally:
                 try:
                     os.unlink(temporary, dir_fd=parent)
@@ -673,7 +789,8 @@ class CodingToolFilter:
 
     def _register(self, name: str, description: str, handler: Any,
                   props: dict[str, Any], required: list[str]) -> None:
-        self.tools.register(ToolDefinition(name=name, description=description, source="builtin:coding",
+        boundary = "sandbox" if name in {"run_command", "run_tests", "run_quality_gate"} and self.control.execution_config.backend == "docker" else "host"
+        self.tools.register(ToolDefinition(name=name, description=description, source="builtin:coding", execution_boundary=boundary,
                             parameters={"type": "object", "properties": props, "required": required,
                                         "additionalProperties": False}), handler)
 
@@ -702,13 +819,17 @@ class CodingToolFilter:
         self._register("undo_change", "Yalnız bu ajanın değişikliğini, eşzamanlı kullanıcı düzenlemesini koruyarak geri al.", self.undo_change,
                        {"change_id": s}, ["change_id"])
         command = {"command": s, "cwd": s, "timeout": {"type": "number"}}
-        self._register("run_command", "Yerel terminal komutu; işletim sistemi sandboxı yoktur, her çağrı onay gerektirir.", self.run_command,
+        self._register("run_command", "Seçili yürütme arka ucunda terminal komutu; her çağrı onay gerektirir. Docker çıktıları ayrı alanda kalır.", self.run_command,
                        command, ["command"])
         self._register("run_tests", "Onaylı test komutunu çalıştır ve gerçek çıkış sonucunu kaydet.", self.run_tests,
                        command, ["command"])
         self._register("git_status", "Projenin Git çalışma ağacı durumunu salt okunur sorgula.", self.git_status, {}, [])
         self._register("git_diff", "Git farkını hassas dosyaları dışarıda bırakarak incele.", self.git_diff,
                        {"path": s}, [])
+        self._register("inspect_execution", "Yürütme sınırını, ağı, kaynak sınırlarını ve süreç durumunu incele.",
+                       self.inspect_execution, {}, [])
+        self._register("collect_execution_artifacts", "İzole komut çıktılarını inceleme için listele; ana projeye uygulamaz.",
+                       self.collect_execution_artifacts, {}, [])
         self._register("update_plan", "Kabul kriterleri ve doğrulama yöntemleriyle görev adımlarını güncelle.", self.update_plan,
                        {"steps": {"type": "array", "items": {"type": "object"}}}, ["steps"])
         self._register("record_verification", "Kabul kriterini gerçek araç kanıtıyla ilişkilendir; doğrulanamayanı ayrı kaydet.", self.record_verification,
@@ -787,13 +908,46 @@ class CodingToolFilter:
             matched = bool(words) and any(word in (tool.name + " " + tool.description).casefold() for word in words)
             if requested or matched or query == "*":
                 self.control.discovered_tools.add(tool.name)
-                found.append({"name": tool.name, "description": tool.description[:240]})
+                found.append({"name": tool.name, "description": tool.description[:240],
+                              "execution_boundary": tool.execution_boundary})
             if len(found) >= 32:
                 break
         return {"tools": found, "permission_effect": "none", "selection_only": True,
                 "fallback": "İzinli envanter için query=* kullanın; çalıştırma izinleri her çağrıda yeniden denetlenir."}
 
     async def execute(self, tool_call: ToolCall, session: ChatSession) -> ToolResult:
+        """Manual desktop tools share the same intent boundary as agent calls."""
+        result = await self._execute_with_journal(tool_call, session)
+        registry = self.tools if self.tools.get_tool(tool_call.function.name) else self.mcp_registry
+        definition = registry.get_tool(tool_call.function.name) if registry else None
+        result.metadata["execution_boundary"] = definition.execution_boundary if definition else "unknown"
+        return result
+
+    async def _execute_with_journal(self, tool_call: ToolCall, session: ChatSession) -> ToolResult:
+        if self.control.execution_journal is None or self.control._durable_tool.get():
+            return await self._execute_unjournaled(tool_call, session)
+        from firik_agent.core.recovery import tool_semantics, SideEffectRisk
+        name = tool_call.function.name
+        registry = self.tools if self.tools.get_tool(name) else self.mcp_registry
+        risk = tool_semantics(name, registry.get_tool(name) if registry else None)
+        intent = self.control.durable_begin("tool:" + name, step_id="tool_" + tool_call.id,
+            input_data=tool_call.function.arguments, side_effect=risk.value,
+            metadata={"kind": "tool", "tool_name": name, "manual": True})
+        identifier = intent["attempt_id"]
+        self.control.durable_transition(identifier, "dispatching")
+        self.control.durable_transition(identifier, "running")
+        try:
+            result = await self._execute_unjournaled(tool_call, session)
+        except asyncio.CancelledError:
+            self.control.durable_finish(identifier, "outcome_unknown")
+            raise
+        outcome = "outcome_unknown" if result.metadata.get("requires_reconciliation") else "failed" if result.is_error else "completed"
+        self.control.durable_finish(identifier, outcome,
+            result={"content": result.content, "is_error": result.is_error},
+            capture_workspace=outcome in {"completed", "failed"} and risk not in {SideEffectRisk.PURE_READ, SideEffectRisk.STATE_INSPECTION})
+        return result
+
+    async def _execute_unjournaled(self, tool_call: ToolCall, session: ChatSession) -> ToolResult:
         name = tool_call.function.name
         failure_key = _digest(json.dumps([name, tool_call.function.arguments], sort_keys=True).encode())
         dispatched = False
@@ -844,6 +998,9 @@ class CodingToolFilter:
                 if re.search(r"(?i)\bgit\b.*\bpush\b.*(?:--force(?:-with-lease)?\b|\s-f\b)", command):
                     raise PermissionError("Zorla Git push işlemi engellendi.")
                 actions = ["shell.safe"]
+                if self.control.execution_config.backend == "docker" and self.control.execution_config.network:
+                    # Arbitrary scripts can use the network without a visible URL.
+                    actions += ["network", "shell.network"]
                 if re.search(r"(?i)(?:https?://|\b(?:curl|wget|ssh|scp|rsync)\b|\bgit\b.*\b(?:fetch|pull|push|clone)\b|\b(?:npm|pnpm|pip|pip3|yarn)\b.*\b(?:install|add|publish)\b)", command):
                     actions += ["network", "shell.network"]
                 if re.search(r"(?i)\bgit\b.*\bcommit\b", command):
@@ -854,7 +1011,13 @@ class CodingToolFilter:
                     raise PermissionError("Komutun shell, ağ veya Git işlemi izin politikasında engellendi.")
                 command_actions = actions
                 await self.control.authorize("shell.safe", name, arguments,
+                    ("Komut Docker içinde filtrelenmiş proje kopyasında çalışır; ağ: "
+                     + ("açık" if self.control.execution_config.network else "kapalı")
+                     + ". Dosya araçları ve MCP bu sınırın dışındadır. Bu komutu onaylayın.")
+                    if self.control.execution_config.backend == "docker" else
                     "Komut yerel kullanıcı yetkileriyle çalışır; proje dışında erişim ve ağ kullanımı yapabilir. Bu komutu onaylayın.")
+                for action in dict.fromkeys(actions[1:]):
+                    await self.control.authorize(action, name, arguments, "Komutun ağ veya Git yetkisi için onay gerekiyor.")
             elif not self.tools.get_tool(name):
                 for key, value in arguments.items():
                     if key in {"file", "file_path", "directory", "root", "project_path", "working_directory"} and isinstance(value, str):
@@ -877,12 +1040,15 @@ class CodingToolFilter:
                 result = await asyncio.wait_for(registry.execute(tool_call), timeout=60)
             if not isinstance(registry, _CodingRegistry):
                 result.content = safe_serialized_text(result.content)
+            definition = registry.get_tool(name)
+            result.metadata["execution_boundary"] = definition.execution_boundary if definition else "unknown"
             if name in {"run_command", "run_tests", "run_quality_gate"}:
                 try:
                     command_result = json.loads(result.content)
                 except (ValueError, TypeError):
                     command_result = {}
-                if command_result.get("timed_out"):
+                if (command_result.get("timed_out") or command_result.get("status") == "uncertain"
+                        or command_result.get("cleanup_error")):
                     result.metadata.update(failure_kind="tool_outcome_unknown", request_phase="tool_dispatched",
                                            requires_reconciliation=True, retry_eligible=False)
             if result.metadata.get("requires_reconciliation"):
@@ -895,6 +1061,8 @@ class CodingToolFilter:
                 self.control.failures.pop(failure_key, None)
             return result
         except asyncio.CancelledError:
+            raise
+        except DurableExecutionError:
             raise
         except (asyncio.TimeoutError, TimeoutError) as exc:
             self.control.failures[failure_key] = self.control.failures.get(failure_key, 0) + 1
@@ -1047,6 +1215,8 @@ class CodingToolFilter:
             return
         lookup = {step["id"]: step for step in self.control.plan}
         step = lookup.get(step_id)
+        if step is not None and step.get("status") == "completed":
+            raise ValueError("Tamamlanan plan adımı yinelenemez; yeni işi ayrı bir plan adımı olarak tanımlayın.")
         if step is None or any(lookup[dependency]["status"] != "completed" for dependency in step.get("dependencies", [])):
             raise ValueError("Değişiklik mevcut ve bağımlılıkları tamamlanmış bir plan adımına ait olmalıdır.")
 
@@ -1161,33 +1331,89 @@ class CodingToolFilter:
             raise ValueError("Komut çalışma yolu bir klasör olmalıdır.")
         if isinstance(timeout, bool) or not isinstance(timeout, (float, int)) or not math.isfinite(timeout) or not 0 < timeout <= 300:
             raise ValueError("Komut zaman aşımı 0–300 saniye arasında olmalıdır.")
-        task = asyncio.create_task(run_shell(command, cwd=str(directory), timeout=timeout))
-        try:
-            while not task.done():
-                if self.control.cancel_event.is_set():
-                    task.cancel()
-                    await task
-                await asyncio.sleep(0.025)
-            output = await task
-        except asyncio.CancelledError:
-            task.cancel()
+        return await self._run_backend_command(command, directory, timeout, started)
+
+    async def _run_backend_command(self, command, directory, timeout, started):
+        """Docker selection has one path; preparation errors never reach host shell."""
+        async with self._execution_lock:
+            await self.control.checkpoint()
+            self.control.execution_status.update(state="preparing")
             try:
-                await task
+                if self.execution_workspace is None:
+                    self.execution_workspace = await self.execution_backend.create_workspace(self.root)
+                workspace = self.execution_workspace
+                self.control.execution_status.update(workspace_id=workspace.workspace_id,
+                    workspace_path=str(workspace.root), source_root=str(self.root))
+                availability = await self.execution_backend.prepare_environment(workspace)
+                if not availability.available:
+                    raise RuntimeError(availability.diagnostic)
+                self.control.execution_status.update(available=True, state="running",
+                    running_processes=[{"command": safe_text(command)}])
+                self.control.emit(AgentEventType.TASK_STATE, "Komut seçili yürütme arka ucunda başlatılıyor.",
+                                  execution=dict(self.control.execution_status))
+                task = asyncio.create_task(self.execution_backend.execute_command(workspace,
+                    CommandRequest(command=command, cwd=str(directory.relative_to(self.root)), timeout=timeout)))
+                try:
+                    while not task.done():
+                        if self.control.cancel_event.is_set():
+                            task.cancel()
+                            break
+                        await asyncio.sleep(0.025)
+                    result = await task
+                except asyncio.CancelledError:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+                    raise
+                data = {"command": safe_text(command), "cwd": str(directory.relative_to(self.root)),
+                    "exit_code": result.exit_code, "timed_out": result.timed_out,
+                    "output": safe_text(result.format_shell()), "backend": result.backend,
+                    "execution_boundary": result.boundary, "workspace_id": workspace.workspace_id,
+                    "command_id": result.command_id, "status": result.status,
+                    "source_tree_matches": result.source_tree_matches,
+                    "source_unchanged": result.source_unchanged,
+                    "artifacts_changed": result.artifacts_changed, "cleanup_error": result.cleanup_error,
+                    "duration_sec": round(time.monotonic() - started, 3),
+                    "passed": result.exit_code == 0 and result.status == "completed" and not result.timed_out and not result.cleanup_error}
+                self.control.execution_status.update(available=True, state="idle", running_processes=[],
+                    artifacts_changed=result.artifacts_changed, cleanup_error=result.cleanup_error)
+                return data
             except asyncio.CancelledError:
-                pass
-            raise
-        match = re.match(r"Exit code (-?\d+):", output)
-        code = int(match[1]) if match else None
-        timed_out = output.startswith("Command timed out")
-        translated = output.replace("Exit code ", "Çıkış kodu ", 1)
-        if timed_out:
-            translated = "Komut zaman aşımına uğradı; süreç ve alt süreçleri durduruldu.\n" + output.split("\n", 1)[-1]
-        elif output.startswith("Command execution error:"):
-            translated = "Komut başlatılamadı: " + output.split(":", 1)[-1]
-        return {"command": safe_text(command), "cwd": str(directory.relative_to(self.root)),
-                "exit_code": code, "timed_out": timed_out, "output": safe_text(translated),
-                "duration_sec": round(time.monotonic() - started, 3),
-                "passed": code == 0 and not timed_out}
+                self.control.execution_status.update(state="cancelled", running_processes=[])
+                raise
+            except Exception as error:
+                self.control.execution_status.update(state="unavailable", available=False,
+                    diagnostic=safe_text(str(error)), running_processes=[])
+                raise
+
+    async def inspect_execution(self):
+        backend_status = (await self.execution_backend.inspect_status(self.execution_workspace)
+                          if self.execution_workspace is not None else {})
+        return {**self.control.execution_status, "backend_status": backend_status,
+                "limits": asdict(self.control.execution_config),
+                "permission_status": self.control.policy_snapshot(),
+                "external_tools_sandboxed": False}
+
+    async def collect_execution_artifacts(self):
+        if self.execution_workspace is None:
+            return {"artifacts": [], "integrated": False}
+        artifacts = await self.execution_backend.collect_artifacts(self.execution_workspace)
+        return {"workspace_id": self.execution_workspace.workspace_id,
+                "workspace_path": str(self.execution_workspace.root),
+                "artifacts": [asdict(item) for item in artifacts], "integrated": False}
+
+    async def close_execution(self):
+        if self.execution_workspace is not None:
+            try:
+                await self.execution_backend.destroy_workspace(self.execution_workspace)
+            except Exception as error:
+                self.control.execution_status.update(state="retained", cleanup_error=safe_text(str(error)), running_processes=[])
+                return {"retained": True, "workspace_path": str(self.execution_workspace.root),
+                        "reason": safe_text(str(error))}
+            self.control.execution_status.update(state="closed", running_processes=[])
+            return {"retained": False}
 
     async def run_tests(self, command: str, cwd: str = ".", timeout: float = 60) -> ToolResult:
         revision = self.control.workspace_revision
@@ -1204,7 +1430,8 @@ class CodingToolFilter:
         result = await self.run_command(command, cwd, timeout)
         after = await asyncio.to_thread(self._workspace_version)
         fresh = (before["complete"] and after["complete"] and before["digest"] == after["digest"]
-                 and revision == self.control.workspace_revision)
+                 and revision == self.control.workspace_revision
+                 and result.get("source_tree_matches", True) and result.get("source_unchanged", True))
         result.update({"evidence_id": f"verify_{uuid4().hex}", "kind": "test", "executed": True,
                        "created_at": datetime.now(timezone.utc).isoformat(), "fresh": fresh,
                        "workspace_revision": self.control.workspace_revision, "workspace_hash": after["digest"],
@@ -1267,7 +1494,9 @@ class CodingToolFilter:
     def discover_quality_gates(self) -> dict[str, Any]:
         gates = discover_quality_gates(self.root, excluded_paths=self.control.excluded_paths)
         self.configure_quality_gates(gates)
-        return {"gates": [gate.to_dict() for gate in gates], "sandbox": "none", "requires_approval": True}
+        return {"gates": [gate.to_dict() for gate in gates],
+                "sandbox": "docker" if self.control.execution_config.backend == "docker" else "none",
+                "requires_approval": True}
 
     def configure_quality_gates(self, gates) -> list[dict[str, Any]]:
         specifications = validate_gates(gates)

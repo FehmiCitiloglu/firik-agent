@@ -61,6 +61,7 @@ class MCPManager:
                 description=f"[{name} MCP tool] {t.description or t.name}",
                 parameters=t.inputSchema,
                 source=f"mcp:{name}",
+                execution_boundary="remote_mcp",
             )
 
             # Create a closure capturing client and original tool name

@@ -59,10 +59,19 @@ def setup(tmp_path, factory, mode="auto", permissions=None, **kwargs):
     return SubagentToolFilter(parent, session, factory, events.append, **kwargs), events
 
 
+def committed_repository(root):
+    subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+
+
 @pytest.mark.asyncio
 async def test_real_streaming_worker_uses_parent_hash_gate_and_lease(tmp_path):
     (tmp_path / "source.py").write_text("value = 1\n")
     (tmp_path / "other.py").write_text("other = 1\n")
+    committed_repository(tmp_path)
     async def script(turn, request):
         names = {item["function"]["name"] for item in request["tools"]}
         assert "spawn_subagent" not in names and "send_message" in names and "run_command" not in names
@@ -86,10 +95,15 @@ async def test_real_streaming_worker_uses_parent_hash_gate_and_lease(tmp_path):
         spawned = await manager.spawn("worker", "Kaynağı düzenle", write_paths=["source.py", "created.py"])
         result = await manager.wait(spawned["agent_id"])
         assert result["passed"], result
-        assert (tmp_path / "source.py").read_text() == "value = 2\n"
+        from pathlib import Path
+        isolated = Path(result["workspace"]["path"])
+        assert (tmp_path / "source.py").read_text() == "value = 1\n"
+        assert (isolated / "source.py").read_text() == "value = 2\n"
         assert (tmp_path / "other.py").read_text() == "other = 1\n"
-        assert result["artifacts"] == ["source.py", "created.py"]
-        assert (tmp_path / "created.py").read_text() == "created = 1\n"
+        assert set(result["artifacts"]) == {"source.py", "created.py"}
+        assert not (tmp_path / "created.py").exists()
+        assert (isolated / "created.py").read_text() == "created = 1\n"
+        assert not result["merge_proposal"]["reviewed"]
         assert result["usage"]["total_tokens"] == 30
         assert manager.jobs[spawned["agent_id"]]["session"].session_id != manager.session.session_id
         assert all(event.metadata["parent_agent_id"] == manager.control.run_id for event in events)
@@ -292,6 +306,7 @@ async def test_live_spawn_denial_and_immutable_limits(tmp_path):
 @pytest.mark.asyncio
 async def test_cancel_child_during_inherited_edit_approval_cleans_parent_pending_request(tmp_path):
     (tmp_path / "source.py").write_text("value = 1\n")
+    committed_repository(tmp_path)
     manager = None
     async def script(turn, request):
         snapshot = manager.parent.read_file("source.py")
@@ -330,43 +345,28 @@ async def test_wait_on_child_cancelled_before_entry_does_not_cancel_parent(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_tester_executes_real_parent_approved_test_without_edit_or_generic_terminal(tmp_path):
+async def test_host_tester_cannot_execute_scripts_outside_an_os_sandbox(tmp_path):
     (tmp_path / "source.py").write_text("value = 1\n")
-    args = [sys.executable, "-c", "print('TEST_EVIDENCE_OK')"]
-    command = subprocess.list2cmdline(args) if sys.platform == "win32" else shlex.join(args)
+    committed_repository(tmp_path)
     async def script(turn, request):
         names = {schema["function"]["name"] for schema in request["tools"]}
-        assert "run_tests" in names and not names & {"run_command", "write_file", "edit_file"}
-        if turn == 1:
-            yield StreamChunk(tool_calls=[tool("run_tests", {"command": command}, "test"),
-                tool("write_file", {"path": "source.py", "expected_hash": "", "content": "bad"}, "deny")])
-        else:
-            evidence = json.loads(next(message.content for message in request["messages"] if message.tool_call_id == "test"))
-            assert evidence["executed"] and evidence["passed"] and "TEST_EVIDENCE_OK" in evidence["output"]
-            yield StreamChunk(delta_content="Test kanıtıyla tamamlandı")
+        assert not names & {"run_tests", "run_quality_gate", "run_command", "write_file", "edit_file"}
+        yield StreamChunk(delta_content="Host test execution unavailable for isolated child")
     provider = ScriptedProvider(script)
     manager, _ = setup(tmp_path, lambda: real_agent(provider), permissions={"allow_terminal": False, "allow_tests": True})
-    approvals = []
-    def approve(event):
-        if event.type == AgentEventType.APPROVAL_REQUIRED:
-            approvals.append(event.metadata["tool_name"])
-            manager.control.decide_approval(event.metadata["request_id"], True)
-    manager.control.on_event = approve
     try:
-        spawned = await manager.spawn("tester", "Testi çalıştır")
+        spawned = await manager.spawn("tester", "Testleri incele")
         assert (await manager.wait(spawned["agent_id"]))["passed"]
-        assert approvals == ["run_tests"]
-        assert manager.control.verifications[0]["executed"] and manager.control.verifications[0]["passed"]
-        assert manager.control.verifications[0]["agent_id"] == spawned["agent_id"]
-        assert manager.control.verifications[0]["parent_agent_id"] == manager.control.run_id
+        assert not manager.control.verifications
         assert (tmp_path / "source.py").read_text() == "value = 1\n"
     finally:
         await manager.close()
 
 
 @pytest.mark.asyncio
-async def test_workers_from_different_managers_share_conflicting_file_leases(tmp_path):
+async def test_workers_from_different_managers_have_distinct_workspaces(tmp_path):
     (tmp_path / "source.py").write_text("value = 1\n")
+    committed_repository(tmp_path)
     entered, release = asyncio.Event(), asyncio.Event()
     async def script(turn, request):
         entered.set()
@@ -377,15 +377,13 @@ async def test_workers_from_different_managers_share_conflicting_file_leases(tmp
     second, _ = setup(tmp_path, lambda: real_agent(provider))
     try:
         job = await first.spawn("worker", "Çalış", write_paths=["source.py"])
-        await entered.wait()
-        conflict = await second.spawn("worker", "Çakışan iş", write_paths=["source.py"])
-        result = await second.wait(conflict["agent_id"])
-        assert result["status"] == "failed" and "başka" in result["result"]
-        assert len(provider.requests) == 1
-        await first.cancel(job["agent_id"])
-        next_job = await second.spawn("worker", "Kilidi serbest iş", write_paths=["source.py"])
+        await asyncio.wait_for(entered.wait(), 3)
+        independent = await second.spawn("worker", "Yalıtılmış iş", write_paths=["source.py"])
+        assert job["workspace"]["path"] != independent["workspace"]["path"]
         release.set()
-        assert (await second.wait(next_job["agent_id"]))["passed"]
+        assert (await second.wait(independent["agent_id"]))["passed"]
+        assert (await first.wait(job["agent_id"]))["passed"]
+        assert (tmp_path / "source.py").read_text() == "value = 1\n"
     finally:
         release.set()
         await first.close()

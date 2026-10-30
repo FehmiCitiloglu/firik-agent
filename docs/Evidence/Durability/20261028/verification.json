@@ -1,0 +1,93 @@
+{
+  "phase": 4,
+  "recorded_at": "2026-10-28T18:22:52.247436+03:00",
+  "base_git_head": "aa0a5ea6eb469f818dabd20d42674e469211f62f",
+  "scope": "Local working tree implementation; offline providers and temporary local workspaces.",
+  "checks": [
+    {
+      "command": ".venv/bin/python -m pytest -q --ignore-glob='tests/test_ui*.py'",
+      "passed": 1018,
+      "skipped": 1,
+      "seconds": 73.62,
+      "output": "docs/Evidence/Durability/20261028/nongui-tests.txt"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/test_durable_boundaries.py tests/test_durable_execution.py tests/test_durable_resume.py tests/test_execution_journal.py tests/test_coding_bridge.py tests/test_cockpit_subagents.py",
+      "passed": 129,
+      "skipped": 0,
+      "seconds": 16.23,
+      "output": "docs/Evidence/Durability/20261028/final-integration-tests.txt"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/test_coding_bridge.py::test_real_agent_approval_edit_diff_test_evidence_provider_and_sqlite_history tests/test_durable_recovery_surfaces.py",
+      "passed": 9,
+      "skipped": 0,
+      "seconds": 1.83,
+      "output": "docs/Evidence/Durability/20261028/desktop-actions-tests.txt"
+    }
+  ],
+  "check_counts_overlap": true,
+  "additional_checks": {
+    "git_diff_check": "passed",
+    "python_compileall": "passed",
+    "provider_free_cli_help": "passed"
+  },
+  "final_delta_check": "Desktop action selection was run after the final undo journaling change.",
+  "benchmark": {
+    "evidence": "docs/Evidence/Durability/20261028/persistence-benchmark.json",
+    "additional_journal_median_ms": 7.6898,
+    "workspace_capture_median_ms": {
+      "10": 40.409,
+      "100": 47.3455,
+      "1000": 101.4758
+    }
+  },
+  "guarantees": [
+    "Same Projects SQLite database; additive migration and atomic state/event transactions.",
+    "No operation replay on restart; dispatched operations without confirmed outcomes remain unknown.",
+    "Explicit continuation with source identity/workspace/current permission checks and unique source claims.",
+    "Completed inherited effects reuse retained results; unavailable results require reconciliation.",
+    "Pending approval is never inherited as an execution grant; child outcomes can be delivered without recreation."
+  ],
+  "limitations": [
+    "Real Tk initialization aborted in this environment; visual rendering is unverified. Headless UI action tests passed.",
+    "No live paid-provider, Windows, power-loss or physical-device validation.",
+    "No distributed exactly-once guarantee or reliable reconnection to old child processes.",
+    "Workspace scans default to 2000 files/20MiB and exclude indexer dependency/build directories; incomplete scans block safe resume.",
+    "Redaction is best effort for unrecognized secrets; total storage still grows with retained runs."
+  ],
+  "preexisting_changes_preserved": [
+    "README.md",
+    "install.ps1",
+    "install.py",
+    "install.sh",
+    "tests/test_install.py"
+  ],
+  "source_sha256": {
+    "firik_agent/cli.py": "56786a7da10c6006bdba7074e458d9a5c90f00bb411608ae93396a4b15daeb78",
+    "firik_agent/core/agent.py": "9a361b076e6efbbb313c0ce28867902bc42ac65fdc2b9fbcc4723768ea45161d",
+    "firik_agent/core/recovery.py": "a1a22a478cd0655c01dcb9aa51943611b659797cae2a296f94f00aae7c274fb0",
+    "firik_agent/projects/db.py": "512fb86194a3a509c31d387340bf7443971a57525f9da7e8c0511363de517841",
+    "firik_agent/projects/coding_sessions.py": "db16cfa59ce492b5024c319ba3858d93a3fe77a34ca77e1b0b770710e342edea",
+    "firik_agent/projects/execution_journal.py": "b596a827cfbe12ce521c2e4bf20611384d3fc2a4b4dbba758518da74b50c5523",
+    "firik_agent/projects/resume.py": "29f934a96464b3f55dee32ee4a65d75eb3eea12cc6179d9ba2bc68fa4c6ff5e2",
+    "firik_agent/projects/recovery_cli.py": "57275f436b4786e1dbbb616445875ff1384ff04cb46e10d8d8260aefceb61fd2",
+    "firik_agent/projects/coding_runtime.py": "b9afc719b8d43f04b5d5b6d70bf1ddc3d1ea93ab7932817bdef5f5a529da0591",
+    "firik_agent/projects/subagents.py": "213672815597c39acb5e7d915634cc70aef4a3838c6249262f5d34b801e33695",
+    "firik_agent/projects/cockpit.py": "b691e905d308e05273cefa39f9263b3158c093cc7b5ba37c2b8c80e21e7cf2c7",
+    "firik_agent/ui/coding_bridge.py": "b93cc9ea6336d2583be416917c4a7d393728ccb0ae1da6ad0910e856ae80efcf",
+    "firik_agent/ui/coding_actions.py": "9853190513f3c77e23634ce9168e27ce936306c8f7710ccc9ff3ac6fb307abae",
+    "firik_agent/ui/coding_history.py": "5de4a7008510fd4eefd59ae7f23be5773c14e3ab7b6c4712023ef11754f10b39",
+    "firik_agent/ui/coding_workspace.py": "4ca9d804a4b5bb03a76975d092582c1353bf554fdeccb86b4e2b773c0293c062",
+    "firik_agent/ui/coding_recovery.py": "7db44df242e7f2a8d6919109b5f4d0dd1d84827b697409a28c9c79d9c0d3145d",
+    "scripts/benchmark_durability.py": "f4c2d729a573ee9af68633eb47b5ce73204e7e360556540a18f9388853c42133",
+    "tests/test_durable_execution.py": "561031f7299ec2505534b6cd6234e70bb5e52f3938c3d4e4ddb901afcf5c3d84",
+    "tests/test_durable_boundaries.py": "8ca6edf995bbd544b59146272474bc3d03ac31a37de04ff74dd88efba9ef35f9",
+    "tests/test_durable_resume.py": "36c2c9ce8a54995128bbd62d90123cee597b71487cee0f6a10a73637d6528e10",
+    "tests/test_execution_journal.py": "0fa8a6a922ed34828ca7f5c0ff2c4670e83a8e09b77d59dcf60907890c93a8d8",
+    "tests/test_durable_recovery_surfaces.py": "c7a3d43fbd0a3eba489532aecd922306a61bd0650790575e27d9f0e9986b1ed2",
+    "tests/test_coding_bridge.py": "ce5553d08aa787f9bff4b4e5893745603ff7a36928c1c9232804c1afae45767a",
+    "tests/test_cockpit_actions.py": "2092ce2f29e100703f259a519e0bc60de035b5f2c5911feae583321894bd5a94",
+    "tests/test_subagents.py": "de4adcbc7c98d2b5302579cb48b064a27d19b25aae269b8710318d8b04f91c7b"
+  }
+}

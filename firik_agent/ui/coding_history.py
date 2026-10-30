@@ -114,6 +114,13 @@ def restore_state_history(state, record, events=None):
 
 
 class CodingHistoryMixin:
+    def _coding_recovery(self, run_id=None):
+        record = self._coding_state().get("record")
+        run_id = run_id or (record.id if record else None)
+        if run_id and not self._coding_state()["busy"]:
+            from firik_agent.ui.coding_recovery import show_recovery_dialog
+            return show_recovery_dialog(self, run_id)
+
     def _new_coding_session(self):
         state = self._coding_state()
         if state["busy"]:
@@ -181,5 +188,7 @@ class CodingHistoryMixin:
             text = f"{record.title} · {status}\n{record.created_at[:19]} · {record.model or 'Model kaydı yok'}\n{record.summary or record.user_request}"
             ctk.CTkLabel(frame, text=redact_sensitive(text)[:700], justify="left", anchor="w", wraplength=540).pack(side="left", fill="x", expand=True, padx=8, pady=6)
             ctk.CTkButton(frame, text="Kaydı Aç", width=85, command=lambda identifier=record.id: choose(identifier)).pack(side="right", padx=6)
+            ctk.CTkButton(frame, text="Kurtarma", width=85,
+                          command=lambda identifier=record.id: self._coding_recovery(identifier)).pack(side="right", padx=3)
         ctk.CTkButton(dialog, text="Yeni Oturum", command=lambda: (dialog.destroy(), self._new_coding_session())).pack(pady=8)
         return dialog

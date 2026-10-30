@@ -98,6 +98,11 @@ async def run_shell(command: str, shell: Optional[str] = None,
         await _stop(process)
         await completion
         raise
+    finally:
+        # A successful shell may have launched children that closed their pipes.
+        # Reap its process group as well as groups cancelled/timed out above.
+        if sys.platform != "win32":
+            await _stop(process)
 
     def decode(data: bytearray, truncated: bool) -> str:
         value = data.decode("utf-8", errors="replace")

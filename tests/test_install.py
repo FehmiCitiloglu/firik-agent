@@ -142,6 +142,7 @@ def test_uv_explicitly_targets_project_venv(tmp_path, monkeypatch):
     monkeypatch.setattr(installer.subprocess, "run", lambda args, **kwargs: calls.append(args))
     monkeypatch.setattr(installer, "install_commands", lambda *args: None)
     monkeypatch.setattr(installer, "configure_path", lambda *args: [])
+    monkeypatch.setattr(installer, "install_desktop", lambda *args: tmp_path / "desktop")
     monkeypatch.setenv("VIRTUAL_ENV", "/unrelated/environment")
     (tmp_path / ".env.example").write_text("FIRIK_API_KEY=placeholder\n")
     installer.main()
@@ -152,3 +153,27 @@ def test_uv_explicitly_targets_project_venv(tmp_path, monkeypatch):
     (tmp_path / ".env").write_text("existing configuration\n")
     installer.main()
     assert (tmp_path / ".env").read_text() == "existing configuration\n"
+
+
+def test_desktop_install_creates_linux_launcher_and_uses_isolated_build(home, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / "data space"))
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        if "PyInstaller" in args:
+            dist = Path(args[args.index("--distpath") + 1])
+            dist.mkdir()
+            (dist / "firik-agent").write_bytes(b"desktop")
+        return subprocess.CompletedProcess(args, 0)
+    monkeypatch.setattr(installer.subprocess, "run", run)
+    launcher = installer.install_desktop(tmp_path, tmp_path / "python", None, "linux")
+    assert (home / "data space/firik-agent/desktop/firik-agent").read_bytes() == b"desktop"
+    assert 'Exec="' in launcher.read_text()
+    assert "pyinstaller>=6.16,<7" in calls[1]
+    assert "--distpath" in calls[2]
+
+
+def test_desktop_install_fails_when_tkinter_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(installer.subprocess, "run", lambda args, **kwargs: subprocess.CompletedProcess(args, 1))
+    with pytest.raises(RuntimeError, match="Tkinter"):
+        installer.install_desktop(tmp_path, tmp_path / "python", None, "linux")

@@ -9,8 +9,12 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from enum import Enum
 import json
+import os
 from pathlib import Path
 import re
+import socket
+import subprocess
+import threading
 from typing import Any, Callable, Mapping, Optional, TYPE_CHECKING
 import uuid
 
@@ -42,6 +46,77 @@ _TEXT_PATTERNS = (
     re.compile(r"(?i)\bAKIA[A-Z0-9]{16}\b"),
     re.compile(r"(?i)(https?://)[^/\s:@]+:[^/\s@]+@"),
 )
+
+_LIVE_OWNER_TOKENS: set[str] = set()
+_OWNER_LOCK = threading.Lock()
+
+
+def _process_start(pid: int) -> str:
+    """PID reuse guard; unavailable process identity always fails closed."""
+    if os.name == "nt":
+        alive, identity = _windows_process(pid)
+        return identity if alive else ""
+    try:
+        result = subprocess.run(["ps", "-p", str(pid), "-o", "lstart="],
+                                capture_output=True, text=True, timeout=2, check=False,
+                                env={**os.environ, "TZ": "UTC"})
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def _windows_process(pid: int) -> tuple[bool, str]:
+    """Read process liveness without os.kill, which terminates Windows PIDs."""
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+    handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        # ERROR_INVALID_PARAMETER establishes a missing PID; access denied is
+        # unknown and must prevent another executor from taking ownership.
+        return ctypes.get_last_error() != 87, ""
+    try:
+        code = wintypes.DWORD()
+        if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return True, ""
+        if code.value != 259:  # STILL_ACTIVE
+            return False, ""
+        times = [wintypes.FILETIME() for _ in range(4)]
+        if not kernel.GetProcessTimes(handle, *(ctypes.byref(item) for item in times)):
+            return True, ""
+        return True, str((times[0].dwHighDateTime << 32) | times[0].dwLowDateTime)
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def _owner_alive(owner: Mapping[str, Any] | None) -> bool:
+    if not owner:
+        return False
+    # An owner on an unavailable host cannot safely be declared dead.
+    if owner["owner_host"] != socket.gethostname():
+        return True
+    pid = int(owner["owner_pid"])
+    if pid <= 0:
+        return False
+    if pid == os.getpid():
+        with _OWNER_LOCK:
+            return owner["owner_token"] in _LIVE_OWNER_TOKENS
+    if os.name == "nt":
+        alive, observed = _windows_process(pid)
+        return alive and (not observed or not owner["owner_start"] or observed == owner["owner_start"])
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    observed = _process_start(pid)
+    return not observed or not owner["owner_start"] or observed == owner["owner_start"]
 
 
 def _now() -> str:
@@ -124,6 +199,57 @@ class CodingSessionStore:
         return self.get_run(identifier)  # type: ignore[return-value]
 
     start_run = create_run
+
+    def claim_owner(self, run_id: str) -> str:
+        """Register a live executor explicitly; opening history never claims it."""
+        token = uuid.uuid4().hex
+        with self.db._lock:
+            conn = self.db._get_connection()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                run = conn.execute("SELECT status FROM coding_sessions WHERE id=?", (run_id,)).fetchone()
+                if run is None or run["status"] not in ACTIVE_STATUSES:
+                    raise ValueError("Yalnızca etkin çalışma sahiplenilebilir.")
+                owner = conn.execute("SELECT * FROM coding_run_owners WHERE run_id=?", (run_id,)).fetchone()
+                if _owner_alive(owner):
+                    raise ValueError("Çalışma başka bir etkin yürütücüye ait.")
+                with _OWNER_LOCK:
+                    _LIVE_OWNER_TOKENS.add(token)
+                conn.execute("INSERT OR REPLACE INTO coding_run_owners "
+                             "(run_id,owner_pid,owner_host,owner_start,owner_token,claimed_at) VALUES (?,?,?,?,?,?)",
+                             (run_id, os.getpid(), socket.gethostname(), _process_start(os.getpid()), token, _now()))
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                with _OWNER_LOCK:
+                    _LIVE_OWNER_TOKENS.discard(token)
+                raise
+            finally:
+                conn.close()
+        return token
+
+    def release_owner(self, run_id: str, token: str | None = None) -> None:
+        with self.db._lock:
+            conn = self.db._get_connection()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                owner = conn.execute("SELECT * FROM coding_run_owners WHERE run_id=?", (run_id,)).fetchone()
+                if owner is not None:
+                    with _OWNER_LOCK:
+                        ours = owner["owner_token"] in _LIVE_OWNER_TOKENS
+                        if ours and (token is None or token == owner["owner_token"]):
+                            conn.execute("DELETE FROM coding_run_owners WHERE run_id=?", (run_id,))
+                            _LIVE_OWNER_TOKENS.discard(owner["owner_token"])
+                conn.commit()
+            finally:
+                conn.close()
+
+    def is_live(self, run_id: str) -> bool:
+        conn = self.db._get_connection()
+        try:
+            return _owner_alive(conn.execute("SELECT * FROM coding_run_owners WHERE run_id=?", (run_id,)).fetchone())
+        finally:
+            conn.close()
 
     def _clean_session(self, session: CodingSession) -> CodingSession:
         data = redact_sensitive(session.model_dump(mode="json"), self._known_secrets)
@@ -224,7 +350,9 @@ class CodingSessionStore:
             status = legacy_status(status)
         if status not in TERMINAL_STATUSES:
             raise ValueError("Çalışmayı bitirmek için son durum gerekli.")
-        return self.update_run(run_id, status=status, **fields)
+        result = self.update_run(run_id, status=status, **fields)
+        self.release_owner(run_id)
+        return result
 
     @staticmethod
     def _event_mapping(event: Any) -> dict[str, Any]:
@@ -392,6 +520,20 @@ class CodingSessionStore:
                     values += (project_id,)
                 recovered = []
                 for row in conn.execute(query, values).fetchall():
+                    owner = conn.execute("SELECT * FROM coding_run_owners WHERE run_id=?", (row["id"],)).fetchone()
+                    if _owner_alive(owner):
+                        continue
+                    if row["status"] == "queued" and owner is None:
+                        prepared = conn.execute("SELECT 1 FROM coding_resume_claims WHERE continuation_run_id=?",
+                                                (row["id"],)).fetchone()
+                        dispatched = conn.execute("SELECT 1 FROM coding_execution_steps WHERE run_id=? "
+                                                  "AND state NOT IN ('created','planned','ready') LIMIT 1",
+                                                  (row["id"],)).fetchone()
+                        if prepared and not dispatched:
+                            # An approved CLI preparation is inert until the
+                            # desktop explicitly claims it. Opening the app is
+                            # not an execution attempt or an interruption.
+                            continue
                     session = self.db._row_to_session(row)
                     previous_status = session.status
                     session.status = "interrupted"
@@ -403,10 +545,27 @@ class CodingSessionStore:
                     session = self._clean_session(session)
                     self.db._write_session(conn, session)
                     recovered.append(session)
+                recover_journals = {session.id for session in recovered}
+                extra_query = ("SELECT DISTINCT s.id FROM coding_sessions s JOIN coding_execution_steps e ON e.run_id=s.id "
+                               "WHERE e.state IN ('dispatching','running')")
+                extra_values = ()
+                if project_id is not None:
+                    extra_query += " AND s.project_id=?"
+                    extra_values = (project_id,)
+                for item in conn.execute(extra_query, extra_values).fetchall():
+                    owner = conn.execute("SELECT * FROM coding_run_owners WHERE run_id=?", (item["id"],)).fetchone()
+                    if not _owner_alive(owner):
+                        recover_journals.add(item["id"])
                 conn.commit()
-                return recovered
             finally:
                 conn.close()
+        # Each journal recovery is an independent atomic transaction. A crash
+        # between these transactions is still conservative on the next inspect.
+        from firik_agent.projects.execution_journal import ExecutionJournal
+        journal = ExecutionJournal(self.db, known_secrets=self._known_secrets)
+        for identifier in recover_journals:
+            journal.recover_interrupted(identifier)
+        return recovered
 
     def export_run(self, run_id: str, *, project_id: Optional[str] = None) -> dict[str, Any]:
         run = self.get_run(run_id, project_id=project_id)

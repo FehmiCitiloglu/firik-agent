@@ -18,6 +18,42 @@ from firik_agent.projects.model_capabilities import model_capabilities
 
 
 class CodingActions:
+    def _coding_recovery_controller(self):
+        from firik_agent.projects.resume import DurableResumeController
+        return DurableResumeController(self.projects.db,
+            known_secrets=getattr(self, "_coding_known_secrets", ()))
+
+    def inspect_coding_recovery_async(self, project_id, run_id, on_success, on_error):
+        self._coding_action_project(project_id)
+        from firik_agent.projects.recovery_cli import _permissions
+        return self._coding_background(lambda: self._coding_recovery_controller().inspect(run_id,
+            project_id=project_id, current_permissions=_permissions(self.projects.db, project_id)), on_success, on_error)
+
+    def compare_coding_recovery_async(self, project_id, run_id, on_success, on_error):
+        self._coding_action_project(project_id)
+        return self._coding_background(lambda: self._coding_recovery_controller().compare(run_id,
+            project_id=project_id), on_success, on_error)
+
+    def reconcile_coding_recovery_async(self, project_id, run_id, attempt_id, outcome, evidence, on_success, on_error):
+        self._coding_action_project(project_id)
+        return self._coding_background(lambda: self._coding_recovery_controller().reconcile(run_id,
+            attempt_id, outcome, evidence=evidence, project_id=project_id), on_success, on_error)
+
+    def cancel_coding_recovery_async(self, project_id, run_id, on_success, on_error):
+        self._coding_action_project(project_id)
+        return self._coding_background(lambda: self._coding_recovery_controller().cancel(run_id,
+            project_id=project_id), on_success, on_error)
+
+    def reconcile_coding_workspace_async(self, project_id, run_id, evidence, on_success, on_error):
+        self._coding_action_project(project_id)
+        return self._coding_background(lambda: self._coding_recovery_controller().reconcile_workspace(run_id,
+            project_id=project_id, evidence=evidence, approved=True), on_success, on_error)
+
+    def export_coding_recovery_async(self, project_id, run_id, on_success, on_error):
+        self._coding_action_project(project_id)
+        return self._coding_background(lambda: self._coding_recovery_controller().export_run(run_id,
+            project_id=project_id), on_success, on_error)
+
     def _coding_metadata(self, provider, model):
         config = self.config.get("providers", {}).get(provider, {})
         rows = (config.get("model_capabilities") or config.get("models") or {}) if isinstance(config, dict) else {}
@@ -136,7 +172,9 @@ class CodingActions:
             self._streams[session_id] = cancel_event
         async def run():
             entered.set()
-            control = manager = record = None
+            control = manager = record = tools = None
+            owner_token = None
+            initial_workspace = None
             started = time.monotonic()
             status, result, error_text = "completed", None, ""
             commands = []
@@ -149,7 +187,7 @@ class CodingActions:
                 previous = self.coding_store.latest_run(project.id, session_id=session_id)
                 control = CodingRunControl(session_id, project.id, previous.task_id if previous else None,
                     mode=prefs.get("mode", "approved"), permissions=prefs.get("permissions"), policy=prefs.get("policy"),
-                    excluded_paths=prefs.get("excluded_files", []))
+                    excluded_paths=prefs.get("excluded_files", []), execution_config=prefs.get("execution_config"))
                 # Legacy project denials are inherited, including broad shell access.
                 denies = {"never", "deny"}
                 mapping = {"read_files": ["allow_reads"], "write_files": ["allow_edits"],
@@ -164,15 +202,21 @@ class CodingActions:
                 record = self.coding_store.create_run(project.id, session_id=session_id, run_id=control.run_id,
                     task_id=control.task_id, provider=provider, model=session.model, mode=control.mode,
                     permissions={**control.permissions, **control.policy_snapshot()}, user_request=task, title=task[:120])
+                owner_token = self.coding_store.claim_owner(record.id)
+                from firik_agent.projects.execution_journal import ExecutionJournal
+                control.attach_journal(ExecutionJournal(self.projects.db,
+                    known_secrets=self._coding_known_secrets), run_id=record.id, workspace_root=project.local_path)
+                initial_workspace = self._coding_recovery_controller().record_workspace(record.id, project.local_path)
                 self._coding_controls[session_id] = control
                 def receive(event):
                     try:
                         self.coding_store.append_event(record.id, event)
                         run_metrics.observe(event)
-                    except Exception:
+                    except Exception as error:
                         cancel_event.set()
                         control.cancel_event.set()
-                        raise
+                        from firik_agent.projects.coding_runtime import DurableExecutionError
+                        raise DurableExecutionError("Run event could not be persisted; execution stopped before another operation.") from error
                     if event.type == AgentEventType.SUBAGENT_EVENT:
                         detail = event.metadata
                         if detail.get("child_event_type") == "model_usage":
@@ -185,8 +229,16 @@ class CodingActions:
                 control.on_event = receive
                 tools = CodingToolFilter(project.local_path, control)
                 self._coding_filters[session_id] = tools
+                control.emit(AgentEventType.TASK_STATE, "Yürütme arka ucu yapılandırıldı.",
+                             execution=await tools.inspect_execution())
+                checkpoint_attempt = control.durable_begin("checkpoint.create", side_effect="non_idempotent_mutation",
+                    input_data={"kind": "before_action"})
+                checkpoint_attempt_id = checkpoint_attempt["attempt_id"] if checkpoint_attempt else None
+                control.durable_transition(checkpoint_attempt_id, "dispatching")
+                control.durable_transition(checkpoint_attempt_id, "running")
                 checkpoint = await asyncio.to_thread(self.checkpoint_store.create_checkpoint,
                     project.id, project.local_path, run_id=record.id, label=task[:120], kind="before_action")
+                control.durable_finish(checkpoint_attempt_id, result={"checkpoint_id": checkpoint["id"]})
                 control.emit(AgentEventType.CHECKPOINT_CREATED, "Çalışma öncesi kontrol noktası kaydedildi.", checkpoint=checkpoint)
                 tools.before_file_mutation = lambda path: self._checkpoint_before_edit(project.id, project.local_path, record.id, path)
                 if prefs.get("quality_gates") is not None:
@@ -232,6 +284,8 @@ class CodingActions:
                         close_error = error
                         status, error_text = "failed", self._coding_redact(str(error))
                     if record and control:
+                        if tools is not None:
+                            await tools.close_execution()
                         snapshot = control.snapshot()
                         usage = {}
                         for values in usage_requests.values():
@@ -239,13 +293,23 @@ class CodingActions:
                                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                                     usage[key] = usage.get(key, 0) + value
                         usage["harness_metrics"] = run_metrics.snapshot()
+                        usage["execution"] = snapshot.get("execution", {})
+                        completion_attempt = control.durable_begin("completion.metadata", side_effect="conditional_write",
+                            input_data={"status": status})
+                        completion_attempt_id = completion_attempt["attempt_id"] if completion_attempt else None
+                        control.durable_transition(completion_attempt_id, "dispatching")
+                        control.durable_transition(completion_attempt_id, "running")
                         self.coding_store.update_run(record.id, status=status, result=status,
                             ended_at=datetime.now(timezone.utc).isoformat(), duration_sec=int(time.monotonic() - started),
                             tests_executed=snapshot["tests"], file_journal=snapshot["changes"], commands_executed=commands,
                             decisions=snapshot["decisions"] + child_decisions, summary=task, error=error_text, usage=usage,
                             tokens_used=int(usage.get("total_tokens", 0)),
-                            checkpoints=[{"kind": "policy", "policy": snapshot["policy"], "capabilities": control.capabilities}])
+                            checkpoints=([initial_workspace] if initial_workspace else []) +
+                                [{"kind": "policy", "policy": snapshot["policy"], "capabilities": control.capabilities}])
+                        control.durable_finish(completion_attempt_id, result={"status": status}, capture_workspace=True)
                 finally:
+                    if record is not None and owner_token:
+                        self.coding_store.release_owner(record.id, owner_token)
                     self._coding_managers.pop(session_id, None)
                     if self._coding_controls.get(session_id) is control:
                         self._coding_controls.pop(session_id, None)
@@ -329,7 +393,7 @@ class CodingActions:
             selected = prefs.get("provider", self.provider)
             manager = SubagentToolFilter(tools, session, lambda: self._coding_worker(selected, session.model), receive,
                 self._coding_redact, provider_resolver=lambda p, m: self._coding_worker(p or selected, m or session.model),
-                limits=prefs.get("subagent_limits"))
+                limits=prefs.get("subagent_limits"), dirty_start=prefs.get("dirty_start", "reject"))
             self._coding_managers[session_id] = manager
             try:
                 job = await start(manager)

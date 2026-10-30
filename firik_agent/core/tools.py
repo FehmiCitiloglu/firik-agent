@@ -21,6 +21,12 @@ class ToolRegistry:
         tool_def: ToolDefinition,
         handler: Callable[..., Any],
     ) -> None:
+        if tool_def.source.startswith("mcp:"):
+            tool_def.execution_boundary = "remote_mcp"
+        elif tool_def.source == "computer-use":
+            tool_def.execution_boundary = "host"
+        elif tool_def.execution_boundary == "unknown" and tool_def.source.startswith(("builtin", "meta:")):
+            tool_def.execution_boundary = "host"
         self._tools[tool_def.name] = tool_def
         self._handlers[tool_def.name] = handler
         logger.debug("Registered tool: %s (%s)", tool_def.name, tool_def.source)
@@ -51,6 +57,12 @@ class ToolRegistry:
         return [tool.to_schema() for tool in self._tools.values()]
 
     async def execute(self, tool_call: ToolCall) -> ToolResult:
+        result = await self._execute(tool_call)
+        definition = self.get_tool(tool_call.function.name)
+        result.metadata["execution_boundary"] = definition.execution_boundary if definition else "unknown"
+        return result
+
+    async def _execute(self, tool_call: ToolCall) -> ToolResult:
         name = tool_call.function.name
         args_str = tool_call.function.arguments
 
@@ -106,6 +118,7 @@ class ToolRegistry:
                 result.tool_call_id = tool_call.id
                 if not result.name:
                     result.name = name
+                result.metadata["execution_boundary"] = self._tools[name].execution_boundary
                 return result
 
             if isinstance(result, (dict, list)):
@@ -118,6 +131,7 @@ class ToolRegistry:
                 name=name,
                 content=content,
                 is_error=False,
+                metadata={"execution_boundary": self._tools[name].execution_boundary},
             )
 
         except Exception as e:

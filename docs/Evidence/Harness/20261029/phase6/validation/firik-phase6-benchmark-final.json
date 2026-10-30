@@ -1,0 +1,65 @@
+{
+  "comparison": {
+    "configuration_id": "current-native-full",
+    "backend": "native",
+    "model": "scripted-v1",
+    "profile": "coding",
+    "trials": 120,
+    "tasks": 40,
+    "verified_successes": 120,
+    "success_rate": 1.0,
+    "average_duration_ms": 83.2983118093883,
+    "usage": {
+      "input_tokens": {
+        "total": 14400,
+        "coverage": 120,
+        "complete": true
+      },
+      "output_tokens": {
+        "total": 2880,
+        "coverage": 120,
+        "complete": true
+      },
+      "cached_tokens": {
+        "total": null,
+        "coverage": 0,
+        "complete": false
+      },
+      "cost_usd": {
+        "total": null,
+        "coverage": 0,
+        "complete": false
+      }
+    },
+    "tool_calls": 600,
+    "tool_errors": 0,
+    "tool_error_rate": 0.0,
+    "errors": 0,
+    "terminal_error_trials": 0,
+    "terminal_error_rate": 0.0,
+    "error_rate": 0.0,
+    "recoveries": 0,
+    "trials_with_recovery_rate": 0.0,
+    "false_completions": 0,
+    "comparable": true,
+    "revision_verified": true,
+    "confidence": "descriptive-only",
+    "cost_per_success_usd": null
+  },
+  "overhead": {
+    "original-native-loop": {
+      "samples": 25,
+      "successes": 25,
+      "median_ms": 20.662457987782545,
+      "p95_ms": 21.574382990365848
+    },
+    "native-harness-adapter": {
+      "samples": 25,
+      "successes": 25,
+      "median_ms": 23.91095898929052,
+      "p95_ms": 24.58215019432828
+    }
+  },
+  "paired_median_delta_ms": 3.3409989991923794,
+  "source_changed": false
+}

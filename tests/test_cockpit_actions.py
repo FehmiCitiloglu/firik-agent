@@ -83,7 +83,7 @@ def test_manual_audit_failure_stops_before_command_execution(bridge, monkeypatch
     try:
         future.result(timeout=5)
     except RuntimeError as error:
-        assert "audit append failure" in str(error)
+        assert "could not be persisted" in str(error)
     assert failures
     assert not marker.exists()
     record = service.coding_store.latest_run("p1", session_id=session.session_id)
@@ -142,7 +142,8 @@ def test_completion_gate_block_is_durable_and_resumes_as_a_new_run(bridge):
         yield StreamChunk(delta_content="Yeni devam isteği")
 
     state["script"] = simple
-    _, resumed = start(bridge, session=session)
+    _, resumed = start(bridge, session=session,
+        options={"resume_run_id": blocked.id, "resume_approved": True})
     resumed.result(timeout=5)
     following = service.coding_store.latest_run("p1", session_id=session.session_id)
     assert following.id != blocked.id and following.resumed_from == blocked.id

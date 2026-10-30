@@ -5,8 +5,8 @@ from typing import Any, Dict, Optional
 from dotenv import load_dotenv
 import yaml
 
-# Load .env file automatically
-load_dotenv()
+# Legacy dotenv loading belongs to explicit native configuration/credential
+# startup. Importing passive harness tools must not read ambient project secrets.
 
 
 def _is_root_or_root_child(path: Path) -> bool:
@@ -29,6 +29,7 @@ def _resolve_default_config_path() -> Path:
 
 def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     """Load configuration from config.yaml or return sensible defaults."""
+    load_dotenv()
     default_path = _resolve_default_config_path()
     target_path = Path(config_path) if config_path else default_path
 

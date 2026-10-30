@@ -3,19 +3,23 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict, dataclass
+import hashlib
 import inspect
 import json
 import math
 import threading
 import time
 from typing import Any, Mapping
+from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 from firik_agent.core.events import AgentEvent, AgentEventType
 from firik_agent.core.failures import FailureKind, RequestPhase, RuntimeFailure
 from firik_agent.core.session import ChatSession
 from firik_agent.core.types import Message, ToolDefinition, ToolResult
-from firik_agent.projects.coding_runtime import CodingRunControl, _CodingRegistry, safe_payload, safe_text
+from firik_agent.projects.coding_runtime import CodingRunControl, CodingToolFilter, DurableExecutionError, _CodingRegistry, safe_payload, safe_text
+from firik_agent.projects.assignments import AgentAssignment, AgentBudget, validated_paths
 from firik_agent.projects.specialists import (EDIT_TOOLS, READ_TOOLS, ROLE_TOOLS,
     SpecialistCoordinator, SpecialistRole, WorkspaceBinding, intersect_permissions)
 from firik_agent.projects.model_capabilities import model_capabilities, usage_tokens
@@ -24,7 +28,8 @@ WORKER_TIMEOUT = 120
 ROLE_ALIASES = {"research": "researcher", "review": "reviewer"}
 ROLE_ASSIGNMENTS = {"researcher": SpecialistRole.PLANNING, "reviewer": SpecialistRole.REVIEW,
                     "worker": SpecialistRole.CODING, "tester": SpecialistRole.TESTING}
-DELEGATION_TOOLS = frozenset({"spawn_subagent", "wait_subagent", "cancel_subagent", "send_message"})
+DELEGATION_TOOLS = frozenset({"spawn_subagent", "wait_subagent", "cancel_subagent", "send_message",
+    "inspect_subagent_changes", "resolve_subagent_conflicts", "review_subagent_changes", "integrate_subagent_changes"})
 
 
 @dataclass(frozen=True)
@@ -67,8 +72,13 @@ class _ChildControl(CodingRunControl):
         super().__init__(job["session"].session_id, parent.project_id, parent.task_id,
                          mode="ask" if job["canonical_role"] in {"researcher", "reviewer"} else assignment.mode,
                          permissions=dict(assignment.permissions),
-                         run_id=job["agent_id"], inherited_policy=parent.policy_snapshot())
+                         run_id=job["agent_id"], inherited_policy=parent.policy_snapshot(),
+                         execution_config=parent.execution_config)
         self.parent, self.manager, self.job = parent, manager, job
+        self.excluded_paths = [str(Path(path).relative_to(manager.root))
+            if Path(path).is_absolute() and Path(path).is_relative_to(manager.root) else path
+            for path in parent.excluded_paths]
+        self.workspace_root = job.get("workspace", {}).get("path", str(manager.root))
         self.capabilities = dict(job.get("capabilities", parent.capabilities))
         profile = getattr(parent, "harness_profile", None)
         if profile:
@@ -80,9 +90,41 @@ class _ChildControl(CodingRunControl):
         # Implicit summary inference has no child reservation/usage hooks yet.
         # Keep the deterministic context bound so every paid request is reserved.
         self.permit_context_compaction = False
+        if parent.execution_journal is not None:
+            # Child identities are scoped under the already validated parent
+            # run, rather than inventing a second coding session/database row.
+            self.execution_journal = parent.execution_journal
+            self.journal_run_id = parent.journal_run_id
+            self.workspace_root = job.get("workspace", {}).get("path", parent.workspace_root)
+            self.durable_parent_step = job["agent_id"]
+            self._durable_tool = parent._durable_tool
+            self.durability_fault_hook = parent.durability_fault_hook
+
+    def permission_decision(self, action):
+        rank = {"allow": 0, "ask": 1, "deny": 2}
+        own = super().permission_decision(action)
+        parent = getattr(self, "parent", None)
+        return max((own, parent.permission_decision(action)), key=rank.get) if parent else own
+
+    def actor_metadata(self):
+        return {"agent_id": self.job["agent_id"], "parent_agent_id": self.parent.run_id}
+
+    async def request_approval(self, tool_name, arguments, reason):
+        with self.parent.actor(self.job["agent_id"]):
+            await self.parent.request_approval(tool_name, {**arguments,
+                "agent_workspace": self.workspace_root,
+                "workspace_id": self.job.get("workspace", {}).get("workspace_id")}, reason)
+        await self.checkpoint()
 
     async def checkpoint(self):
         await self.parent.checkpoint()
+        # Boolean grants can also tighten independently of action policy.
+        for key in self.permissions:
+            self.permissions[key] = self.permissions[key] is True and self.parent.permissions.get(key) is True
+        current_exclusions = [str(Path(path).relative_to(self.manager.root))
+            if Path(path).is_absolute() and Path(path).is_relative_to(self.manager.root) else path
+            for path in self.parent.excluded_paths]
+        self.excluded_paths = list(dict.fromkeys([*self.excluded_paths, *current_exclusions]))
         await super().checkpoint()
 
     def drain_pending_messages(self, session):
@@ -171,11 +213,16 @@ class SubagentToolFilter:
 
     def __init__(self, parent, session, agent_factory, on_event, redact=safe_payload, *,
                  provider_resolver=None, budgets: Mapping[str, Any] | SubagentLimits | None = None,
-                 limits: Mapping[str, Any] | SubagentLimits | None = None):
+                 limits: Mapping[str, Any] | SubagentLimits | None = None,
+                 workspace_manager=None, dirty_start: str = "reject"):
         self.parent, self.session = parent, session
         self.control, self.root = parent.control, parent.root
         self.agent_factory, self.on_event, self.redact = agent_factory, on_event, redact
         self.provider_resolver = provider_resolver
+        if dirty_start not in {"reject", "clean_head"}:
+            raise ValueError("Dirty workspaces require reject or explicit clean_head behavior.")
+        self.dirty_start = dirty_start
+        self.workspace_manager = workspace_manager
         chosen = limits if limits is not None else budgets
         self._limits = chosen if isinstance(chosen, SubagentLimits) else SubagentLimits(**dict(chosen or {}))
         self.jobs = {}
@@ -192,19 +239,34 @@ class SubagentToolFilter:
         for role in ROLE_ASSIGNMENTS.values():
             self.coordinator.register(role, self._worker)
         definitions = [
-            ("spawn_subagent", "Araştırmacı, inceleyici, çalışan veya test uzmanı başlat. İzinler ana ajandan daraltılır; düzenleyen çalışan için write_paths gerekir.",
+            ("spawn_subagent", "Uzman başlat; izinler ana ajandan daraltılır. Çalışan/test uzmanı ayrı worktree kullanır, sonuç otomatik entegre edilmez. Host alt ajanları test komutu çalıştıramaz.",
              {"role": {"type": "string", "enum": list(ROLE_ASSIGNMENTS) + list(ROLE_ALIASES)},
               "task": {"type": "string", "description": "Kendi başına anlaşılabilir görev ve ilgili dosyalar."},
               "provider": {"type": "string"}, "model": {"type": "string"},
               "write_paths": {"type": "array", "items": {"type": "string"}},
               "permissions": {"type": "object"},
-              "depends_on": {"type": "array", "items": {"type": "string"}}}, ["role", "task"], self.spawn),
-            ("wait_subagent", "Alt ajanın sonucunu, dosya çıktılarını ve hata bilgisini al.",
+              "depends_on": {"type": "array", "items": {"type": "string"}},
+              "permitted_tools": {"type": "array", "items": {"type": "string"}},
+              "required_outputs": {"type": "array", "items": {"type": "string"}},
+              "acceptance_criteria": {"type": "array", "items": {"type": "string"}},
+              "budget": {"type": "object"}, "execution_backend": {"type": "string", "enum": ["host", "docker"]}}, ["role", "task"], self.spawn),
+            ("wait_subagent", "Alt ajanın yerel sonucunu, fark teklifini ve hata bilgisini al; ana çalışma alanına entegrasyon ayrıca incelenip onaylanır.",
              {"agent_id": {"type": "string"}}, ["agent_id"], self.wait),
             ("cancel_subagent", "Bir alt ajanı durdur.",
              {"agent_id": {"type": "string"}}, ["agent_id"], self.cancel),
             ("send_message", "Alt ajana ek bağlam veya yönlendirme gönder; sonraki model sınırında teslim edilir.",
              {"agent_id": {"type": "string"}, "message": {"type": "string"}}, ["agent_id", "message"], self.send_message),
+        ]
+        definitions += [
+            ("inspect_subagent_changes", "Alt ajanın yalıtılmış farkını ve birleştirme teklifini incele.",
+             {"agent_id": {"type": "string"}}, ["agent_id"], self.inspect_changes),
+            ("resolve_subagent_conflicts", "Çakışan ajan farklarının çözümünü her iki sürümün kullanıcı onayıyla kaydet; diğer çalışmalar korunur.",
+             {"agent_id": {"type": "string"}, "digest": {"type": "string"}, "resolutions": {"type": "object"}},
+             ["agent_id", "digest", "resolutions"], self.resolve_conflicts),
+            ("review_subagent_changes", "Sürüm bağlı farkı kullanıcı incelemesine sun.",
+             {"agent_id": {"type": "string"}, "digest": {"type": "string"}}, ["agent_id", "digest"], self.review_changes),
+            ("integrate_subagent_changes", "İncelenmiş teklifi mevcut izin ve kullanıcı onayıyla birleştir.",
+             {"agent_id": {"type": "string"}, "digest": {"type": "string"}}, ["agent_id", "digest"], self.integrate_changes),
         ]
         for name, description, properties, required, handler in definitions:
             self.registry.register(ToolDefinition(name=name, description=description,
@@ -263,6 +325,9 @@ class SubagentToolFilter:
                     "request_iteration": job.get("iteration", 1), "provider": job.get("provider"),
                     "model": job["session"].model, "depends_on": job["depends_on"],
                     "artifacts": list(job["artifacts"]), "usage": dict(job["usage"]),
+                    "workspace": job.get("workspace"), "workspace_status": job.get("workspace_status"),
+                    "execution": dict(job["control"].execution_status) if job.get("control") else None,
+                    "merge_proposal": job.get("merge_proposal"), "assignment": job["assignment"].to_dict(),
                     "limits": asdict(self.limits), "elapsed_sec": round(time.monotonic() - job["started"], 2), **extra}
         if event:
             metadata.update(child_event_type=event.type.value, child_metadata=event.metadata,
@@ -275,14 +340,167 @@ class SubagentToolFilter:
             content=self.redact(event.content or "") if event else job.get("result", ""),
             metadata=self.redact(metadata)))
 
+    def _workspace_manager(self):
+        if self.workspace_manager is None:
+            from firik_agent.projects.isolated_workspaces import IsolatedWorkspaceManager
+            self.workspace_manager = IsolatedWorkspaceManager(self.root)
+        return self.workspace_manager
+
+    async def inspect_changes(self, agent_id):
+        await self.control.checkpoint()
+        job = self._job(agent_id)
+        if not job["future"].done() or not job.get("workspace"):
+            raise ValueError("Only a finished isolated agent has a merge proposal.")
+        await self.control.authorize("git.read", "inspect_subagent_changes", {"agent_id": agent_id},
+                                     "Alt ajan farkını inceleme izni gerekli.")
+        proposal = await asyncio.to_thread(self._workspace_manager().propose_merge,
+            job["workspace"]["workspace_id"])
+        # Reuse a reviewed proposal only when both source and target are unchanged.
+        previous = job.get("merge_proposal")
+        if previous and all(previous.get(key) == proposal.get(key) for key in
+                            ("digest", "target_revision", "workspace_revision", "overlapping_workspaces", "merge_conflicts")):
+            proposal = previous
+        job["merge_proposal"] = proposal
+        self._event(job)
+        return proposal
+
+    def _proposal(self, job, digest, *, resolving=False):
+        proposal = job.get("merge_proposal")
+        if not proposal or proposal.get("digest") != digest or job.get("integration_blocked"):
+            raise PermissionError("Inspect a current, scoped proposal before reviewing or integrating.")
+        if not job["future"].done():
+            raise PermissionError("A running agent cannot be integrated.")
+        for path in proposal.get("paths", []):
+            # Integration uses the same live sensitive/excluded path boundary
+            # as ordinary parent file tools, before exposing or approving work.
+            self.parent._resolve(path, must_exist=False)
+        scoped = {Path(path) for path in proposal.get("paths", [])}
+        for other in self.jobs.values():
+            if other is job or not other.get("workspace") or other.get("integration_result"):
+                continue
+            if not other["future"].done():
+                raise PermissionError("Finish other editing agents before reviewing or integrating their results.")
+            other_proposal = other.get("merge_proposal") or {}
+            overlap = {Path(path) for path in other_proposal.get("paths", [])} & scoped
+            resolution = proposal.get("overlap_resolutions", {}).get(other["workspace"]["workspace_id"])
+            if overlap and not resolving and not (resolution and resolution.get("digest") == other_proposal.get("digest")):
+                raise PermissionError("Overlapping agent changes require explicit conflict resolution; all work is retained: " +
+                    ", ".join(str(path) for path in sorted(overlap)))
+        return proposal
+
+    async def resolve_conflicts(self, agent_id, digest, resolutions):
+        await self.control.checkpoint()
+        job = self._job(agent_id)
+        proposal = self._proposal(job, digest, resolving=True)
+        await self.control.authorize("git.read", "resolve_subagent_conflicts", {"agent_id": agent_id},
+                                     "Çakışan farkları inceleme izni gerekli.")
+        competing = [await asyncio.to_thread(self._workspace_manager().collect_patch, identifier)
+                     for identifier in proposal.get("overlapping_workspaces", {})]
+        with self.control.actor(agent_id):
+            await self.control.request_approval("resolve_subagent_conflicts", {
+                "proposal": proposal, "competing_patches": competing, "resolutions": resolutions},
+                "Her iki ajan sürümünü ve uzlaştırılmış sonucu inceleyip bu açık çözümü onaylayın; diğer çalışmalar korunur.")
+        await self.control.checkpoint()
+        if self.control.permission_decision("git.read") == "deny":
+            raise PermissionError("Conflict review permission was narrowed.")
+        resolved = await asyncio.to_thread(self._workspace_manager().resolve_overlaps,
+            proposal["proposal_id"], resolutions, "user")
+        job["merge_proposal"] = resolved
+        self._event(job)
+        return resolved
+
+    async def review_changes(self, agent_id, digest):
+        await self.control.checkpoint()
+        job = self._job(agent_id)
+        proposal = self._proposal(job, digest)
+        await self.control.authorize("git.read", "review_subagent_changes", {"agent_id": agent_id},
+                                     "Fark inceleme izni gerekli.")
+        with self.control.actor(agent_id):
+            await self.control.request_approval("review_subagent_changes", {
+                "agent_id": agent_id, "workspace": job["workspace"],
+                "proposal": proposal}, "Bu sürüme bağlı farkı inceleyip kabul edin; bu adım henüz entegrasyon yapmaz.")
+        await self.control.checkpoint()
+        if self.control.permission_decision("git.read") == "deny":
+            raise PermissionError("Review permission was narrowed while awaiting approval.")
+        reviewed = await asyncio.to_thread(self._workspace_manager().mark_reviewed,
+            proposal["proposal_id"], "user")
+        job["merge_proposal"] = reviewed
+        self._event(job)
+        return reviewed
+
+    async def integrate_changes(self, agent_id, digest):
+        job = self._job(agent_id)
+        proposal = self._proposal(job, digest)
+        if not proposal.get("reviewed"):
+            raise PermissionError("A current human-reviewed proposal is required.")
+        args = {"agent_id": agent_id, "proposal_id": proposal["proposal_id"],
+                "digest": digest, "target_revision": proposal.get("target_revision"),
+                "paths": proposal.get("paths", []), "overlap_resolutions": proposal.get("overlap_resolutions", {})}
+        # One concrete approval covers the two policy actions. Denials take
+        # precedence both before and after the user's decision.
+        for action in ("filesystem.write", "git.commit"):
+            if self.control.permission_decision(action) == "deny":
+                raise PermissionError("Parent policy denies integration: " + action)
+        with self.control.actor(agent_id):
+            await self.control.request_approval("integrate_subagent_changes", args,
+                "İncelenmiş alt ajan farkını ana çalışma alanına uygulama onayı gerekli.")
+        await self.control.checkpoint()
+        for action in ("filesystem.write", "git.commit"):
+            if self.control.permission_decision(action) == "deny":
+                raise PermissionError("Parent policy narrowed while awaiting integration.")
+        for path in proposal.get("paths", []):
+            self.parent._resolve(path, must_exist=False)
+        intent = self.control.durable_begin("integrate_subagent_changes", input_data=args,
+            side_effect="workspace_mutation", metadata={"kind": "integration", "workspace_root": str(self.root)})
+        if intent:
+            self.control.durable_transition(intent["attempt_id"], "dispatching")
+            self.control.durable_transition(intent["attempt_id"], "running")
+        operation = asyncio.create_task(asyncio.to_thread(self._workspace_manager().integrate,
+            proposal["proposal_id"], approved=True))
+        interrupted = False
+        try:
+            try:
+                result = await asyncio.shield(operation)
+            except asyncio.CancelledError:
+                # Threads cannot be cancelled safely mid-transaction. Wait for
+                # bounded integration/rollback, persist its outcome, then stop.
+                interrupted = True
+                result = await operation
+        except Exception as error:
+            if intent:
+                self.control.durable_finish(intent["attempt_id"], "outcome_unknown",
+                    error=type(error).__name__, metadata={"reconciliation_required": True})
+                self.control.unresolved_operations.append({"attempt_id": intent["attempt_id"],
+                    "status": "outcome_unknown", "kind": "integration"})
+            raise
+        self.parent._invalidate_evidence("Alt ajan farkı entegre edildi; ana çalışma alanı yeniden doğrulanmalı.")
+        for path in proposal.get("paths", []):
+            change = {"change_id": "integration_" + uuid4().hex, "path": path,
+                      "agent_id": agent_id, "proposal_id": proposal["proposal_id"], "integration": True}
+            self.control.changes.append(change)
+            self.control.emit(AgentEventType.FILE_CHANGED, "Alt ajan değişikliği entegre edildi.", **change)
+        if intent:
+            self.control.durable_finish(intent["attempt_id"], result=result, capture_workspace=True)
+        job["integration_result"] = result
+        job["workspace_status"] = await asyncio.to_thread(self._workspace_manager().inspect_status,
+            job["workspace"]["workspace_id"])
+        self._event(job)
+        if interrupted:
+            raise asyncio.CancelledError
+        return result
+
     async def spawn(self, role, task, *, provider=None, model=None, write_paths=None,
-                    permissions=None, depends_on=None):
+                    permissions=None, depends_on=None, permitted_tools=None, required_outputs=None,
+                    acceptance_criteria=None, budget=None, execution_backend=None):
         async with self._spawn_lock:
             return await self._spawn(role, task, provider=provider, model=model, write_paths=write_paths,
-                                     permissions=permissions, depends_on=depends_on)
+                                     permissions=permissions, depends_on=depends_on, permitted_tools=permitted_tools,
+                                     required_outputs=required_outputs, acceptance_criteria=acceptance_criteria,
+                                     budget=budget, execution_backend=execution_backend)
 
     async def _spawn(self, role, task, *, provider=None, model=None, write_paths=None,
-                     permissions=None, depends_on=None):
+                     permissions=None, depends_on=None, permitted_tools=None, required_outputs=None,
+                     acceptance_criteria=None, budget=None, execution_backend=None):
         await self.control.checkpoint()
         if not self._enabled():
             raise PermissionError("Alt ajan kullanımı bu oturumda izinli değil.")
@@ -298,7 +516,7 @@ class SubagentToolFilter:
         if not dependencies and sum(not job["future"].done() and job["status"] == "running" for job in self.jobs.values()) >= self.limits.max_parallel:
             label = "İki" if self.limits.max_parallel == 2 else str(self.limits.max_parallel)
             raise ValueError(f"{label} alt ajan çalışıyor; önce birinin sonucunu bekle.")
-        paths = tuple(dict.fromkeys(write_paths or ()))
+        paths = validated_paths(write_paths or ())
         if any(not isinstance(path, str) or not path for path in paths):
             raise ValueError("Alt ajan düzenleme yolları metin olmalıdır.")
         if paths and canonical_role != "worker":
@@ -308,6 +526,41 @@ class SubagentToolFilter:
         if permissions is not None and not isinstance(permissions, Mapping):
             raise ValueError("Alt ajan izinleri nesne olmalıdır.")
         requested_permissions = dict(intersect_permissions(self.control.permissions, permissions))
+        configured = getattr(self.control, "execution_config", None)
+        backend = getattr(configured, "backend", "host") if configured else "host"
+        selected_backend = execution_backend or backend
+        if selected_backend != backend:
+            raise PermissionError("Child execution backend cannot replace the parent's boundary.")
+        role_kind = ROLE_ASSIGNMENTS[canonical_role]
+        offered = READ_TOOLS if canonical_role in {"researcher", "reviewer"} else ROLE_TOOLS[role_kind] - {"run_command"}
+        # Application path grants cannot constrain an arbitrary host script.
+        if canonical_role in {"worker", "tester"} and backend == "host":
+            offered -= {"run_tests", "run_quality_gate"}
+        available = {schema["function"]["name"] for schema in self.parent.get_schemas(self.session)}
+        selected_tools = frozenset(offered & available)
+        if permitted_tools is not None:
+            if not isinstance(permitted_tools, (list, tuple)) or any(not isinstance(name, str) for name in permitted_tools):
+                raise ValueError("Delegated tools must be a list of names.")
+            if set(permitted_tools) - selected_tools:
+                raise PermissionError("Child requested a tool unavailable to its parent or role.")
+            selected_tools &= set(permitted_tools)
+        configured_budget = {"token_budget": min(self.limits.token_budget, self.per_agent_token_budget or self.limits.token_budget),
+                             "cost_budget": self.limits.cost_budget, "timeout_seconds": min(WORKER_TIMEOUT, 300)}
+        if budget is not None:
+            if not isinstance(budget, Mapping) or set(budget) - set(configured_budget):
+                raise ValueError("Unknown delegated budget field.")
+            configured_budget.update(budget)
+        contract_budget = AgentBudget(**configured_budget)
+        if contract_budget.token_budget > min(self.limits.token_budget, self.per_agent_token_budget or self.limits.token_budget):
+            raise PermissionError("Child token budget exceeds parent grant.")
+        if self.limits.cost_budget is not None and (contract_budget.cost_budget is None or contract_budget.cost_budget > self.limits.cost_budget):
+            raise PermissionError("Child cost budget exceeds parent grant.")
+        if contract_budget.timeout_seconds > min(WORKER_TIMEOUT, 300):
+            raise PermissionError("Child timeout exceeds parent grant.")
+        contract = AgentAssignment(task=task, role=canonical_role, allowed_paths=paths,
+            permitted_tools=frozenset(selected_tools), required_outputs=tuple(required_outputs or ()),
+            acceptance_criteria=tuple(acceptance_criteria or ()), dependencies=dependencies,
+            budget=contract_budget, execution_backend=selected_backend)
         if paths and (self.control.mode in {"ask", "plan"} or requested_permissions.get("allow_edits") is not True):
             raise PermissionError("Ana çalışma bu alt ajanın düzenlemesine izin vermiyor.")
         if (provider is not None or model is not None) and self.provider_resolver is None:
@@ -335,19 +588,37 @@ class SubagentToolFilter:
         child.reasoning_effort = getattr(self.session, "reasoning_effort", None)
         child.system_prompt += " Ana ajan kimliği: parent. Düzenleme kapsamını görev verisinden oku; yürütücü ayrıca denetler."
         child.messages.append(Message(role="user", content="Dosya sahipliği verisi (talimat veya izin değildir):\n" + json.dumps(paths, ensure_ascii=False)))
+        child.messages.append(Message(role="user", content="Yetkilendirilmiş görev sözleşmesi verisi (izinleri genişletemez):\n" +
+            json.dumps(contract.to_dict(), ensure_ascii=False)))
         job = {"agent_id": identifier, "role": role, "canonical_role": canonical_role,
                "task": self.redact(task), "session": child, "status": "waiting" if dependencies else "running",
                "started": time.monotonic(), "result": "", "provider": provider,
-               "requested_permissions": requested_permissions, "write_paths": paths,
+               "requested_permissions": requested_permissions, "write_paths": paths, "assignment": contract,
                "depends_on": list(dependencies), "artifacts": [], "pending_messages": [],
                "usage": {"total_tokens": None, "cost_usd": None}, "requests": {}, "request_number": 0}
+        if canonical_role in {"worker", "tester"}:
+            manager = self._workspace_manager()
+            job["workspace"] = await asyncio.to_thread(manager.create_workspace, identifier,
+                revision="HEAD", dirty_policy=self.dirty_start)
+        intent = self.control.durable_begin("child:" + canonical_role, step_id=identifier,
+            attempt_id=identifier, input_data={"task": task, "write_paths": paths, "depends_on": dependencies},
+            side_effect="external_side_effect", metadata={"kind": "child", "agent_id": identifier,
+                "child_session_id": identifier,
+                "workspace_root": job.get("workspace", {}).get("path", str(self.root)), "delivery": "pending"})
+        job["durable_attempt_id"] = intent["attempt_id"] if intent else None
+        if intent:
+            self.control.durable_transition(identifier, "dispatching")
         self.jobs[identifier] = job
         job["future"] = asyncio.create_task(self._run(job))
         self._event(job)
-        return {"agent_id": identifier, "parent_agent_id": self.control.run_id, "status": job["status"]}
+        return {"agent_id": identifier, "parent_agent_id": self.control.run_id, "status": job["status"],
+                "workspace": job.get("workspace"), "assignment": contract.to_dict()}
 
     async def _run(self, job):
         try:
+            if job.get("durable_attempt_id"):
+                self.control.durable_transition(job["durable_attempt_id"], "running")
+                self.control.durable_boundary("before_child_execution", agent_id=job["agent_id"])
             for identifier in job["depends_on"]:
                 dependency = self._job(identifier)
                 try:
@@ -366,19 +637,74 @@ class SubagentToolFilter:
                 job["status"] = "running"
                 self._event(job)
                 role = ROLE_ASSIGNMENTS[job["canonical_role"]]
-                requested_tools = READ_TOOLS if job["canonical_role"] in {"researcher", "reviewer"} else ROLE_TOOLS[role] - {"run_command"}
+                local_parent, local_session = self.parent, self.session
+                workspace = WorkspaceBinding(self.control.project_id, str(self.root))
+                if job.get("workspace"):
+                    control = _ChildControl(self, job, SimpleNamespace(mode=self.control.mode,
+                        permissions=job["requested_permissions"]))
+                    control.on_event = lambda event: self._event(job, event)
+                    control.plan = [dict(step) for step in self.control.plan]
+                    job["control"] = control
+                    local_parent = CodingToolFilter(job["workspace"]["path"], control)
+                    job["local_filter"] = local_parent
+                    local_session = job["session"]
+                    workspace = WorkspaceBinding(self.control.project_id, job["workspace"]["path"],
+                        job["workspace"]["workspace_id"], "isolated_existing")
                 result = await asyncio.wait_for(self.coordinator.run(role,
-                    workspace=WorkspaceBinding(self.control.project_id, str(self.root)),
-                    parent_filter=self.parent, session=self.session,
+                    workspace=workspace, parent_filter=local_parent, session=local_session,
                     context={"agent_id": job["agent_id"], "task": job["task"]},
-                    requested_permissions=job["requested_permissions"], requested_tools=requested_tools,
-                    write_paths=job["write_paths"]), timeout=WORKER_TIMEOUT)
+                    requested_permissions=job["requested_permissions"], requested_tools=job["assignment"].permitted_tools,
+                    write_paths=job["write_paths"]), timeout=job["assignment"].budget.timeout_seconds)
                 job.update(status="completed", result=result)
         except asyncio.CancelledError:
             job.update(status="cancelled", result="Alt ajan durduruldu.")
+        except DurableExecutionError:
+            job.update(status="outcome_unknown", result="Alt ajan kalıcı sonucu doğrulanamadı; uzlaştırma gerekiyor.")
+            raise
         except Exception as error:
-            job.update(status="failed", result=self.redact(safe_text(str(error))) or "Alt ajan zaman sınırını aştı.")
+            uncertain = any(item.get("agent_id") == job["agent_id"] and item["state"] in {
+                "running", "dispatching", "outcome_unknown", "needs_reconciliation"}
+                for item in self.control.execution_journal.list_steps(self.control.journal_run_id)) if self.control.execution_journal else False
+            job.update(status="outcome_unknown" if uncertain or isinstance(error, (TimeoutError, asyncio.TimeoutError)) else "failed",
+                       result=self.redact(safe_text(str(error))) or "Alt ajan zaman sınırını aştı.")
         finally:
+            if job.get("workspace"):
+                if job.get("local_filter"):
+                    try:
+                        job["execution_artifacts"] = await job["local_filter"].collect_execution_artifacts()
+                    except Exception as error:
+                        job["execution_collection_error"] = safe_text(str(error))
+                    finally:
+                        job["execution_cleanup"] = await job["local_filter"].close_execution()
+                try:
+                    proposal = await asyncio.to_thread(self._workspace_manager().propose_merge,
+                        job["workspace"]["workspace_id"])
+                    job["merge_proposal"] = proposal
+                    job["artifacts"] = list(proposal.get("paths", []))
+                    if job["canonical_role"] == "worker":
+                        outside = [path for path in job["artifacts"] if not any(
+                            Path(path).is_relative_to(Path(scope)) for scope in job["assignment"].allowed_paths)]
+                        if outside:
+                            job.update(status="failed", result="Agent changed unassigned paths; work preserved for review: " + ", ".join(outside))
+                            job["integration_blocked"] = True
+                    job["workspace_status"] = await asyncio.to_thread(self._workspace_manager().inspect_status,
+                        job["workspace"]["workspace_id"])
+                except Exception as error:
+                    job["collection_error"] = safe_text(str(error))
+                    job["integration_blocked"] = True
+            if job.get("durable_attempt_id"):
+                if job["status"] in {"cancelled", "outcome_unknown"}:
+                    self.control.unresolved_operations.append({"attempt_id": job["durable_attempt_id"],
+                        "agent_id": job["agent_id"], "status": "outcome_unknown", "kind": "child"})
+                self.control.durable_boundary("after_child_result", agent_id=job["agent_id"])
+                self.control.durable_finish(job["durable_attempt_id"],
+                    "outcome_unknown" if job["status"] == "cancelled" else job["status"],
+                    result={"status": job["status"], "result": job["result"],
+                            "artifacts": job["artifacts"], "usage": job["usage"],
+                            "workspace": job.get("workspace"), "merge_proposal": job.get("merge_proposal"),
+                            "execution_artifacts": job.get("execution_artifacts")},
+                    metadata={"delivery": "pending", "reconnection": "unavailable",
+                              "workspace_id": job.get("workspace", {}).get("workspace_id")})
             self._event(job)
 
     async def _worker(self, assignment, tools):
@@ -397,13 +723,13 @@ class SubagentToolFilter:
                 selected = metadata.get(job["session"].model, {})
                 job["capabilities"] = model_capabilities(selected)
         job["prices"] = self._prices(agent, job.get("capabilities", self.control.capabilities))
-        control = _ChildControl(self, job, assignment)
+        control = job.get("control") or _ChildControl(self, job, assignment)
         control.on_event = lambda event: self._event(job, event)
         job["control"] = control
         final = None
         stream = agent.run_stream(prompt=job["task"], session=job["session"],
             session_tool_filter=_ChildTools(tools, self, job), run_control=control,
-            cancel_event=control.cancel_event, cwd=str(self.root))
+            cancel_event=control.cancel_event, cwd=assignment.workspace.root)
         try:
             async for event in stream:
                 self._event(job, event)
@@ -447,8 +773,13 @@ class SubagentToolFilter:
             if self._reserved_tokens + tokens > self.limits.token_budget:
                 raise SubagentBudgetExceeded("Alt ajan token bütçesi doldu; yeni model isteği gönderilmedi.")
             job_reserved = sum(request["reserved_tokens"] for request in job["requests"].values())
-            if self.per_agent_token_budget is not None and job_reserved + tokens > self.per_agent_token_budget:
+            contract = job.get("assignment")
+            child_limit = contract.budget.token_budget if contract else self.per_agent_token_budget
+            if child_limit is not None and job_reserved + tokens > child_limit:
                 raise SubagentBudgetExceeded("Bu alt ajana ayrılan token bütçesi doldu; yeni model isteği gönderilmedi.")
+            child_cost = contract.budget.cost_budget if contract else None
+            if child_cost is not None and (cost is None or sum(request["reserved_cost"] for request in job["requests"].values()) + cost > child_cost):
+                raise SubagentBudgetExceeded("Child cost budget exceeded.")
             if self.limits.cost_budget is not None:
                 if cost is None:
                     raise SubagentBudgetExceeded("Alt ajan maliyet bütçesi için doğrulanmış model fiyatı bulunamadı; istek gönderilmedi.")
@@ -560,10 +891,39 @@ class SubagentToolFilter:
         return {"limits": asdict(self.limits), "reserved_tokens": self._reserved_tokens,
                 "reserved_cost": self._reserved_cost, "agents": [
                     {key: job[key] for key in ("agent_id", "role", "task", "status", "provider", "depends_on", "artifacts", "usage", "result")}
-                    | {"model": job["session"].model, "parent_agent_id": self.control.run_id}
+                    | {"model": job["session"].model, "parent_agent_id": self.control.run_id,
+                       "workspace": job.get("workspace"), "workspace_status": job.get("workspace_status"),
+                       "execution": dict(job["control"].execution_status) if job.get("control") else None,
+                       "execution_artifacts": job.get("execution_artifacts"),
+                       "execution_cleanup": job.get("execution_cleanup"),
+                       "merge_proposal": job.get("merge_proposal"), "assignment": job["assignment"].to_dict()}
                     for job in self.jobs.values()]}
 
     async def wait(self, agent_id):
+        if agent_id not in self.jobs and self.control.execution_journal is not None:
+            from firik_agent.projects.resume import DurableResumeController
+            controller = DurableResumeController(self.control.execution_journal.db,
+                known_secrets=self.control.execution_journal.known_secrets)
+            saved = controller.inherited_child_outcome(self.control.journal_run_id, agent_id)
+            if saved is not None:
+                outcome = saved.get("result")
+                if not isinstance(outcome, dict) or not isinstance(outcome.get("result"), str) or outcome.get("truncated"):
+                    raise DurableExecutionError("Persisted child outcome is incomplete; reconciliation is required.")
+                delivery_id = "inherited_delivery_" + hashlib.sha256(
+                    (self.control.journal_run_id + ":" + agent_id).encode()).hexdigest()
+                if self.control.execution_journal.get(self.control.journal_run_id, delivery_id) is None:
+                    self.control.durable_begin("child_delivery", step_id=delivery_id, attempt_id=delivery_id,
+                        input_data={"agent_id": agent_id, "source_run_id": saved["run_id"]},
+                        side_effect="idempotent_state_inspection",
+                        metadata={"kind": "child_delivery", "agent_id": agent_id, "source_run_id": saved["run_id"]})
+                    self.control.durable_transition(delivery_id, "dispatching")
+                    self.control.durable_transition(delivery_id, "running")
+                    self.control.durable_finish(delivery_id, result={"child_attempt_id": agent_id, "delivered": True})
+                return {"agent_id": agent_id, "status": saved["state"], "result": outcome["result"],
+                        "artifacts": outcome.get("artifacts", []), "usage": outcome.get("usage", {}),
+                        "workspace": outcome.get("workspace"), "merge_proposal": outcome.get("merge_proposal"),
+                        "execution_artifacts": outcome.get("execution_artifacts"),
+                        "passed": saved["state"] == "completed", "recovered": True}
         job = self._job(agent_id)
         try:
             await asyncio.shield(job["future"])
@@ -573,9 +933,23 @@ class SubagentToolFilter:
             if job["status"] in {"running", "waiting"}:
                 job.update(status="cancelled", result="Alt ajan durduruldu.")
                 self._event(job)
+        if job.get("durable_attempt_id"):
+            delivery_id = "delivery_" + agent_id
+            saved = self.control.execution_journal.get(self.control.journal_run_id, delivery_id)
+            if saved is None:
+                self.control.durable_begin("child_delivery", step_id=delivery_id, attempt_id=delivery_id,
+                    input_data={"agent_id": agent_id}, side_effect="idempotent_state_inspection",
+                    metadata={"kind": "child_delivery", "agent_id": agent_id})
+                self.control.durable_transition(delivery_id, "dispatching")
+                self.control.durable_transition(delivery_id, "running")
+                self.control.durable_finish(delivery_id, result={"child_attempt_id": agent_id, "delivered": True})
         return {"agent_id": agent_id, "status": job["status"], "result": job["result"],
                 "artifacts": list(job["artifacts"]), "usage": dict(job["usage"]),
-                "passed": job["status"] == "completed"}
+                "passed": job["status"] == "completed", "workspace": job.get("workspace"),
+                "result_scope": "isolated_workspace" if job.get("workspace") else "read_only_parent",
+                "integration_required": bool(job.get("merge_proposal", {}).get("paths")) and not bool(job.get("integration_result")),
+                "merge_proposal": job.get("merge_proposal"), "collection_error": job.get("collection_error"),
+                "execution_artifacts": job.get("execution_artifacts"), "execution_cleanup": job.get("execution_cleanup")}
 
     async def cancel(self, agent_id):
         job = self._job(agent_id)

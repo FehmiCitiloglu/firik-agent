@@ -1,0 +1,17 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.2, pytest-9.1.1, pluggy-1.6.0 -- /Users/alien/Development/evren/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/alien/Development/evren
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 5 items
+
+../../../../../../../Users/alien/Development/evren/tests/test_ui_coding_history.py::test_subagent_record_reopens_as_one_passive_card PASSED [ 20%]
+../../../../../../../Users/alien/Development/evren/tests/test_ui_coding_history.py::test_restart_restores_transcript_plan_context_usage_diff_tests_decisions_and_interruption PASSED [ 40%]
+../../../../../../../Users/alien/Development/evren/tests/test_ui_coding_history.py::test_real_history_dialog_is_project_scoped_and_open_is_passive PASSED [ 60%]
+../../../../../../../Users/alien/Development/evren/tests/test_ui_coding_history.py::test_explicit_new_session_keeps_preferences_and_clears_task_and_history_only PASSED [ 80%]
+../../../../../../../Users/alien/Development/evren/tests/test_ui_coding_history.py::test_history_undo_requires_same_live_run_filter PASSED [100%]
+
+- generated xml file: /tmp/firik-phase6-gui-tests/test_ui_coding_history-followup.xml -
+============================== 5 passed in 0.97s ===============================

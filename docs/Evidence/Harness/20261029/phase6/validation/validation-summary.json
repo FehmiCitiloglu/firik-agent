@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-10-29T05:54:06.330036+00:00",
+  "base_commit": "aa0a5ea6eb469f818dabd20d42674e469211f62f",
+  "source_sha256": "92fad3b967e034062440efc6c29f1c21476f8ed99b1be5c59fe054f3080036e0",
+  "nongui": {
+    "tests": 1257,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2,
+    "passed": 1255,
+    "receipt": "firik-phase6-complete-final.xml",
+    "seconds": 114.696
+  },
+  "skips": [
+    {
+      "test": "tests.test_docker_integration.test_real_docker_boundaries",
+      "reason": "Real Docker integration requires explicit opt-in"
+    },
+    {
+      "test": "tests.test_shell.test_cmd_quoted_executable_and_shell_operators",
+      "reason": "Windows cmd quoting regression"
+    }
+  ],
+  "gui": {
+    "passed": 95,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "complete": true,
+    "all_files_passed": true
+  },
+  "gui_method": "One native GUI pytest subprocess per test_ui*.py file, 120 seconds/file, scratch HOME/cwd, no inherited credentials, dotenv disabled. After one history timeout, a stop-on-first-error diagnostic established a missing test-fixture Tcl/Tk initialization. Only the affected five-test file was rerun after its test-only fixture fix; effective counts exclude overlapping diagnostic attempts.",
+  "harness_focused": {
+    "passed": 106,
+    "receipt": "firik-phase6-harness-final.xml",
+    "overlaps_nongui": true
+  },
+  "benchmark": {
+    "tasks": 40,
+    "repetitions": 3,
+    "verified_successes": 120,
+    "trials": 120,
+    "source_unchanged": true,
+    "measured_source_matches_final_source": true,
+    "paired_median_delta_ms": 3.3409989991923794,
+    "paid_model_calls": 0
+  },
+  "report_reopen": "firik-phase6-reopen.json",
+  "checks": {
+    "compileall": "passed",
+    "git_diff_check": "passed",
+    "cli_doctor": "passed",
+    "cli_settings": "passed",
+    "cli_recommend": "passed"
+  },
+  "limitations": [
+    "No paid or live model inference was executed.",
+    "Codex dispatch unavailable; Pi supports explicit tool-free prompts only.",
+    "No Windows external execution, real Docker daemon isolation, or power-loss orphan-recovery claim."
+  ]
+}

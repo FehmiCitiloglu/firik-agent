@@ -54,10 +54,17 @@ def model_capabilities(metadata: Mapping[str, Any] | None = None) -> dict[str, A
         parsed = urlsplit(evidence_url)
         if parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password and not parsed.query and not parsed.fragment:
             result["evidence_url"] = evidence_url[:2048]
-    for key in ("context_window", "max_output_tokens"):
-        value = metadata.get(key)
-        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-            result[key] = value
+    # OpenAI-compatible catalogues use several names for the total context
+    # window. Read only explicit positive integer declarations, with the same
+    # provenance gate as the canonical field. If a server declares conflicting
+    # limits, respect the smallest instead of exceeding its advertised capacity.
+    windows = [metadata.get(key) for key in ("context_window", "context_length", "max_model_len")]
+    windows = [value for value in windows if type(value) is int and value > 0]
+    if windows:
+        result["context_window"] = min(windows)
+    value = metadata.get("max_output_tokens")
+    if type(value) is int and value > 0:
+        result["max_output_tokens"] = value
     for key in ("supports_tools", "supports_streaming", "supports_structured_output", "supports_vision", "supports_reasoning",
                 "supports_usage_accounting", "supports_native_caching"):
         if isinstance(metadata.get(key), bool):

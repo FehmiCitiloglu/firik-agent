@@ -530,7 +530,7 @@ def print_help() -> None:
     ))
 
 
-async def handle_shell_command(agent: Agent, command: str) -> None:
+async def handle_shell_command(agent: Agent, command: str) -> bool:
     """Run explicit shell input and let Ctrl+C return to the REPL."""
     task = asyncio.create_task(agent.run_local_command(command))
     previous_handler = signal.getsignal(signal.SIGINT)
@@ -548,10 +548,15 @@ async def handle_shell_command(agent: Agent, command: str) -> None:
         with console.status("[bold yellow]Running command... (Ctrl+C to stop)[/bold yellow]"):
             result = await task
         console.print(Panel(Text(result), title="Terminal", border_style="yellow"))
+        return True
     except asyncio.CancelledError:
         if not interrupted:
             raise
         console.print("[yellow]Command interrupted.[/yellow]")
+        return False
+    except (RuntimeError, ValueError) as error:
+        console.print(Panel(Text(str(error)), title="Execution unavailable / failed", border_style="red"))
+        return False
     finally:
         signal.signal(signal.SIGINT, previous_handler)
 
@@ -1101,6 +1106,12 @@ async def run_repl(agent: Agent) -> None:
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "sandbox":
+        from firik_agent.projects.sandbox_cli import main as sandbox_main
+        raise SystemExit(sandbox_main(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "runs":
+        from firik_agent.projects.recovery_cli import main as recovery_main
+        raise SystemExit(recovery_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] in {"benchmark", "harness"}:
         from firik_agent.benchmarks.cli import main as benchmark_main
         raise SystemExit(benchmark_main(sys.argv[2:]))
@@ -1126,6 +1137,8 @@ def main():
                         help="Bu oturumun bağlam ve üretim kaynak profili (izinleri değiştirmez).")
     parser.add_argument("--commands", "--list-commands", action="store_true", help="List all available slash commands and exit")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--execution-backend", choices=("host", "docker"), help="Shell executor; Docker selection never falls back to host")
+    parser.add_argument("--sandbox-image", help="Locally available trusted Docker image; images are never pulled automatically")
 
     args = parser.parse_args()
 
@@ -1139,6 +1152,11 @@ def main():
         logging.basicConfig(level=logging.WARNING)
 
     agent = Agent(config_path=args.config)
+    if args.execution_backend or args.sandbox_image:
+        from dataclasses import replace
+        agent.configure_execution(replace(agent.execution_config,
+            backend=args.execution_backend or agent.execution_config.backend,
+            image=args.sandbox_image or agent.execution_config.image))
     if args.harness_profile:
         from firik_agent.projects.harness_profiles import resolve_harness_profile
         agent.harness_profile = resolve_harness_profile(session_override=args.harness_profile,
@@ -1162,7 +1180,8 @@ def main():
         async def run_single():
             try:
                 if local_prompt:
-                    await handle_shell_command(agent, args.prompt.lstrip()[1:].strip())
+                    if await handle_shell_command(agent, args.prompt.lstrip()[1:].strip()) is False:
+                        raise SystemExit(2)
                 else:
                     response = await agent.run(args.prompt)
                     print(response)

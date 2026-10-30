@@ -73,6 +73,8 @@ class ToolDefinition(BaseModel):
     description: str
     parameters: Dict[str, Any] = Field(default_factory=dict)
     source: str = "builtin"  # "builtin", "mcp", "skill", "plugin"
+    # Describes the actual executor, independent of tool visibility/approval.
+    execution_boundary: Literal["host", "sandbox", "remote_mcp", "external_service", "unknown"] = "unknown"
 
     def to_schema(self) -> Dict[str, Any]:
         return {

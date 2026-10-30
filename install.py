@@ -4,11 +4,14 @@ Firik Agent — Cross-Platform Installer
 Supports: macOS, Linux, and Windows (PowerShell / CMD)
 Requirements: Python 3.10+
 """
+from __future__ import annotations
+
 import os
 import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 MIN_PYTHON = (3, 10)
@@ -40,6 +43,73 @@ def install_commands(venv_dir: Path, bin_dir: Path, is_windows: bool):
                 target.unlink()
             target.symlink_to(source)
 
+
+
+def install_desktop(root_dir: Path, venv_python: Path, uv_bin: str | None, platform: str) -> Path:
+    """Build a native desktop bundle and register a per-user launcher."""
+    if platform not in ("darwin", "win32") and not platform.startswith("linux"):
+        raise RuntimeError(f"Desktop installation is not supported on {platform}")
+    tk = subprocess.run([str(venv_python), "-c", "import tkinter"], capture_output=True, text=True)
+    if tk.returncode:
+        raise RuntimeError("Tkinter is required for the desktop app. Install the Tk package for your Python and retry.")
+    package = "pyinstaller>=6.16,<7"
+    if uv_bin:
+        subprocess.run([uv_bin, "pip", "install", "--python", str(venv_python), package], check=True)
+    else:
+        subprocess.run([str(venv_python), "-m", "pip", "install", package], check=True)
+    if platform == "win32":
+        data_dir = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "FIRIK" / "desktop"
+    else:
+        data_dir = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "firik-agent" / "desktop"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="firik-desktop-") as tmp:
+        temp = Path(tmp)
+        env = os.environ.copy()
+        env["PYINSTALLER_CONFIG_DIR"] = str(temp / "cache")
+        subprocess.run([str(venv_python), "-m", "PyInstaller", str(root_dir / "firik-agent.spec"),
+                        "--clean", "--noconfirm", "--workpath", str(temp / "build"),
+                        "--distpath", str(temp / "dist")], cwd=root_dir, env=env, check=True)
+        name = "firik-agent.app" if platform == "darwin" else "firik-agent.exe" if platform == "win32" else "firik-agent"
+        source, target = temp / "dist" / name, data_dir / name
+        if not source.exists():
+            raise RuntimeError(f"Desktop build did not produce {source}")
+        if target.is_dir():
+            shutil.rmtree(target)
+        elif target.exists() or target.is_symlink():
+            target.unlink()
+        if source.is_dir():
+            shutil.copytree(source, target, symlinks=True)
+        else:
+            shutil.copy2(source, target)
+    if platform == "darwin":
+        applications = Path.home() / "Applications"
+        applications.mkdir(parents=True, exist_ok=True)
+        launcher = applications / "Firik Agent (Source Install).app"
+        if launcher.exists() and not launcher.is_symlink():
+            raise RuntimeError(f"Cannot replace existing application: {launcher}")
+        if launcher.is_symlink():
+            if launcher.resolve() != target.resolve():
+                raise RuntimeError(f"Cannot replace unrelated application link: {launcher}")
+            launcher.unlink()
+        launcher.symlink_to(target, target_is_directory=True)
+    elif platform == "win32":
+        programs = Path(os.environ.get("APPDATA") or Path.home() / "AppData/Roaming") / "Microsoft/Windows/Start Menu/Programs"
+        programs.mkdir(parents=True, exist_ok=True)
+        launcher = programs / "Firik Agent (Source Install).lnk"
+        env = os.environ.copy()
+        env.update(FIRIK_DESKTOP_TARGET=str(target), FIRIK_DESKTOP_LINK=str(launcher))
+        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:FIRIK_DESKTOP_LINK); "
+                        "$s.TargetPath=$env:FIRIK_DESKTOP_TARGET; $s.WorkingDirectory=Split-Path $s.TargetPath; $s.Save()"],
+                       env=env, check=True)
+    else:
+        applications = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "applications"
+        applications.mkdir(parents=True, exist_ok=True)
+        launcher = applications / "firik-agent-source.desktop"
+        executable = str(target).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`").replace("%", "%%")
+        launcher.write_text('[Desktop Entry]\nType=Application\nName=Firik Agent (Source Install)\n'
+                            f'Exec="{executable}"\nTerminal=false\nCategories=Utility;Development;\n', encoding="utf-8")
+    return launcher
 
 def add_shell_path(path: Path, line: str):
     """Append an idempotent PATH entry without replacing existing shell settings."""
@@ -151,7 +221,7 @@ def main():
 
     # Step 1: Create venv
     if not venv_dir.exists():
-        log("\n[1/3] Creating virtual environment (.venv)...", "cyan")
+        log("\n[1/4] Creating virtual environment (.venv)...", "cyan")
         if uv_bin:
             log("  Using 'uv venv'...", "dim")
             subprocess.run([uv_bin, "venv", "--python", sys.executable, str(venv_dir)], check=True)
@@ -160,10 +230,10 @@ def main():
             subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
         log("✔ Virtual environment created at .venv", "green")
     else:
-        log("\n[1/3] Existing virtual environment detected (.venv)", "green")
+        log("\n[1/4] Existing virtual environment detected (.venv)", "green")
 
     # Step 2: Install dependencies & package in editable mode
-    log("\n[2/3] Installing dependencies and package...", "cyan")
+    log("\n[2/4] Installing dependencies and package...", "cyan")
     if uv_bin:
         log("  Running 'uv pip install -e .[dev]'...", "dim")
         subprocess.run([uv_bin, "pip", "install", "--python", str(venv_python), "-e", ".[dev]"], check=True)
@@ -173,21 +243,14 @@ def main():
         log("  Running 'pip install -e .[dev]'...", "dim")
         subprocess.run([str(venv_python), "-m", "pip", "install", "-e", ".[dev]"], check=True)
     log("✔ Package firik-agent and dependencies installed successfully", "green")
-    try:
-        tk_check = subprocess.run([str(venv_python), "-c", "import tkinter"], capture_output=True)
-        if tk_check and getattr(tk_check, "returncode", 0) != 0:
-            log("  ℹ Bilgi: 'tkinter' bulunamadı; masaüstü arayüzü (firik-gui) için Tkinter gereklidir.", "yellow")
-            if sys.platform == "darwin":
-                log(f"    Kurulum: brew install python-tk@{sys.version_info.major}.{sys.version_info.minor}", "dim")
-            elif sys.platform.startswith("linux"):
-                log("    Kurulum: sudo apt install python3-tk", "dim")
-    except Exception:
-        pass
-
-    log("\n[3/3] Making Firik commands available without activation...", "cyan")
+    log("\n[3/4] Making Firik commands available without activation...", "cyan")
     install_commands(venv_dir, bin_dir, is_windows)
     refresh_commands = configure_path(bin_dir, is_windows)
     log(f"✔ Commands installed in {bin_dir}", "green")
+
+    log("\n[4/4] Building and installing the desktop application...", "cyan")
+    desktop_launcher = install_desktop(root_dir, venv_python, uv_bin, sys.platform)
+    log(f"✔ Desktop application installed: {desktop_launcher}", "green")
 
     # Done! Display instructions
     log("\n" + "=" * 55, "green")
@@ -207,6 +270,8 @@ def main():
     log("\n  3. Test & Run:", "yellow")
     log("     firik --help           (Direct FIRIK API CLI)", "bold")
     log("     firik-agent            (Interactive Agent REPL)", "bold")
+    log("     firik-gui              (Desktop application from Python environment)", "bold")
+    log(f"     Desktop launcher: {desktop_launcher}", "bold")
     log("     firik-agent --commands (List all available commands)\n", "bold")
 
 

@@ -325,6 +325,8 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         self._load_coding_models()
         for text, callback in (("Planı İncele", lambda: self.coding_tabs.set("Plan")),
                                ("Değişiklikleri İncele", lambda: self.coding_tabs.set("Değişiklikler")),
+                               ("Yürütme / Sandbox Durumu", self._coding_execution_status),
+                               ("Harness / Benchmark", self._coding_harness_settings),
                                ("İzinler / MCP / Beceriler", self._coding_permissions)):
             ctk.CTkButton(controls, text=text, fg_color="transparent", border_width=1, command=callback).pack(fill="x", pady=3)
         self.coding_approval_frame = ctk.CTkFrame(controls, fg_color="transparent")
@@ -687,6 +689,9 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         state = self._coding_state()
         if state["busy"]:
             return
+        resume_source = state.pop("resume_source_run_id", None)
+        resume_approved = state.pop("resume_approved", False)
+        resume_prepared = state.pop("resume_prepared_run_id", None)
         composer = parse_composer(prompt)
         self._dispatch_coding_composer(composer)
         if composer.get("mode"):
@@ -857,6 +862,10 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                        "mcp_servers": state["preferences"].get("mcp_servers", []),
                        "mcp_tools": state["preferences"].get("mcp_tools", []),
                        "capabilities": state["capabilities"]}
+            if resume_source:
+                options.update(resume_run_id=resume_source, resume_approved=resume_approved)
+                if resume_prepared:
+                    options["resume_prepared_run_id"] = resume_prepared
             options["subagents_enabled"] = state["preferences"].get("subagents_enabled", False)
             options["provider"] = state["preferences"].get("provider", self.service.provider)
             options["previous_plan"] = state["plan"]
@@ -870,6 +879,8 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             options["quality_gates"] = state["preferences"].get("quality_gates")
             options["auto_quality_gates"] = bool(state["preferences"].get("auto_quality_gates", False))
             options["subagent_limits"] = dict(state["preferences"].get("subagent_limits", {}))
+            options["execution_config"] = dict(state["preferences"].get("execution_config", {}))
+            options["dirty_start"] = state["preferences"].get("dirty_start", "reject")
             try:
                 state["future"] = self.service.chat_agent_stream_async(session_id=session.session_id, prompt=state.get("prepared_prompt", prompt),
                     cwd=project.local_path, on_event=on_event, on_done=finish, on_error=lambda e: finish(error=e), coding_options=options)
@@ -939,7 +950,9 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
     def _control_coding(self, action):
         state = self._coding_state()
         if action == "resume" and not state["busy"]:
-            if state["record"] or state["last_prompt"]:
+            if state["record"]:
+                self._coding_recovery(state["record"].id)
+            elif state["last_prompt"]:
                 self._run_coding_prompt("Önceki çalışmayı güncel dosyaları yeniden inceleyerek sürdür. Tamamlanmamış adımları ve önceki doğrulama sonuçlarını koru.")
             return
         if action == "cancel":
@@ -1206,7 +1219,27 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             combo.set(policy_labels[defaults[key]])
             combo.pack(side="right")
             policy_combos[key] = combo
-        ctk.CTkLabel(scroll, text="Shell sandbox'ı bulunmadığı için terminal/test, Git yazma ve MCP işlemleri ayrı onay ister. Gizli bilgiler, yönetici yetkisi ve force push kapalıdır.", wraplength=420, justify="left").pack(anchor="w", pady=8)
+        ctk.CTkLabel(scroll, text="Terminal/test, Git yazma ve MCP ayrı onay ister. Docker yalnız komutları izole eder; dosya araçları ve MCP host/dış servis sınırında kalır.", wraplength=420, justify="left").pack(anchor="w", pady=8)
+        execution = state["preferences"].get("execution_config", {})
+        ctk.CTkLabel(scroll, text="Komut yürütme arka ucu").pack(anchor="w")
+        backend_combo = ctk.CTkComboBox(scroll, values=["host", "docker"], state="readonly")
+        backend_combo.set(execution.get("backend", "host"))
+        backend_combo.pack(fill="x", pady=4)
+        ctk.CTkLabel(scroll, text="Docker imajı (yerelde hazır olmalı)").pack(anchor="w")
+        image_entry = ctk.CTkEntry(scroll)
+        image_entry.insert(0, execution.get("image", "python:3.12-slim"))
+        image_entry.pack(fill="x", pady=4)
+        profile_combo = ctk.CTkComboBox(scroll, values=["restricted", "development", "custom"], state="readonly")
+        profile_combo.set(execution.get("profile", "restricted"))
+        profile_combo.pack(fill="x", pady=4)
+        network_var = tk.BooleanVar(value=execution.get("network", False))
+        ctk.CTkCheckBox(scroll, text="Docker ağına izin ver (development/custom)", variable=network_var).pack(anchor="w", pady=4)
+        ctk.CTkLabel(scroll, text="Varsayılan sınırlar: 1 CPU, 512 MiB RAM, 128 PID, 300 sn, 64 MiB /tmp. Docker kullanılamazsa host'a geçilmez.", wraplength=420, justify="left").pack(anchor="w", pady=4)
+        ctk.CTkButton(scroll, text="Docker önkoşulunu denetle", command=self._coding_docker_doctor).pack(fill="x", pady=4)
+        dirty_combo = ctk.CTkComboBox(scroll, values=["reject", "clean_head"], state="readonly")
+        dirty_combo.set(state["preferences"].get("dirty_start", "reject"))
+        ctk.CTkLabel(scroll, text="Alt ajan başlangıcı: reject kirli depoyu reddeder; clean_head yalnız commit içeriğini alır, kaydedilmemiş düzenlemeler taşınmaz.", wraplength=420, justify="left").pack(anchor="w", pady=4)
+        dirty_combo.pack(fill="x", pady=4)
         selected_servers, selected_tools = {}, {}
         prefs = state["preferences"]
         for server in self.service.get_mcp_servers():
@@ -1230,6 +1263,15 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             skill_vars[name] = var
             ctk.CTkCheckBox(scroll, text=f"Beceri: {name}", variable=var).pack(anchor="w", pady=3)
         def save():
+            from dataclasses import asdict
+            from firik_agent.core.execution import ExecutionConfig
+            try:
+                selected_execution = ExecutionConfig(**{**execution, "backend": backend_combo.get(),
+                    "image": image_entry.get().strip(), "profile": profile_combo.get(),
+                    "network": network_var.get(), "network_approved": network_var.get()})
+            except (TypeError, ValueError) as error:
+                messagebox.showerror("Sandbox", str(error), parent=dialog)
+                return
             state["permissions"] = {key: var.get() for key, var in permission_vars.items()}
             state["policy"] = {key: POLICY_VALUES[combo.get()] for key, combo in policy_combos.items()} if custom_policy.get() else {}
             if custom_policy.get():
@@ -1237,6 +1279,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 self.coding_mode_combo.set("Özel")
             self._save_coding_preferences({"permissions": state["permissions"],
                 "policy": state["policy"],
+                "execution_config": asdict(selected_execution), "dirty_start": dirty_combo.get(),
                 "provider": provider_combo.get(),
                 "mcp_servers": [key for key, var in selected_servers.items() if var.get()],
                 "mcp_tools": [key for key, var in selected_tools.items() if var.get()],
@@ -1248,6 +1291,54 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 self.coding_model_combo.set(model)
             dialog.destroy()
         ctk.CTkButton(dialog, text="Kaydet", command=save).pack(pady=8)
+
+    def _coding_docker_doctor(self):
+        from dataclasses import asdict
+        from firik_agent.core.execution import DockerExecutionBackend
+        async def inspect():
+            return asdict(await DockerExecutionBackend().availability())
+        self.service.runtime.submit(inspect(),
+            on_done=lambda result: self.after(0, lambda: messagebox.showinfo("Docker önkoşulu", json.dumps(result, ensure_ascii=False, indent=2))),
+            on_error=lambda error: self.after(0, lambda: messagebox.showerror("Docker önkoşulu", str(error))))
+
+    def _coding_execution_status(self):
+        state = self._coding_state()
+        session_id = state["session"].session_id
+        control = getattr(self.service, "_coding_controls", {}).get(session_id)
+        details = control.snapshot() if control is not None else {
+            "execution": getattr(state.get("record"), "usage", {}).get("execution", {}),
+            "configured": state["preferences"].get("execution_config", {"backend": "host"})}
+        if control is None:
+            details["agent_workspaces"] = [item for item in getattr(state.get("record"), "decisions", [])
+                                            if item.get("kind") == "subagent"]
+        manager = getattr(self.service, "_coding_managers", {}).get(session_id)
+        if manager is not None:
+            details["agent_workspaces"] = manager.snapshot()
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Yürütme / Sandbox Durumu")
+        dialog.geometry("680x550")
+        ctk.CTkButton(dialog, text="Docker önkoşulunu denetle", command=self._coding_docker_doctor).pack(fill="x", padx=10, pady=5)
+        box = ctk.CTkTextbox(dialog, wrap="word")
+        box.pack(fill="both", expand=True, padx=10, pady=10)
+        box.insert("1.0", json.dumps(details, ensure_ascii=False, indent=2, default=str))
+        box.configure(state="disabled")
+        tools = getattr(self.service, "_coding_filters", {}).get(session_id)
+        if tools is not None:
+            def display(execution):
+                if not box.winfo_exists():
+                    return
+                details["execution"] = execution
+                box.configure(state="normal")
+                box.delete("1.0", "end")
+                box.insert("1.0", json.dumps(details, ensure_ascii=False, indent=2, default=str))
+                box.configure(state="disabled")
+            self.service.runtime.submit(tools.inspect_execution(),
+                on_done=lambda result: self.after(0, lambda: display(result)),
+                on_error=lambda error: self.after(0, lambda: display({"diagnostic": str(error)})))
+
+    def _coding_harness_settings(self):
+        from firik_agent.ui.coding_harness import show_harness_dialog
+        return show_harness_dialog(self)
 
     def _coding_side_diff(self):
         state = self._coding_state()

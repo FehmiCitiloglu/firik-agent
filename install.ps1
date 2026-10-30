@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 $FirikInstaller = Join-Path $PSScriptRoot "install.py"
 
 Write-Host "Firik Agent Windows Kurulumu başlatılıyor..." -ForegroundColor Cyan
-Write-Host "firik ve firik-agent PATH'e eklenecek; venv aktivasyonu gerekmeyecek." -ForegroundColor Cyan
+Write-Host "firik, firik-agent ve firik-gui PATH'e eklenecek; venv aktivasyonu gerekmeyecek." -ForegroundColor Cyan
 
 if (Get-Command py -ErrorAction SilentlyContinue) {
     py -3 $FirikInstaller @args

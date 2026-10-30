@@ -71,3 +71,9 @@
 Linux'ta API anahtarını kaydetmek için çalışan bir Secret Service anahtarlığı (ör. GNOME Keyring veya uyumlu KWallet) gerekir.
 
 Windows paketleri geliştirici sertifikasıyla imzalanmadığından SmartScreen ek onay isteyebilir. macOS paketleri Developer ID Application sertifikasıyla imzalanır, Apple noter onayından geçer ve onay bileti paketlere eklenir. Kurulum dosyaları için SHA256 özetleri `SHA256SUMS.txt` içindedir.
+## v0.2.25 değişiklikleri
+
+- Kodlama ajanına yapılandırılabilir harness altyapısı, yalıtılmış çalışma alanları ve Docker tabanlı isteğe bağlı yürütme eklendi.
+- Görev yürütme günlüğü, güvenli devam ettirme ve kurtarma araçları eklendi.
+- Uzun istem kapasitesi model kataloğundan doğru okunur; UI ve CLI bağlam sınırlarını buna göre uygular.
+- Masaüstü kurulum betikleri uygulamayı derleyip kullanıcı hesabına başlatıcı ekler.

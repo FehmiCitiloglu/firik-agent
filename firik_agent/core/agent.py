@@ -3,6 +3,7 @@ import asyncio
 import inspect
 import json
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 from pathlib import Path
@@ -155,6 +156,10 @@ class Agent:
     ):
         self.config_path = config_path
         self.config = config or load_config(config_path)
+        from firik_agent.core.execution import ExecutionConfig
+        self.execution_config = ExecutionConfig(**self.config.get("execution", {}))
+        self._execution_backend = None
+        self._execution_workspaces = {}
         agent_conf = self.config.get("agent", {})
         self.name: str = agent_conf.get("name", "FirikAgent")
         self.base_system_prompt: str = agent_conf.get(
@@ -222,6 +227,9 @@ class Agent:
 
         # 1. Register Built-in Meta-Tools (allows agent to add MCPs, skills, plugins, and files)
         self._register_meta_tools()
+        shell_tool = self.tools.get_tool("run_command")
+        if shell_tool:
+            shell_tool.execution_boundary = "sandbox" if self.execution_config.backend == "docker" else "host"
 
         # 2. Discover and load skills
         builtin_skills_dir = Path(__file__).parent.parent / "builtin_skills"
@@ -266,6 +274,82 @@ class Agent:
 
         self._is_initialized = True
         logger.info("FirikAgent '%s' initialized with provider '%s'", self.name, self.providers.active_name)
+
+    async def _resolve_context_window(self, provider, state, history, prefix, schemas, output_tokens,
+                                      *, run_control=None, checkpoint=None, recovery_budget=None):
+        """Discover missing capacity before applying the small unknown-model budget.
+
+        A catalogue read carries no prompt and is attempted once per selected
+        provider/endpoint/model per run. Small requests and explicitly revoked evidence
+        keep their existing behavior; an outage never invents a larger window.
+        """
+        from firik_agent.projects.model_capabilities import model_capabilities
+        model = getattr(provider, "current_model", "")
+        endpoint = getattr(provider, "base_url", "")
+        metadata = getattr(provider, "model_metadata", {}).get(model)
+        cached = model_capabilities(metadata)
+        caps = run_control.capabilities if run_control else cached
+        if caps.get("verified") is False or cached.get("verified") is False:
+            if run_control:
+                run_control.capabilities = {**caps, "context_window": None}
+            return None
+
+        def adopt(window, evidence):
+            if run_control and window is not None:
+                run_control.capabilities = {**caps, "context_window": window}
+                for key in ("source", "evidence_source", "evidence_url", "timestamp",
+                            "verification_status", "confidence", "verified"):
+                    run_control.capabilities[key] = evidence.get(key)
+            return window
+
+        window = caps.get("context_window")
+        if window is not None:
+            return window
+        if cached.get("context_window") is not None:
+            return adopt(cached["context_window"], cached)
+        overhead = estimate_tokens(prefix, schemas)
+        fallback = self.context_compactor.input_budget(None, output_tokens, overhead)
+        trigger = overhead + (fallback - overhead) * self.context_compactor.threshold
+        if estimate_tokens(prefix + state.view(history), schemas) < trigger:
+            return None
+        refresh = getattr(provider, "refresh_capabilities", None)
+        identity = (id(provider), endpoint, model)
+        lookups = recovery_budget.context_capacity_lookups if recovery_budget else set()
+        if not callable(refresh) or identity in lookups:
+            return None
+        if checkpoint:
+            await checkpoint()
+        lookups.add(identity)
+        if recovery_budget:
+            recovery_budget.metadata_requests += 1
+        task = asyncio.ensure_future(refresh())
+        try:
+            # Keep cancellation and the run deadline responsive during discovery.
+            while not task.done():
+                await asyncio.wait({task}, timeout=.05)
+                if checkpoint:
+                    await checkpoint()
+            result = task.result()
+            if (result.get("status") == "refreshed" and result.get("model") == model
+                    and getattr(provider, "current_model", "") == model
+                    and getattr(provider, "base_url", "") == endpoint):
+                refreshed = model_capabilities(result.get("capabilities"))
+                return adopt(refreshed.get("context_window"), refreshed)
+        except asyncio.CancelledError:
+            lookups.discard(identity)
+            raise
+        except RuntimeFailure as error:
+            if error.kind in {FailureKind.BUDGET_EXCEEDED, FailureKind.CANCELLED}:
+                lookups.discard(identity)
+                raise
+            logger.debug("Context capacity lookup unavailable: %s", type(error).__name__)
+        except Exception as error:
+            logger.debug("Context capacity lookup unavailable: %s", type(error).__name__)
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        return None
 
     def enable_computer_use(
         self,
@@ -598,7 +682,36 @@ class Agent:
     async def run_command_async(self, command: str, shell: Optional[str] = None,
                                 cwd: Optional[str] = None, timeout: float = 60) -> str:
         target_cwd = cwd or getattr(self, "default_cwd", None)
+        config = getattr(self, "execution_config", None)
+        if config is not None and config.backend == "docker":
+            from firik_agent.core.execution import CommandRequest, ExecutionError, build_backend
+            root = str(Path(target_cwd or os.getcwd()).resolve())
+            if self._execution_backend is None:
+                self._execution_backend = build_backend(config)
+            # Errors propagate; required isolation never becomes host execution.
+            workspace = self._execution_workspaces.get(root)
+            if workspace is None:
+                workspace = await self._execution_backend.create_workspace(root)
+                self._execution_workspaces[root] = workspace
+            result = await self._execution_backend.execute_command(workspace,
+                CommandRequest(command, shell=shell, timeout=timeout))
+            if result.status == "uncertain" or result.timed_out or result.cleanup_error:
+                raise RuntimeFailure(FailureKind.TOOL_OUTCOME_UNKNOWN, phase=RequestPhase.TOOL_DISPATCHED,
+                                     source_type="DockerCommandOutcomeUnknown")
+            if result.status in {"error", "unavailable"}:
+                raise ExecutionError(result.format_shell())
+            return result.format_shell()
         return await run_shell(command, shell=shell, cwd=target_cwd, timeout=timeout)
+
+    def configure_execution(self, config) -> None:
+        """Select the executor before starting commands; cannot discard live work."""
+        if getattr(self, "_execution_workspaces", {}):
+            raise ValueError("Close existing execution workspaces before changing backend.")
+        self.execution_config = config
+        self._execution_backend = None
+        definition = self.tools.get_tool("run_command")
+        if definition:
+            definition.execution_boundary = "sandbox" if config.backend == "docker" else "host"
 
     def get_environment_info(self) -> Dict[str, Any]:
         return get_environment_info(cwd=self.default_cwd)
@@ -613,13 +726,21 @@ class Agent:
         )
         self.messages.append(Message(role="user", content=f"!{command}"))
         self.messages.append(Message(role="assistant", tool_calls=[call]))
+        boundary = "sandbox" if getattr(getattr(self, "execution_config", None), "backend", "host") == "docker" else "host"
         try:
             result = await self.run_command_async(command)
         except asyncio.CancelledError:
             self.messages.append(ToolResult(tool_call_id=call.id, name="run_command",
-                                            content="Command interrupted by user.", is_error=True).to_message())
+                                            content="Command interrupted by user.", is_error=True,
+                                            metadata={"execution_boundary": boundary}).to_message())
             raise
-        self.messages.append(ToolResult(tool_call_id=call.id, name="run_command", content=result).to_message())
+        except Exception as error:
+            self.messages.append(ToolResult(tool_call_id=call.id, name="run_command",
+                content=str(error), is_error=True, metadata={"execution_boundary": boundary,
+                    "retry_eligible": False}).to_message())
+            raise
+        self.messages.append(ToolResult(tool_call_id=call.id, name="run_command", content=result,
+                                       metadata={"execution_boundary": boundary}).to_message())
         return result
 
     def read_file(self, path: str) -> str:
@@ -666,6 +787,9 @@ class Agent:
         if selected:
             return resolve_harness_profile(session_override=selected, user_config=user_config)
         configured = getattr(self, "harness_profile", None)
+        if not configured and "harness" in getattr(self, "config", {}):
+            from firik_agent.harness.config import resolve_harness_configuration
+            configured = resolve_harness_configuration(self.config).profile
         return resolve_harness_profile(session_override=configured, user_config=user_config) if configured else None
 
     async def _request_with_recovery(self, *, provider, messages, schemas, temperature, max_tokens,
@@ -675,6 +799,7 @@ class Agent:
         """One logical request, with distinct identities/accounting for every attempt."""
         from firik_agent.projects.model_capabilities import estimate_usage_cost, model_capabilities
         attempt, parent_id, use_stream = 0, None, streaming
+        logical_step = "model_" + uuid4().hex
         original_policy = run_control.policy_snapshot() if run_control else {}
         while True:
             await checkpoint()
@@ -702,6 +827,12 @@ class Agent:
             info = {**(metadata or {}), "request_id": request_id, "attempt_id": request_id,
                     "run_id": run_id, "request_kind": "model", "attempt": attempt,
                     "provider": getattr(provider, "name", ""), "model": getattr(provider, "current_model", "")}
+            durable = run_control.durable_begin("model:request",
+                step_id=logical_step, attempt_id=request_id,
+                input_data={"messages": [message.to_dict() for message in messages], "tools": schemas,
+                            "temperature": temperature, "max_tokens": request_output},
+                side_effect="external_side_effect", metadata={"kind": "model", "paid_request": True,
+                    "provider": getattr(provider, "name", ""), "attempt": attempt}) if run_control else None
             if parent_id:
                 info["parent_request_id"] = parent_id
                 info.pop("context_inspector", None)
@@ -712,6 +843,10 @@ class Agent:
             local_interface_unimplemented = False
             try:
                 kwargs = dict(messages=messages, tools=schemas or None, temperature=temperature, max_tokens=request_output)
+                if durable:
+                    run_control.durable_transition(request_id, "dispatching")
+                    run_control.durable_boundary("before_model_request", attempt_id=request_id)
+                    run_control.durable_transition(request_id, "running")
                 if use_stream:
                     iterator = provider.chat_stream(**kwargs).__aiter__()
                     while True:
@@ -748,7 +883,12 @@ class Agent:
                     response = pending.result()
                     usage = dict(getattr(response, "usage", None) or {})
                 phase = RequestPhase.RESPONSE_COMPLETE
+                if durable:
+                    run_control.durable_boundary("after_model_output", attempt_id=request_id)
             except BaseException as exc:
+                from firik_agent.projects.coding_runtime import DurableExecutionError
+                if isinstance(exc, DurableExecutionError):
+                    raise
                 if not isinstance(exc, (Exception, asyncio.CancelledError)):
                     raise
                 failure = normalize_failure(exc, phase=phase, provider=getattr(provider, "name", ""))
@@ -792,6 +932,23 @@ class Agent:
                                     and not isinstance(output, bool) and generation else None}}
             if failure:
                 finished.update(failure.metadata)
+            if durable:
+                # Output remains in the existing conversation; the journal keeps
+                # bounded outcomes and references, never another full transcript.
+                confirmed_rejection = failure and failure.kind in {
+                    FailureKind.RATE_LIMITED, FailureKind.AUTHENTICATION_FAILED, FailureKind.PERMISSION_DENIED,
+                    FailureKind.POLICY_REFUSAL, FailureKind.CONTEXT_OVERFLOW, FailureKind.UNSUPPORTED_CAPABILITY}
+                outcome = "completed" if failure is None else (
+                    "failed" if failure.phase == RequestPhase.NOT_SUBMITTED or confirmed_rejection else "outcome_unknown")
+                result_data = {"usage": usage, "request_phase": phase.value,
+                               "response": response.to_dict() if response is not None and hasattr(response, "to_dict") else None}
+                run_control.durable_finish(request_id, outcome, result=result_data,
+                    error=failure.metadata if failure else None,
+                    metadata={"kind": "model", "projection_required": True})
+                if failure is None:
+                    run_control.last_model_attempt_id = request_id
+                    if response is not None:
+                        response.execution["durable_request_id"] = request_id
             if not failure and (run_control or usage):
                 yield "event", (AgentEventType.MODEL_USAGE, finished, "")
             yield "event", (AgentEventType.MODEL_REQUEST_FINISHED, finished, "")
@@ -799,6 +956,12 @@ class Agent:
                 if not use_stream:
                     yield "response", response
                 return
+            if durable and outcome == "outcome_unknown":
+                run_control.unresolved_operations.append({"attempt_id": request_id, "kind": "model",
+                    "status": "outcome_unknown", "requires_reconciliation": True})
+                # A live request with ambiguous acceptance is also not silently
+                # billed a second time. Recovery inspection remains available.
+                raise failure from None
             context = RecoveryContext(run_id, request_id, failure.kind, failure.phase, SideEffectRisk.PURE_READ,
                 capabilities, budget, failure.kind == FailureKind.CANCELLED, original_policy,
                 attempt, failure.retry_after, can_compact=compaction is not None, can_reduce_output=False)
@@ -862,6 +1025,19 @@ class Agent:
             parent_id, attempt = request_id, attempt + 1
 
     async def _completion_decision(self, tool_filter, control):
+        intent = control.durable_begin("completion", side_effect="idempotent_state_inspection",
+            input_data={"workspace_revision": control.workspace_revision},
+            metadata={"kind": "completion"})
+        if intent:
+            control.durable_transition(intent["attempt_id"], "dispatching")
+            control.durable_transition(intent["attempt_id"], "running")
+        result = await self._completion_decision_impl(tool_filter, control)
+        control.durable_boundary("before_completion_metadata")
+        if intent:
+            control.durable_finish(intent["attempt_id"], result=result)
+        return result
+
+    async def _completion_decision_impl(self, tool_filter, control):
         before = getattr(control, "before_completion", None)
         if before:
             prepared = before()
@@ -893,6 +1069,13 @@ class Agent:
             registry = tool_filter.mcp_registry
         definition = registry.get_tool(tc.function.name)
         risk = tool_semantics(tc.function.name, definition)
+        inherited = None
+        if (run_control and run_control.execution_journal is not None and getattr(run_control, "resumed_from", None)
+                and risk not in {SideEffectRisk.PURE_READ, SideEffectRisk.STATE_INSPECTION}):
+            from firik_agent.projects.resume import DurableResumeController
+            inherited = DurableResumeController(run_control.execution_journal.db,
+                known_secrets=run_control.execution_journal.known_secrets).inherited_completed_tool(
+                    run_control.journal_run_id, tc.function.name, tc.function.arguments)
         previous = [entry for message in messages for entry in message.execution.get("tool_attempts", [])
                     if entry.get("fingerprint") == fingerprint]
         terminal = {"dispatched", "outcome_unknown", "reconciliation_required"}
@@ -901,16 +1084,43 @@ class Agent:
         same_call = next((entry for entry in previous if entry.get("run_id") == identity and entry.get("tool_call_id") == tc.id), None)
         failures = sum(entry.get("status") == "failed" and entry.get("run_id") == identity for entry in previous)
         attempt = {"run_id": identity, "attempt_id": uuid4().hex, "tool_call_id": tc.id, "fingerprint": fingerprint,
+                   "execution_boundary": definition.execution_boundary if definition else "unknown",
                    "side_effect_risk": risk.value, "request_phase": RequestPhase.TOOL_NOT_DISPATCHED.value,
                    "status": "not_dispatched", "reconciliation_status": "not_required"}
         owner = next(message for message in reversed(messages) if message.role == "assistant" and message.tool_calls)
+        durable = run_control.durable_begin("tool_result_reuse" if inherited else "tool:" + tc.function.name,
+            step_id="tool_" + operation_fingerprint(str(owner.execution.get("durable_request_id", "legacy")) + ":" + tc.id, "{}"),
+            attempt_id=attempt["attempt_id"], input_data=tc.function.arguments,
+            side_effect=SideEffectRisk.STATE_INSPECTION.value if inherited else risk.value,
+            metadata={"kind": "tool", "tool_call_id": tc.id, "operation_fingerprint": fingerprint,
+                      "tool_name": tc.function.name, "reused_attempt_id": inherited["attempt_id"] if inherited else None}) if run_control else None
+        if durable:
+            attempt["durable_attempt_id"] = durable["attempt_id"]
         owner.execution.setdefault("tool_attempts", []).append(attempt)
+        if inherited:
+            saved = inherited.get("result")
+            if not isinstance(saved, dict) or not isinstance(saved.get("content"), str) or saved.get("truncated") or saved.get("compacted"):
+                attempt.update(status="reconciliation_required", reconciliation_status="required",
+                               failure_kind=FailureKind.TOOL_OUTCOME_UNKNOWN.value)
+                run_control.durable_transition(attempt["attempt_id"], "needs_reconciliation",
+                    metadata={"reason": "completed_result_unavailable", "source_attempt_id": inherited["attempt_id"]})
+                return attempt, None, RuntimeFailure(FailureKind.TOOL_OUTCOME_UNKNOWN, phase=RequestPhase.TOOL_NOT_DISPATCHED)
+            attempt.update(status="completed", replay_avoided=True, reused_attempt_id=inherited["attempt_id"],
+                           request_phase=RequestPhase.TOOL_NOT_DISPATCHED.value)
+            run_control.durable_transition(attempt["attempt_id"], "dispatching")
+            run_control.durable_transition(attempt["attempt_id"], "running")
+            run_control.durable_finish(attempt["attempt_id"], result={"reused_attempt_id": inherited["attempt_id"],
+                                                                     "content": saved["content"]})
+            return attempt, ToolResult(tool_call_id=tc.id, name=tc.function.name, content=saved["content"],
+                                       is_error=False, metadata=dict(attempt)), None
         if uncertain and run_control:
             run_control.unresolved_operations.append({"fingerprint": fingerprint, "tool_name": tc.function.name,
                                                        "status": "reconciliation_required"})
         if uncertain or same_call or failures >= self.recovery_engine.limits.repeated_tool_failures:
             kind = FailureKind.TOOL_OUTCOME_UNKNOWN if uncertain or same_call else FailureKind.BUDGET_EXCEEDED
             attempt.update(status="reconciliation_required", failure_kind=kind.value, reconciliation_status="required")
+            if durable:
+                run_control.durable_transition(attempt["attempt_id"], "needs_reconciliation", error={"failure_kind": kind.value})
             return attempt, None, RuntimeFailure(kind, phase=RequestPhase.TOOL_NOT_DISPATCHED)
         try:
             arguments = json.loads(tc.function.arguments or "{}")
@@ -920,6 +1130,8 @@ class Agent:
             attempt.update(status="failed", failure_kind=FailureKind.INVALID_TOOL_ARGUMENTS.value)
             result = ToolResult(tool_call_id=tc.id, name=tc.function.name, is_error=True,
                                 content="Tool arguments must be a valid JSON object.", metadata=dict(attempt))
+            if durable:
+                run_control.durable_finish(attempt["attempt_id"], "failed", error={"failure_kind": FailureKind.INVALID_TOOL_ARGUMENTS.value})
             return attempt, result, None
         # The caller emits TOOL_CALL_STARTED and persists the journal before
         # advancing this coroutine to its dispatch point.
@@ -939,8 +1151,17 @@ class Agent:
                         limits.max_tokens is not None and budget.tokens > limits.max_tokens) or (
                         limits.max_cost is not None and budget.cost > limits.max_cost):
                     raise RuntimeFailure(FailureKind.BUDGET_EXCEEDED, phase=RequestPhase.TOOL_NOT_DISPATCHED)
-            operation = tool_filter.execute(tc, session) if tool_filter and session else self.tools.execute(tc)
-            pending = asyncio.ensure_future(operation)
+            if run_control and attempt.get("durable_attempt_id"):
+                run_control.durable_transition(attempt["attempt_id"], "dispatching")
+                run_control.durable_boundary("before_tool_dispatch", attempt_id=attempt["attempt_id"])
+                run_control.durable_transition(attempt["attempt_id"], "running")
+            token = run_control._durable_tool.set(attempt["attempt_id"]) if run_control else None
+            try:
+                operation = tool_filter.execute(tc, session) if tool_filter and session else self.tools.execute(tc)
+                pending = asyncio.ensure_future(operation)
+            finally:
+                if run_control:
+                    run_control._durable_tool.reset(token)
             while not pending.done():
                 await asyncio.wait({pending}, timeout=.05)
                 if not pending.done():
@@ -948,11 +1169,18 @@ class Agent:
                 if budget and time.monotonic() - budget.started >= budget.limits.max_elapsed and not pending.done():
                     raise TimeoutError()
             result = pending.result()
+            if run_control:
+                run_control.durable_boundary("after_tool_result", attempt_id=attempt["attempt_id"])
         except asyncio.CancelledError:
             attempt.update(status="outcome_unknown", failure_kind=FailureKind.TOOL_OUTCOME_UNKNOWN.value,
                            reconciliation_status="required")
+            if run_control and attempt.get("durable_attempt_id"):
+                run_control.durable_finish(attempt["attempt_id"], "outcome_unknown", error={"failure_kind": FailureKind.TOOL_OUTCOME_UNKNOWN.value})
             raise
         except Exception as exc:
+            from firik_agent.projects.coding_runtime import DurableExecutionError
+            if isinstance(exc, DurableExecutionError):
+                raise
             failure = normalize_failure(exc, phase=RequestPhase.TOOL_DISPATCHED)
             if attempt["side_effect_risk"] not in {SideEffectRisk.PURE_READ.value, SideEffectRisk.STATE_INSPECTION.value} and failure.kind not in {
                     FailureKind.PERMISSION_DENIED, FailureKind.POLICY_REFUSAL, FailureKind.AUTHENTICATION_FAILED}:
@@ -978,7 +1206,13 @@ class Agent:
         if attempt.get("reconciliation_status") == "required" and run_control:
             run_control.unresolved_operations.append({"attempt_id": attempt["attempt_id"], "fingerprint": attempt["fingerprint"],
                                                       "tool_name": tc.function.name, "status": "reconciliation_required"})
-        result.metadata = dict(attempt)
+        result.metadata = {**result.metadata, **attempt}
+        if run_control and attempt.get("durable_attempt_id"):
+            run_control.durable_finish(attempt["attempt_id"], attempt["status"],
+                result={"content": result.content, "is_error": result.is_error},
+                error={"failure_kind": attempt.get("failure_kind")} if result.is_error else None,
+                capture_workspace=attempt["status"] in {"completed", "failed"} and attempt["side_effect_risk"] not in {
+                    SideEffectRisk.PURE_READ.value, SideEffectRisk.STATE_INSPECTION.value})
         return result
 
     async def run(
@@ -995,6 +1229,7 @@ class Agent:
     ) -> str:
         """Run the agent loop until completion or max_iterations reached."""
         run_control = run_control or getattr(session_tool_filter, "control", None)
+        self._require_native_harness(run_control)
         if prompt.lstrip().startswith("!") and run_control is None:
             return await self.run_local_command(prompt.lstrip()[1:].strip())
 
@@ -1072,21 +1307,23 @@ class Agent:
             provider = self.providers.get_active()
             provider.reasoning_effort = session.reasoning_effort if session else None
             from firik_agent.projects.model_capabilities import model_capabilities
-            window = model_capabilities(provider.model_metadata.get(provider.current_model)).get("context_window")
             context_prefix = [system_msg] + _project_context_messages(run_control)
             output_tokens = output_limit(session.max_tokens if session else 2048, profile,
                                          run_control.capabilities if run_control else {})
+            state = session.compaction if session else self.compaction
+            window = await self._resolve_context_window(provider, state, msg_target, context_prefix,
+                tools_schemas, output_tokens, run_control=run_control, checkpoint=checkpoint,
+                recovery_budget=recovery_budget)
             budget = self.context_compactor.input_budget(window, output_tokens,
                                                          estimate_tokens(context_prefix, tools_schemas))
             if profile:
                 budget = min(budget, profile["context_tokens"])
-            state = session.compaction if session else self.compaction
             compaction_enabled = self.context_compactor.enabled and (run_control is None or getattr(run_control, "permit_context_compaction", True))
             if compaction_enabled and self.context_compactor.needs_compaction(state, msg_target, context_prefix, tools_schemas, budget):
                 if on_thought:
                     on_thought("Bağlam otomatik olarak sıkıştırılıyor…")
                 await self.context_compactor.compact(state, msg_target, context_prefix, tools_schemas, budget, BudgetedCompactionProvider(provider, recovery_budget,
-                        model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model))),
+                        model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model)), run_control=run_control),
                     checkpoint=checkpoint, on_request_event=compaction_observer)
             request_messages = context_prefix + state.view(msg_target)
             if not run_control:
@@ -1102,10 +1339,12 @@ class Agent:
                     if inspect.isawaitable(prepared):
                         await prepared
             async def recover_compaction():
-                await self.context_compactor.compact(state, msg_target, context_prefix, tools_schemas,
+                details = await self.context_compactor.compact(state, msg_target, context_prefix, tools_schemas,
                     max(1, int(budget * .75)), BudgetedCompactionProvider(provider, recovery_budget,
-                        run_control.capabilities if run_control else model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model))),
+                        run_control.capabilities if run_control else model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model)), run_control=run_control),
                     checkpoint=checkpoint, on_request_event=compaction_observer)
+                if not details.get("compacted", True):
+                    raise RuntimeFailure(FailureKind.CONTEXT_OVERFLOW, phase=RequestPhase.NOT_SUBMITTED)
                 return context_prefix + state.view(msg_target), []
             try:
                 async for kind, payload in self._request_with_recovery(
@@ -1134,6 +1373,9 @@ class Agent:
                         content="Operation cancelled.", metadata={"failure_kind": "cancelled", "completion_classification": "cancelled"}))
                 raise
             except Exception as error:
+                from firik_agent.projects.coding_runtime import DurableExecutionError
+                if isinstance(error, DurableExecutionError):
+                    raise
                 failure = normalize_failure(error)
                 classification = "blocked" if failure.phase == RequestPhase.PARTIAL_RESPONSE else "failed"
                 if run_control:
@@ -1227,7 +1469,71 @@ class Agent:
             raise RuntimeFailure(FailureKind.BUDGET_EXCEEDED, phase=RequestPhase.RESPONSE_COMPLETE)
         return "Agent reached maximum tool iterations without finishing."
 
+    def _require_native_harness(self, run_control=None):
+        from firik_agent.harness.config import resolve_harness_configuration
+        from firik_agent.harness.models import HarnessError
+        settings = getattr(run_control, "harness_settings", None) or resolve_harness_configuration(getattr(self, "config", {}))
+        selected = getattr(run_control, "harness_backend", None) or settings.default_backend
+        if selected != "native":
+            raise HarnessError("policy_unsupported",
+                "External harnesses cannot inherit Firik coding tools, MCP, approvals or recovery state. "
+                "Use an explicit isolated harness experiment in a supported mode.", backend=selected)
+        if not settings.backend(selected).enabled:
+            raise HarnessError("backend_disabled", "Selected harness backend is disabled.", backend=selected)
+        return settings
+
     async def run_stream(
+        self,
+        prompt: str,
+        session: Optional[ChatSession] = None,
+        session_tool_filter: Optional[SessionToolFilter] = None,
+        cancel_event: Optional[Any] = None,
+        run_control: Optional[Any] = None,
+        cwd: Optional[str] = None,
+    ) -> AsyncIterator[AgentEvent]:
+        """Stream the native adapter while preserving original native events."""
+        from firik_agent.harness.models import HarnessExecutionPolicy, HarnessTask, HarnessError
+        from firik_agent.harness.native import NativeHarnessBackend
+        run_control = run_control or getattr(session_tool_filter, "control", None)
+        settings = self._require_native_harness(run_control)
+        sid = session.session_id if session else "default"
+        active = getattr(self, "_active_harness_sessions", None)
+        if active is None:
+            active = self._active_harness_sessions = {}
+        if sid in active or len(active) >= 32:
+            raise HarnessError("run_active", "A harness run is already active for this session, or the session limit was reached.")
+        active[sid] = "native"
+        backend = NativeHarnessBackend(self, session, {"session_tool_filter": session_tool_filter,
+            "cancel_event": cancel_event, "run_control": run_control, "cwd": cwd})
+        harness_session = None
+        try:
+            # Existing runtime controls provider requests, token reports and all
+            # permissions. This wrapper adds no tool or billing authority.
+            profile = self._active_harness_profile(run_control, session)
+            timeout = profile["max_elapsed_seconds"] if profile else 86400
+            policy = HarnessExecutionPolicy(workspace=cwd, project_id=getattr(run_control, "project_id", ""),
+                tool_mode="native", timeout_seconds=timeout, max_sessions=32)
+            harness_session = await backend.initialize_session(policy=policy, session_id=sid)
+            rid = await backend.execute_task(harness_session, HarnessTask(prompt,
+                profile=(profile or {}).get("name", settings.profile)))
+            async for event in backend.stream_events(harness_session, rid):
+                yield event.native_event
+        finally:
+            try:
+                if harness_session is not None:
+                    cleanup = asyncio.create_task(backend.close_session(harness_session))
+                    while not cleanup.done():
+                        try:
+                            await asyncio.shield(cleanup)
+                        except asyncio.CancelledError:
+                            # Repeated UI cancellation cannot interrupt tool /
+                            # provider shutdown and release a live session early.
+                            continue
+                    cleanup.result()
+            finally:
+                active.pop(sid, None)
+
+    async def _run_native_stream(
         self,
         prompt: str,
         session: Optional[ChatSession] = None,
@@ -1356,8 +1662,6 @@ class Agent:
             provider = self.providers.get_active()
             provider.reasoning_effort = session.reasoning_effort if session else None
             from firik_agent.projects.model_capabilities import model_capabilities
-            window = (run_control.capabilities if run_control else
-                      model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model))).get("context_window")
             if run_control and run_control.capabilities.get("supports_tools") is False:
                 tools_schemas = []
                 run_control.tool_selection = {**getattr(run_control, "tool_selection", {}), "selected": [],
@@ -1372,10 +1676,6 @@ class Agent:
                 run_control is None or getattr(run_control, "permit_context_compaction", True))
             output_tokens = output_limit(session.max_tokens if session else 2048, profile,
                                          run_control.capabilities if run_control else {})
-            budget = self.context_compactor.input_budget(window, output_tokens,
-                                                         estimate_tokens(system_messages, tools_schemas))
-            if profile:
-                budget = min(budget, profile["context_tokens"])
             state = session.compaction if session else self.compaction
             async def compaction_checkpoint():
                 if time.monotonic() - recovery_budget.started >= recovery_budget.limits.max_elapsed:
@@ -1407,20 +1707,28 @@ class Agent:
                                                        metadata=metadata))
                 compaction_events.append(event(type=AgentEventType(kind), session_id=sid, metadata=metadata))
             try:
+                window = await self._resolve_context_window(provider, state, msg_target, system_messages,
+                    tools_schemas, output_tokens, run_control=run_control, checkpoint=compaction_checkpoint,
+                    recovery_budget=recovery_budget)
+                budget = self.context_compactor.input_budget(window, output_tokens,
+                    estimate_tokens(system_messages, tools_schemas))
+                if profile:
+                    budget = min(budget, profile["context_tokens"])
                 if compaction_enabled and self.context_compactor.needs_compaction(
                         state, msg_target, system_messages, tools_schemas, budget):
                     yield event(type=AgentEventType.CONTEXT_COMPACTION_STARTED, session_id=sid,
                                 content="Bağlam otomatik olarak sıkıştırılıyor…")
                     details = await self.context_compactor.compact(state, msg_target, system_messages, tools_schemas,
                                                                   budget, BudgetedCompactionProvider(provider, recovery_budget,
-                            run_control.capabilities if run_control else model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model))), compaction_checkpoint,
+                            run_control.capabilities if run_control else model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model)), run_control=run_control), compaction_checkpoint,
                                                                   on_request_event=observe_compaction)
                     for observation in compaction_events:
                         yield observation
                     compaction_events.clear()
-                    yield event(type=AgentEventType.CONTEXT_COMPACTED, session_id=sid,
-                                content="Bağlam özeti hazır; tam konuşma geçmişi korundu.",
-                                metadata={**details, "context_window": window, "capacity_known": window is not None})
+                    if details.get("compacted", True):
+                        yield event(type=AgentEventType.CONTEXT_COMPACTED, session_id=sid,
+                                    content="Bağlam özeti hazır; tam konuşma geçmişi korundu.",
+                                    metadata={**details, "context_window": window, "capacity_known": window is not None})
                 request_messages = system_messages + state.view(msg_target)
                 if run_control:
                     from firik_agent.projects.coding_runtime import prepare_coding_messages, sanitize_message
@@ -1436,6 +1744,9 @@ class Agent:
                 yield event(type=AgentEventType.DONE, session_id=sid, content="Çalışma kullanıcı tarafından durduruldu.")
                 return
             except Exception as exc:
+                from firik_agent.projects.coding_runtime import DurableExecutionError
+                if isinstance(exc, DurableExecutionError):
+                    raise
                 for observation in compaction_events:
                     yield observation
                 yield event(type=AgentEventType.ERROR, session_id=sid, content=f"Bağlam hazırlığı başarısız: {exc}")
@@ -1490,10 +1801,12 @@ class Agent:
 
             async def recover_compaction():
                 compaction_events.clear()
-                await self.context_compactor.compact(state, msg_target, system_messages, tools_schemas,
+                details = await self.context_compactor.compact(state, msg_target, system_messages, tools_schemas,
                     max(1, int(budget * .75)), BudgetedCompactionProvider(provider, recovery_budget,
-                        run_control.capabilities if run_control else model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model))), checkpoint=compaction_checkpoint,
+                        run_control.capabilities if run_control else model_capabilities(getattr(provider, "model_metadata", {}).get(provider.current_model)), run_control=run_control), checkpoint=compaction_checkpoint,
                     on_request_event=observe_compaction)
+                if not details.get("compacted", True):
+                    raise RuntimeFailure(FailureKind.CONTEXT_OVERFLOW, phase=RequestPhase.NOT_SUBMITTED)
                 observations = [(item.type, item.metadata, item.content or "") for item in compaction_events]
                 observations.append((AgentEventType.CONTEXT_COMPACTED, {"recovery": True}, "Context compacted for recovery."))
                 return system_messages + state.view(msg_target), observations
@@ -1534,6 +1847,9 @@ class Agent:
                     return
                 raise
             except Exception as error:
+                from firik_agent.projects.coding_runtime import DurableExecutionError
+                if isinstance(error, DurableExecutionError):
+                    raise
                 failure = normalize_failure(error)
                 if content_accum or reasoning_accum:
                     msg_target.append(Message(role="assistant", content="".join(content_accum) or None,
@@ -1554,6 +1870,7 @@ class Agent:
                 content="".join(content_accum) if content_accum else None,
                 reasoning="".join(reasoning_accum) if reasoning_accum else None,
                 tool_calls=stream_tool_calls if stream_tool_calls else None,
+                execution={"durable_request_id": getattr(run_control, "last_model_attempt_id", None)} if run_control else {},
             )
             if not run_control:
                 await self.plugins.dispatch_model_response(assistant_msg)
@@ -1687,4 +2004,11 @@ class Agent:
 
     async def close(self) -> None:
         """Cleanup resources, disconnect MCP servers."""
+        backend = getattr(self, "_execution_backend", None)
+        if backend is not None:
+            for workspace in getattr(self, "_execution_workspaces", {}).values():
+                try:
+                    await backend.destroy_workspace(workspace)
+                except Exception as error:
+                    logger.warning("Execution workspace retained for review at %s: %s", workspace.root, type(error).__name__)
         await self.mcp.shutdown()

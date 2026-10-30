@@ -120,7 +120,18 @@ class CodingBridge(CodingActions):
             self._dispatch(on_error, "Bu çalışma için güvenli geri alma kaydı bulunamadı.")
             return
         async def undo():
-            result = await asyncio.to_thread(tool_filter.undo_file, path)
+            control = tool_filter.control
+            intent = control.durable_begin("tool:undo_file", input_data={"path": path},
+                side_effect="conditional_write", metadata={"kind": "tool", "manual": True})
+            attempt_id = intent["attempt_id"] if intent else None
+            control.durable_transition(attempt_id, "dispatching")
+            control.durable_transition(attempt_id, "running")
+            try:
+                result = await asyncio.to_thread(tool_filter.undo_file, path)
+            except BaseException:
+                control.durable_finish(attempt_id, "outcome_unknown")
+                raise
+            control.durable_finish(attempt_id, result=result, capture_workspace=True)
             snapshot = tool_filter.control.snapshot()
             self.coding_store.update_run(tool_filter.control.run_id, file_journal=snapshot.get("changes", []))
             self.coding_store.record_decision(tool_filter.control.run_id, {"kind": "undo", "path": path, "approved": True})
@@ -144,7 +155,7 @@ class CodingBridge(CodingActions):
             if session_id in self._streams:
                 raise ValueError("Bu oturumda bir çalışma zaten yürütülüyor.")
             self._streams[session_id] = cancel_event
-        run_id = "run_" + uuid4().hex
+        run_id = options.get("resume_prepared_run_id") or "run_" + uuid4().hex
         started = time.monotonic()
         entered, notified = threading.Event(), threading.Event()
         control = session = record = None
@@ -157,8 +168,11 @@ class CodingBridge(CodingActions):
         state = {"last_checkpoint": 0.0, "partial": "", "partial_start": 0,
                  "iteration": 0, "terminal_status": None, "prior_count": 0,
                  "initial_messages": []}
+        owner_token = None
 
         def release_stream():
+            if record is not None and owner_token:
+                self.coding_store.release_owner(record.id, owner_token)
             with self._stream_lock:
                 if self._streams.get(session_id) is cancel_event:
                     self._streams.pop(session_id, None)
@@ -223,6 +237,7 @@ class CodingBridge(CodingActions):
             # Preserve legacy numeric fields for old clients. The nullable,
             # coverage-aware aggregate is authoritative for new displays.
             usage["harness_metrics"] = run_metrics.snapshot()
+            usage["execution"] = snapshot.get("execution", {})
             fields = dict(status=current_status, messages=snapshot_messages(),
                           duration_sec=int(now - started), plan=snapshot.get("plan", []),
                           context_report=options.get("visibility_report", []),
@@ -291,19 +306,21 @@ class CodingBridge(CodingActions):
                         commands.append(result["command"])
                 persist_snapshot(force=first_delta or event.type not in {AgentEventType.TEXT_DELTA, AgentEventType.REASONING_DELTA,
                                                                          AgentEventType.TOOL_CALL_ARGUMENTS})
-            except Exception:
+            except Exception as error:
                 cancel_event.set()
                 control.cancel_event.set()
-                raise
+                from firik_agent.projects.coding_runtime import DurableExecutionError
+                raise DurableExecutionError("Run event could not be persisted; execution stopped before another operation.") from error
             if event.type in {AgentEventType.DONE, AgentEventType.ERROR}:
                 terminal_events.append(safe)
             elif on_event:
                 self._dispatch(on_event, safe)
 
         async def run():
-            nonlocal control, session, record, subagents, initial_system_prompt
+            nonlocal control, session, record, subagents, initial_system_prompt, run_id, owner_token
             entered.set()
             status, final = "completed", ""
+            tool_filter = None
             try:
                 project = self.projects.db.get_project(project_id)
                 if project is None or Path(cwd).resolve() != Path(project.local_path).resolve():
@@ -316,7 +333,12 @@ class CodingBridge(CodingActions):
                 state["prior_count"] = len(session.messages)
                 state["initial_messages"] = [m.model_dump(exclude_none=True) for m in session.messages] + [{"role": "user", "content": safe_prompt}]
                 previous = self.coding_store.latest_run(project_id, session_id=session_id)
-                continuation = previous if previous and previous.status in {"interrupted", "failed", "cancelled", "blocked"} else None
+                continuation = None
+                resume_source = options.get("resume_run_id")
+                if resume_source:
+                    continuation = self.coding_store.get_run(resume_source, project_id=project_id)
+                    if continuation is None or continuation.session_id != session_id or continuation.task_id != task_id:
+                        raise ValueError("Devam kaynağı seçili proje, görev ve oturumla eşleşmiyor.")
                 legacy = self.projects.db.get_settings(project_id).permissions
                 permissions = dict(options.get("permissions") or {})
                 denied = {"never", "deny"}
@@ -331,12 +353,18 @@ class CodingBridge(CodingActions):
                 control = CodingRunControl(session_id=session_id, project_id=project_id, task_id=task_id,
                                            mode=options.get("mode", "approved"), permissions=permissions,
                                            run_id=run_id, policy=options.get("policy"),
-                                           excluded_paths=options.get("excluded_paths", []))
+                                           excluded_paths=options.get("excluded_paths", []),
+                                           execution_config=options.get("execution_config"))
                 control.capabilities = dict(options.get("capabilities", {}))
+                from firik_agent.harness.config import resolve_harness_configuration
+                harness_settings = resolve_harness_configuration(self.config,
+                    self.projects.db.get_settings(project_id).coding_preferences)
+                control.harness_backend = harness_settings.default_backend
+                control.harness_settings = harness_settings
                 from firik_agent.projects.harness_profiles import resolve_harness_profile
                 control.harness_profile = resolve_harness_profile(
                     self.projects.db.get_settings(project_id).coding_preferences,
-                    options.get("harness_profile"), self.config.get("agent", {}))
+                    options.get("harness_profile") or harness_settings.profile, self.config.get("agent", {}))
                 control.project_context_data = self._coding_redact(options.get("project_context", ""))
                 control.excluded_sources = options.get("excluded_sources", [])
                 control.context_pipeline = options.get("context_pipeline", {})
@@ -359,12 +387,48 @@ class CodingBridge(CodingActions):
                         control.plan.append(self._coding_redact({**step, "id": step.get("id", f"step_{index + 1}"),
                             "status": step.get("status") if step.get("status") in {"pending", "in_progress"} else "pending",
                             "evidence_ids": []}))
-                record = self.coding_store.create_run(
-                    project_id, task_id=task_id, session_id=session_id, run_id=run_id,
-                    provider=options.get("provider", self.provider), model=session.model, mode=control.mode,
-                    permissions={**control.permissions, **control.policy_snapshot()}, user_request=safe_prompt,
-                    resumed_from=continuation.id if continuation else None,
-                )
+                if continuation:
+                    candidate = self._coding_recovery_controller().prepare_resume(continuation.id,
+                        project_id=project_id, current_permissions={**control.permissions, **control.policy_snapshot()},
+                        approved=options.get("resume_approved") is True, continuation_run_id=run_id)
+                    if candidate.id != run_id or candidate.status != "queued":
+                        raise ValueError("Bu devam isteği zaten hazırlandı veya kullanıldı; kayıtlı devam çalışmasını inceleyin.")
+                    owner_token = self.coding_store.claim_owner(candidate.id)
+                    record = candidate
+                    # Persisted source outcomes are authoritative over a stale
+                    # ChatSession retained by a caller or a different UI view.
+                    session.messages = [Message.model_validate(self._coding_redact(message)) for message in candidate.messages]
+                    from firik_agent.projects.coding_runtime import repair_tool_history
+                    repair_tool_history(session.messages)
+                    state["prior_count"] = len(session.messages)
+                    state["initial_messages"] = [message.model_dump(exclude_none=True) for message in session.messages] + [
+                        {"role": "user", "content": safe_prompt}]
+                    decisions.extend(deepcopy(candidate.decisions))
+                    control.permissions.update({key: value for key, value in record.permissions.items()
+                                                if key in control.permissions})
+                    control._inherited_policy.update({key: value for key, value in record.permissions.items()
+                                                       if value in {"allow", "ask", "deny"} and isinstance(value, str)})
+                    try:
+                        control.plan = json.loads(record.plan) if record.plan else []
+                        if not isinstance(control.plan, list) or any(not isinstance(step, dict) for step in control.plan):
+                            raise ValueError("Invalid persisted plan shape")
+                    except (ValueError, TypeError):
+                        raise ValueError("Kalıcı plan okunamadı; uzlaştırma gerekli.")
+                    checkpoints.extend(deepcopy(record.checkpoints))
+                    self.coding_store.update_run(record.id, status="running")
+                else:
+                    record = self.coding_store.create_run(
+                        project_id, task_id=task_id, session_id=session_id, run_id=run_id,
+                        provider=options.get("provider", self.provider), model=session.model, mode=control.mode,
+                        permissions={**control.permissions, **control.policy_snapshot()}, user_request=safe_prompt,
+                    )
+                if not owner_token:
+                    owner_token = self.coding_store.claim_owner(record.id)
+                control.resumed_from = record.resumed_from
+                from firik_agent.projects.execution_journal import ExecutionJournal
+                control.attach_journal(ExecutionJournal(self.projects.db,
+                    known_secrets=self._coding_known_secrets), run_id=record.id, workspace_root=cwd)
+                checkpoints.append(self._coding_recovery_controller().record_workspace(record.id, cwd))
                 self.coding_store.update_run(run_id, messages=self._coding_redact(state["initial_messages"]),
                     context_report=options.get("visibility_report", []))
                 self._coding_controls[session_id] = control
@@ -418,8 +482,16 @@ class CodingBridge(CodingActions):
                 tool_filter = CodingToolFilter(cwd, control, mcp_registry=policy_registry,
                                                trusted_mcp_tools=allowed)
                 self._coding_filters[session_id] = tool_filter
+                control.emit(AgentEventType.TASK_STATE, "Yürütme arka ucu yapılandırıldı.",
+                             execution=await tool_filter.inspect_execution())
+                checkpoint_attempt = control.durable_begin("checkpoint.create", side_effect="non_idempotent_mutation",
+                    input_data={"kind": "before_run"})
+                checkpoint_attempt_id = checkpoint_attempt["attempt_id"] if checkpoint_attempt else None
+                control.durable_transition(checkpoint_attempt_id, "dispatching")
+                control.durable_transition(checkpoint_attempt_id, "running")
                 baseline = await asyncio.to_thread(self.checkpoint_store.create_checkpoint,
                     project_id, cwd, run_id=run_id, label="Çalışma öncesi", kind="before_run")
+                control.durable_finish(checkpoint_attempt_id, result={"checkpoint_id": baseline["id"]})
                 checkpoints.append({"kind": "source", "checkpoint_id": baseline["id"], "created_at": time.time()})
                 control.emit(AgentEventType.CHECKPOINT_CREATED, "Çalışma öncesi dosyalar kaydedildi.", checkpoint=baseline)
                 def checkpoint_file(path):
@@ -455,7 +527,7 @@ class CodingBridge(CodingActions):
                                                  control.harness_profile["per_agent_tokens"] * children)
                     subagents = SubagentToolFilter(tool_filter, session, child_agent, receive, self._coding_redact,
                         provider_resolver=lambda p, m: self._coding_worker(p or selected_provider, m or session.model),
-                        limits=limits)
+                        limits=limits, dirty_start=options.get("dirty_start", "reject"))
                     self._coding_managers[session_id] = subagents
                     stream_filter = subagents
                     session.system_prompt += (
@@ -507,13 +579,24 @@ class CodingBridge(CodingActions):
                         except Exception as error:
                             status, final = "failed", f"Alt ajan kaydı saklanamadı: {self._coding_redact(str(error))}"
                             terminal_events.clear()
+                    if tool_filter is not None:
+                        await tool_filter.close_execution()
                     if session is not None and initial_system_prompt is not None:
                         session.system_prompt = initial_system_prompt
                     state["terminal_status"] = status
                     if status == "cancelled":
                         terminal_events.clear()
                     try:
+                        completion_attempt_id = None
+                        if record is not None and control is not None:
+                            completion_attempt = control.durable_begin("completion.metadata", side_effect="conditional_write",
+                                input_data={"status": status})
+                            completion_attempt_id = completion_attempt["attempt_id"] if completion_attempt else None
+                            control.durable_transition(completion_attempt_id, "dispatching")
+                            control.durable_transition(completion_attempt_id, "running")
                         persist_snapshot(status=status, final=final, force=True)
+                        if control is not None:
+                            control.durable_finish(completion_attempt_id, result={"status": status}, capture_workspace=True)
                     except Exception as error:
                         status = "failed"
                         final = f"Çalışma kaydı saklanamadı: {self._coding_redact(str(error))}"

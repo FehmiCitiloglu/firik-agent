@@ -52,6 +52,8 @@ class ProjectDatabase:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout=30000;")
         conn.execute("PRAGMA journal_mode=WAL;")
+        # Intents must survive process failure before an external dispatch.
+        conn.execute("PRAGMA synchronous=FULL;")
         conn.execute("PRAGMA foreign_keys=ON;")
         return conn
 
@@ -445,6 +447,65 @@ class ProjectDatabase:
             INSERT OR IGNORE INTO project_schema_migrations(version) VALUES (1);
         """
         for statement in schema.split(";"):
+            if statement.strip():
+                conn.execute(statement)
+        # Additive v2: reuse the owning coding run and its existing event stream.
+        # Statements execute in the same migration transaction as v1/backfills.
+        durable_schema = """
+            CREATE TABLE IF NOT EXISTS coding_execution_steps (
+                attempt_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                task_id TEXT,
+                step_id TEXT NOT NULL,
+                parent_step_id TEXT,
+                agent_id TEXT NOT NULL DEFAULT '',
+                operation TEXT NOT NULL,
+                input_fingerprint TEXT NOT NULL,
+                input_summary TEXT NOT NULL DEFAULT '{}',
+                side_effect TEXT NOT NULL DEFAULT 'unknown',
+                permission_context TEXT NOT NULL DEFAULT '{}',
+                workspace_revision TEXT NOT NULL DEFAULT 'null',
+                state TEXT NOT NULL,
+                retry_safe INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                started_at TEXT,
+                terminal_at TEXT,
+                updated_at TEXT NOT NULL,
+                result_ref TEXT,
+                result TEXT NOT NULL DEFAULT 'null',
+                error TEXT NOT NULL DEFAULT 'null',
+                metadata TEXT NOT NULL DEFAULT '{}',
+                version INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(run_id) REFERENCES coding_sessions(id) ON DELETE CASCADE,
+                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                CHECK(state IN ('created','planned','ready','dispatching','running',
+                    'completed','failed','cancelled','outcome_unknown','needs_reconciliation'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_execution_run_state
+                ON coding_execution_steps(run_id, state);
+            CREATE INDEX IF NOT EXISTS idx_execution_run_step
+                ON coding_execution_steps(run_id, step_id);
+            CREATE TABLE IF NOT EXISTS coding_run_owners (
+                run_id TEXT PRIMARY KEY,
+                owner_pid INTEGER NOT NULL,
+                owner_host TEXT NOT NULL,
+                owner_start TEXT NOT NULL,
+                owner_token TEXT NOT NULL,
+                claimed_at TEXT NOT NULL,
+                FOREIGN KEY(run_id) REFERENCES coding_sessions(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS coding_resume_claims (
+                source_run_id TEXT PRIMARY KEY,
+                continuation_run_id TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(source_run_id) REFERENCES coding_sessions(id) ON DELETE CASCADE,
+                FOREIGN KEY(continuation_run_id) REFERENCES coding_sessions(id) ON DELETE CASCADE
+            );
+            INSERT OR IGNORE INTO project_schema_migrations(version) VALUES (2);
+        """
+        for statement in durable_schema.split(";"):
             if statement.strip():
                 conn.execute(statement)
 

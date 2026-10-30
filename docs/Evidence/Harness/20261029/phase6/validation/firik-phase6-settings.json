@@ -1,0 +1,25 @@
+{
+  "default_backend": "native",
+  "profile": "coding",
+  "backends": {
+    "native": {
+      "enabled": true,
+      "executable": null,
+      "expected_version": null
+    },
+    "pi": {
+      "enabled": false,
+      "executable": null,
+      "expected_version": null
+    },
+    "codex": {
+      "enabled": false,
+      "executable": null,
+      "expected_version": null
+    }
+  },
+  "optimization": {
+    "benchmark_based_suggestions": true,
+    "automatic_backend_switching": false
+  }
+}

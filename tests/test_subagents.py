@@ -116,7 +116,7 @@ def test_activity_updates_one_card_and_restores_passively():
 
 
 @pytest.mark.asyncio
-async def test_worker_timeout_is_failed_and_releases_slot(tmp_path, monkeypatch):
+async def test_worker_timeout_has_unknown_outcome_and_releases_slot(tmp_path, monkeypatch):
     manager, events = setup(tmp_path)
     async def worker(assignment, tools):
         await asyncio.Event().wait()
@@ -124,6 +124,6 @@ async def test_worker_timeout_is_failed_and_releases_slot(tmp_path, monkeypatch)
     monkeypatch.setattr("firik_agent.projects.subagents.WORKER_TIMEOUT", 0.01)
     spawned = await manager.spawn("review", "incele")
     result = await manager.wait(spawned["agent_id"])
-    assert result["status"] == "failed" and not result["passed"]
+    assert result["status"] == "outcome_unknown" and not result["passed"]
     assert "zaman" in result["result"]
     assert manager.jobs[spawned["agent_id"]]["future"].done()
