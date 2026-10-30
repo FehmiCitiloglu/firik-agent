@@ -282,7 +282,7 @@ def test_real_agent_approval_edit_diff_test_evidence_provider_and_sqlite_history
                 assert "eski" in path.read_text(encoding="utf-8")
             assert service.coding_control(event.session_id, "approve", event.metadata["request_id"], True)
     session, future = start(bridge, mode="approved", on_event=receive, on_error=errors.append)
-    future.result(timeout=8)
+    future.result(timeout=30)
     assert not errors
     assert approvals == ["edit_file", "run_tests"]
     assert "yeni" in path.read_text(encoding="utf-8")
@@ -467,7 +467,7 @@ def test_resume_revalidates_actual_hash_and_keeps_concurrent_user_edit(bridge):
     assert errors and not state["requests"]
     controller.reconcile_workspace(previous.id, project_id="p1", approved=True, evidence="Kullanıcı düzenlemesi incelendi")
     _, future = start(bridge, session=session, options={"resume_run_id": previous.id, "resume_approved": True})
-    future.result(timeout=4)
+    future.result(timeout=30)
     resumed = service.coding_store.latest_run("p1")
     checkpoint = next(c for c in resumed.checkpoints if c.get("kind") == "resume_revalidation")
     assert resumed.resumed_from == previous.id and checkpoint["files"][0]["matches"] is False

@@ -424,6 +424,8 @@ def test_hardlinked_host_file_cannot_enter_patch(repo, tmp_path):
 def test_tampered_git_pointer_and_workspace_symlink_are_rejected(repo, tmp_path):
     manager = IsolatedWorkspaceManager(repo)
     record, child = create(manager)
+    if os.name == "nt":
+        subprocess.run(["attrib", "-h", "-s", "-r", str(child / ".git")], check=True)
     (child / ".git").chmod(0o600)
     (child / ".git").write_text(f"gitdir: {repo / '.git'}\n")
     with pytest.raises(WorkspaceError, match="association"):

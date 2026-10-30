@@ -1,3 +1,7 @@
+## v0.2.28 değişiklikleri
+
+- Windows CI üzerinde uzun süren entegrasyon testleri ve Git çalışma ağacı fixture izinleri düzeltildi.
+
 ## v0.2.27 değişiklikleri
 
 - Windows üzerinde güvenli entegrasyon sınırları ve platforma özgü benchmark doğrulamaları düzeltildi.
