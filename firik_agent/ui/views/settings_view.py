@@ -27,9 +27,20 @@ class SettingsView(ctk.CTkFrame):
 
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        self.sections = ctk.CTkTabview(self, command=self._settings_section_changed)
+        self.sections.grid(row=0, column=0, sticky="nsew", padx=12, pady=8)
+        self.sections.add("Genel")
+        self.sections.add("Ses")
+        from firik_agent.ui.components.voice_settings import SettingsScrollFrame, make_voice_controls_accessible
+        self._section_keyboard_controls = make_voice_controls_accessible(self.sections._segmented_button)
+        general = SettingsScrollFrame(self.sections.tab("Genel"), fg_color=self.sections.cget("fg_color"))
+        general.pack(fill="both", expand=True)
+        general.grid_columnconfigure(0, weight=1)
+        self.voice_settings_frame = None
 
         # 1. BAŞLIK
-        header_frame = ctk.CTkFrame(self, fg_color=("gray90", "#1e293b"), corner_radius=10)
+        header_frame = ctk.CTkFrame(general, fg_color=("gray90", "#1e293b"), corner_radius=10)
         header_frame.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 10))
 
         t_lbl = ctk.CTkLabel(
@@ -49,7 +60,7 @@ class SettingsView(ctk.CTkFrame):
         d_lbl.pack(anchor="w", padx=16, pady=(0, 10))
 
         # 2. ANA AYARLAR KARTI
-        card = ctk.CTkFrame(self, fg_color=("gray95", "#161f2e"), corner_radius=10)
+        card = ctk.CTkFrame(general, fg_color=("gray95", "#161f2e"), corner_radius=10)
         card.grid(row=1, column=0, sticky="ew", padx=16, pady=4)
         card.grid_columnconfigure(1, weight=1)
 
@@ -168,7 +179,7 @@ class SettingsView(ctk.CTkFrame):
         self.scale_combo.grid(row=6, column=1, sticky="w", padx=16, pady=(6, 16))
 
         # 2.5. BİLGİSAYAR KULLANIMI VE İZİNLER KARTI
-        cu_card = ctk.CTkFrame(self, fg_color=("gray95", "#161f2e"), corner_radius=10)
+        cu_card = ctk.CTkFrame(general, fg_color=("gray95", "#161f2e"), corner_radius=10)
         cu_card.grid(row=2, column=0, sticky="ew", padx=16, pady=8)
         cu_card.grid_columnconfigure(1, weight=1)
 
@@ -210,7 +221,7 @@ class SettingsView(ctk.CTkFrame):
         self.cu_status_lbl.grid(row=2, column=1, sticky="w", padx=8, pady=(4, 12))
 
         # 3. ALT AKSİYON PANELİ: Bağlantıyı Sına & Kaydet
-        actions_card = ctk.CTkFrame(self, fg_color="transparent")
+        actions_card = ctk.CTkFrame(general, fg_color="transparent")
         actions_card.grid(row=3, column=0, sticky="ew", padx=16, pady=16)
 
 
@@ -246,6 +257,28 @@ class SettingsView(ctk.CTkFrame):
             command=self._save_settings,
         )
         save_btn.pack(side="right")
+
+    def _settings_section_changed(self) -> None:
+        if self.sections.get() == "Ses":
+            self.open_voice_section()
+        elif self.voice_settings_frame is not None:
+            self.voice_settings_frame.stop_input_test()
+
+    def _set_appearance_mode(self, mode_string):
+        super()._set_appearance_mode(mode_string)
+        from firik_agent.ui.components.voice_settings import refresh_voice_focus_colors
+        refresh_voice_focus_colors(getattr(self, "_section_keyboard_controls", ()), self._apply_appearance_mode)
+
+    def open_voice_section(self):
+        """Create the shared voice form only when this section is opened."""
+        self.sections.set("Ses")
+        if self.voice_settings_frame is None:
+            from firik_agent.ui.components.voice_settings import VoiceSettingsFrame
+            self.voice_settings_frame = VoiceSettingsFrame(self.sections.tab("Ses"), self.service)
+            self.voice_settings_frame.pack(fill="both", expand=True)
+        else:
+            self.voice_settings_frame.reload_settings()
+        return self.voice_settings_frame
 
     def _load_current_values(self) -> None:
         self.url_entry.insert(0, self.service.base_url)

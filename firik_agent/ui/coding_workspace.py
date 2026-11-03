@@ -269,13 +269,14 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             self.coding_input.insert("insert", "\n")
             return "break"
         self.coding_input.bind("<Shift-Return>", newline, add="+")
-        self.coding_send_btn = ctk.CTkButton(input_area, text="Çalıştır", width=75, command=self._send_coding_prompt)
-        self.coding_send_btn.grid(row=0, column=1)
+        self.coding_mic_button = ctk.CTkButton(input_area, text="🎙 Ses", width=64, height=40)
+        self.coding_send_btn = ctk.CTkButton(input_area, text="Çalıştır", width=75, height=40, command=self._send_coding_prompt)
+        self.coding_send_btn.grid(row=0, column=2)
         primary = "Cmd" if self.tk.call("tk", "windowingsystem") == "aqua" else "Ctrl"
         self._mount_coding_composer(input_area, project_id)
         self.coding_composer_hint = ctk.CTkLabel(input_area, text=f"@ bağlam · / komut · Enter: çalıştır · Shift+Enter: satır · {primary}+K: palet", height=18,
                      anchor="w", font=ctk.CTkFont(size=10))
-        self.coding_composer_hint.grid(row=2, column=0, columnspan=2, sticky="ew")
+        self.coding_composer_hint.grid(row=2, column=0, columnspan=3, sticky="ew")
         self.coding_voice_panel = VoicePanel(input_area, self.service,
             on_dictation=self._insert_coding_dictation,
             on_submit=self._submit_coding_voice_transcript,
@@ -283,12 +284,15 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             get_session_id=lambda: self._coding_state()["session"].session_id,
             get_project_id=lambda: self.current_project_id, target="coding",
             get_workspace_id=self._voice_workspace_id,
+            compact=True, on_text_fallback=lambda: self.coding_input.focus_set(),
             is_busy=lambda: self._coding_state()["busy"],
             actions={"stop_response": lambda: self._control_coding("cancel"),
                      "read_last": self._voice_read_coding_last,
                      "stop_speech": lambda: self.coding_voice_panel.stop_speaking(),
                      "switch_coding": lambda: self.winfo_toplevel().open_existing_coding_conversation()})
-        self.coding_voice_panel.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(3, 0))
+        self.coding_voice_panel.mount_composer_microphone(input_area, button=self.coding_mic_button,
+                                                        row=0, column=1, padx=(0, 5))
+        self.coding_voice_panel.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(3, 0))
         right.grid_columnconfigure(0, weight=1)
         right.grid_rowconfigure(1, weight=1)
         inspector_head = ctk.CTkFrame(right, fg_color="transparent")
@@ -452,7 +456,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             background="#101a2b" if dark else "#f8fafc", foreground="#e6eef8" if dark else "#172b43",
             selectbackground="#164955" if dark else "#c8eee9", selectforeground="#e6fffc" if dark else "#123b43",
             font=("Arial", 11), borderwidth=0, highlightthickness=1, activestyle="dotbox")
-        self.coding_suggestion_list.grid(row=1, column=0, columnspan=2, sticky="ew", pady=3)
+        self.coding_suggestion_list.grid(row=1, column=0, columnspan=3, sticky="ew", pady=3)
         self.coding_suggestion_list.grid_remove()
         self._coding_suggestions = []
         owner._suggestion_job = None
@@ -781,9 +785,9 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 state["cockpit"].finish(status=outcome, changes=state["changes"])
                 if visible() and hasattr(self, "coding_voice_panel"):
                     from firik_agent.voice.summaries import coding_speech_summary
-                    self.coding_voice_panel.response_completed(coding_speech_summary(
+                    self.coding_voice_panel.coding_completion(coding_speech_summary(
                         response["content"], outcome=outcome, activities=state["activities"],
-                        agents=state["cockpit"].agents, project_name=project.name))
+                        agents=state["cockpit"].agents, project_name=project.name), outcome=outcome)
                 refresh(True)
             self.service.inspect_workspace_async(project.local_path, inspected,
                 lambda e: inspected(inspection_error=e), before=state["before"])

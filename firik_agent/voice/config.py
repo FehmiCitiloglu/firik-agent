@@ -19,6 +19,7 @@ class VoiceSettings:
     playback_speed: float = 1.0
     read_replies: bool = False
     stream_replies: bool = False
+    completion_chime: bool = False
     model: str = "qwen3-asr-1.7b"
     language: str = "auto"
     max_record_seconds: int = 60
@@ -41,7 +42,7 @@ class VoiceSettings:
     wake_word_enabled: bool = False
 
     def __post_init__(self) -> None:
-        for name in ("enabled", "read_replies", "stream_replies", "auto_send", "review_before_send", "barge_in", "wake_word_enabled", "vad_enabled", "retain_audio"):
+        for name in ("enabled", "read_replies", "stream_replies", "completion_chime", "auto_send", "review_before_send", "barge_in", "wake_word_enabled", "vad_enabled", "retain_audio"):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(f"Ses ayarı {name} doğru veya yanlış olmalıdır.")
         if not isinstance(self.model, str) or not self.model.strip() or len(self.model) > 200:

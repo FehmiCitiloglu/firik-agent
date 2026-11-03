@@ -20,7 +20,7 @@ def test_provider_settings_preserve_chat_model_and_save_preferred_vad(voice_chat
     provider_menu = next(item for item in menus if item.cget("values") == ["evren", "system"])
     provider_menu.set("evren")
     vad = next(item for item in descendants(dialog) if isinstance(item, ctk.CTkCheckBox)
-               and "Aç / bitir düğmesinde" in item.cget("text"))
+               and "yerel konuşma algılamayı" in item.cget("text"))
     vad.toggle()
     save = next(item for item in dialog.winfo_children() if isinstance(item, ctk.CTkButton))
     save.invoke()

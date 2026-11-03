@@ -487,7 +487,7 @@ class ChatView(ctk.CTkFrame):
         bottom_box.grid(row=6, column=0, sticky="ew", padx=16, pady=(4, 12))
         bottom_box.grid_columnconfigure(1, weight=1)
         self.live_activity = LiveActivity(bottom_box)
-        self.live_activity.grid(row=0, column=0, columnspan=3, sticky="ew", padx=10, pady=(8, 0))
+        self.live_activity.grid(row=0, column=0, columnspan=4, sticky="ew", padx=10, pady=(8, 0))
         self.live_activity.grid_remove()
 
         # Görsel Ekle Butonu
@@ -516,6 +516,9 @@ class ChatView(ctk.CTkFrame):
         self.input_textbox.bind("<Return>", self._handle_return_key)
         self.input_textbox.bind("<KP_Enter>", self._handle_return_key)
 
+        # Creation order follows the visible input → microphone → send order.
+        self.voice_mic_button = ctk.CTkButton(bottom_box, text="🎙 Ses", width=64, height=40)
+
         # Gönder / Durdur Butonu
         self.send_btn = ctk.CTkButton(
             bottom_box,
@@ -527,16 +530,19 @@ class ChatView(ctk.CTkFrame):
             hover_color="#2563eb",
             command=self._on_send_pressed,
         )
-        self.send_btn.grid(row=1, column=2, padx=(6, 10), pady=10)
+        self.send_btn.grid(row=1, column=3, padx=(6, 10), pady=10)
 
         self.voice_panel = VoicePanel(bottom_box, self.service, on_dictation=self._insert_dictation,
             on_submit=self._submit_voice_transcript, get_session_id=lambda: self.session.session_id,
             on_submit_request=self._submit_voice_request,
+            compact=True, on_text_fallback=lambda: self.input_textbox.focus_set(),
             is_busy=lambda: self.is_streaming,
             actions={"stop_response": self._voice_stop_response, "new_chat": self.new_chat,
                      "read_last": self._voice_read_last, "stop_speech": lambda: self.voice_panel.stop_speaking(),
                      "switch_coding": lambda: self.winfo_toplevel().open_existing_coding_conversation()})
-        self.voice_panel.grid(row=2, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 4))
+        self.voice_panel.mount_composer_microphone(bottom_box, button=self.voice_mic_button,
+                                                 row=1, column=2, padx=(0, 2), pady=10)
+        self.voice_panel.grid(row=2, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 4))
 
         # Kısayol İpucu
         hint_lbl = ctk.CTkLabel(

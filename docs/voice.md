@@ -586,3 +586,59 @@ and invoke its real entry points. See
 [`test_voice_summaries.py`](../tests/test_voice_summaries.py) for focused contracts.
 Those tests do not establish microphone accuracy, acoustic quality or successful
 execution against a user's external services.
+
+## Desktop controls and shared voice settings
+
+The composer has a compact **🎙 Ses** entry point. Push-to-talk, the accessible
+recording toggle, conversational mode and settings delegate to the existing
+panel/controller; opening a voice surface creates no additional agent session.
+The dedicated **Sesli sohbet** window shows microphone state, input level,
+finalized transcript review and a short response preview. Microphone mute,
+stop-listening, stop-speaking and exit controls remain outside its scrollable
+content so they are available in a compact window. Empty transcript controls stay
+hidden until there is text to review. This ASR contract returns finalized text;
+the interface does not invent live recognition or confidence values.
+The configured push-to-talk shortcut also works while this window has focus.
+
+**Ayarlar → Ses** and the composer settings dialog use the same
+[`VoiceSettingsFrame`](../firik_agent/ui/components/voice_settings.py). Its
+**Giriş**, **Yanıt**, and **Gizlilik ve yardım** pages expose device selection,
+language, separate ASR/TTS choices, VAD bounds, shortcut, response volume/speed,
+review preferences and optional completion notification. Opening settings or
+saving preferences does not start recording. Device enumeration runs through the
+service worker and retains saved stable device IDs rather than replacing them
+with a newly ordered PortAudio index.
+
+**Mikrofon düzeyini sına** is an explicit local measurement with a three-second
+budget. It opens no ASR/TTS request, uploads no audio and retains no recording.
+The meter uses the service's Tk-dispatched, coalesced level callbacks. Stop,
+save, leaving the visible form or closing the window cancels the test; delayed
+callbacks cannot update a cancelled form. Permission/backend failures remain
+visible after the worker's completion callback.
+
+**Tanı bilgisini göster** produces read-only offline information about optional
+packages, client limits and platform permission guidance. It does not open an
+audio device, fetch credentials or contact a provider. The separate model-access
+button performs the existing GET-only capability check. Unsupported local ASR,
+native voice enumeration, wake word, persistent raw-audio retention and the
+built-in stack's simultaneous barge-in are disabled or explained; the interface
+does not offer invented voices or silently choose another provider.
+
+Saved preferences notify mounted controls through weak service listeners. A
+pristine settings form reloads current values without restarting the app. If
+another form saves while this form contains edits, the visible draft is preserved
+with an explicit reload action. Saving merges this form's changed fields into
+the latest preferences, preserving unrelated changes from the other form.
+Settings saves use the existing additive service configuration path and do not
+change the selected chat/coding model.
+
+Automatic reply speech and the optional coding completion chime respect the
+master voice preference and foreground/privacy checks. The chime is off by
+default, contains no response text and uses the operating system's notification
+volume; it is independent of reading replies aloud. A background, hidden or
+unfocused conversation, an open settings/review dialog, microphone activity or
+an explicitly muted voice controller suppresses automatic audio.
+The same checks stop already queued automatic speech when focus is lost or the
+window is minimized, without cancelling the agent's ongoing work. Manual controls
+remain separate from agent execution: stopping TTS does not stop the agent, and
+**Metinle devam et** returns to the existing text composer.

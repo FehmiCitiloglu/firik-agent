@@ -187,7 +187,13 @@ class VoiceController:
                 return
             self.cancel()
             self._last_audio = None
+            self._last_speech = None
             self.session_id = session_id
+
+    @property
+    def can_replay_speech(self) -> bool:
+        with self._lock:
+            return not self._closed and self._last_speech is not None
 
     def start_recording(self) -> bool:
         self.settings = replace(self.settings, interaction_mode="push_to_talk")

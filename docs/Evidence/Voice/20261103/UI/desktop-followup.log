@@ -1,0 +1,33 @@
+1/8 tests/test_ui_voice_experience.py::test_composer_microphone_shares_send_row_and_keyboard_activates_existing_controller[conversation]: 0
+.                                                                        [100%]
+1 passed in 1.68s
+
+2/8 tests/test_ui_voice_experience.py::test_composer_microphone_shares_send_row_and_keyboard_activates_existing_controller[coding]: 0
+.                                                                        [100%]
+1 passed in 1.66s
+
+3/8 tests/test_ui_voice_experience.py::test_manual_speech_replaces_automatic_queue_without_leaving_unguarded_items[read]: 0
+.                                                                        [100%]
+1 passed in 1.49s
+
+4/8 tests/test_ui_voice_experience.py::test_manual_speech_replaces_automatic_queue_without_leaving_unguarded_items[replay]: 0
+.                                                                        [100%]
+1 passed in 1.41s
+
+5/8 tests/test_ui_voice_provider_settings.py::test_provider_settings_preserve_chat_model_and_save_preferred_vad: 0
+.                                                                        [100%]
+1 passed in 0.94s
+
+6/8 tests/test_ui_voice_settings_section.py::test_keyboard_focus_reveals_offscreen_settings_entry_and_microphone_test_button: 0
+.                                                                        [100%]
+1 passed in 1.01s
+
+7/8 tests/test_ui_voice_settings_section.py::test_voice_form_fits_narrow_native_window_and_theme_without_horizontal_clipping[Light]: 0
+.                                                                        [100%]
+1 passed in 1.36s
+
+8/8 tests/test_ui_voice_settings_section.py::test_voice_form_fits_narrow_native_window_and_theme_without_horizontal_clipping[Dark]: 0
+.                                                                        [100%]
+1 passed in 1.36s
+
+Cases: 8, failures: 0

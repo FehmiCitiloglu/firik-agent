@@ -1,0 +1,9 @@
+1/2 tests/test_ui_voice_settings_section.py::test_voice_form_fits_narrow_native_window_and_theme_without_horizontal_clipping[Light]: 0
+.                                                                        [100%]
+1 passed in 1.94s
+
+2/2 tests/test_ui_voice_settings_section.py::test_voice_form_fits_narrow_native_window_and_theme_without_horizontal_clipping[Dark]: 0
+.                                                                        [100%]
+1 passed in 1.90s
+
+Cases: 2, failures: 0

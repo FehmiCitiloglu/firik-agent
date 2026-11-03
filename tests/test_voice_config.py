@@ -12,6 +12,7 @@ def test_fresh_voice_defaults_are_disabled_independent_evren_models():
     settings = VoiceSettings.from_mapping(None)
     assert not settings.enabled and not settings.speak_responses
     assert not settings.auto_send and not settings.vad_enabled
+    assert not settings.completion_chime
     assert not settings.wake_word_enabled and not settings.retain_audio
     assert settings.asr_provider == settings.tts_provider == "evren"
     assert settings.asr_model == "qwen3-asr-1.7b"
@@ -25,6 +26,7 @@ def test_existing_voice_section_keeps_explicit_system_speech_on_migration():
         "model": "qwen3-asr-1.7b", "max_record_seconds": 30, "vad_silence_ms": 900})
     assert settings.tts_provider == "system" and settings.speak_responses
     assert settings.max_utterance_duration == 30 and settings.silence_timeout == .9
+    assert not settings.completion_chime
     assert VoiceSettings.from_mapping(settings.to_dict()) == settings
 
 
@@ -56,6 +58,7 @@ def test_canonical_settings_and_legacy_replace_share_single_values():
     {"asr_model": "qwen3-asr-1.7b", "model": "auto"},
     {"silence_timeout": .7, "vad_silence_ms": 800},
     {"speak_responses": True, "read_replies": False},
+    {"completion_chime": "false"}, {"completion_chime": 1}, {"completion_chime": None},
 ])
 def test_invalid_or_conflicting_voice_configuration_is_rejected(mapping):
     with pytest.raises(ValueError):
@@ -73,3 +76,8 @@ def test_shipped_configuration_loads_all_canonical_preferences():
 @pytest.mark.parametrize("response_format", ["mp3", "wav", "flac", "opus", "pcm"])
 def test_only_documented_speech_formats_are_configurable(response_format):
     assert VoiceSettings.from_mapping({"tts_format": response_format}).tts_format == response_format
+
+
+def test_completion_chime_is_explicit_opt_in_and_round_trips():
+    settings = replace(VoiceSettings(), completion_chime=True)
+    assert VoiceSettings.from_mapping(settings.to_dict()) == settings

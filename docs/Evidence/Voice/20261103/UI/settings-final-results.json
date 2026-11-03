@@ -1,0 +1,21 @@
+{
+  "tests/test_ui_voice_settings_section.py::test_save_cancels_explicit_test_and_errors_do_not_expose_configuration_paths": 0,
+  "tests/test_ui_voice_settings_section.py::test_saved_device_id_is_stable_when_backend_indexes_change": 0,
+  "tests/test_ui_voice_settings_section.py::test_leaving_visible_level_test_stops_capture_and_late_delivery_is_ignored": 0,
+  "tests/test_ui_voice_settings_section.py::test_embedded_form_reflects_modal_save_without_restarting_and_removes_listener": 0,
+  "tests/test_ui_voice_settings_section.py::test_save_validates_without_persisting_bad_numbers_and_keeps_original_chat_model": 0,
+  "tests/test_ui_voice_settings_section.py::test_privacy_controls_remain_disabled_and_diagnostics_are_offline_readonly": 0,
+  "tests/test_ui_voice_settings_section.py::test_external_save_preserves_dirty_draft_and_merges_only_user_changes": 0,
+  "tests/test_ui_voice_settings_section.py::test_provider_capability_controls_explain_unsupported_features_without_fake_voices": 0,
+  "tests/test_ui_voice_settings_section.py::test_explicit_local_level_test_uses_unsaved_input_settings_and_destroy_cancels_late_callbacks": 0,
+  "tests/test_ui_voice_settings_section.py::test_explicit_reload_discards_preserved_draft_only_after_user_action": 0,
+  "tests/test_ui_voice_settings_section.py::test_settings_section_is_lazy_and_reuses_form_without_starting_audio": 0,
+  "tests/test_ui_voice_settings_section.py::test_settings_canvas_controls_support_keyboard_focus_activation_and_menu_selection": 0,
+  "tests/test_ui_voice_settings_section.py::test_voice_form_fits_narrow_native_window_and_theme_without_horizontal_clipping[Light]": 0,
+  "tests/test_ui_voice_settings_section.py::test_voice_form_fits_narrow_native_window_and_theme_without_horizontal_clipping[Dark]": 0,
+  "tests/test_ui_voice_provider_settings.py::test_provider_settings_preserve_chat_model_and_save_preferred_vad": 0,
+  "tests/test_ui_voice_provider_settings.py::test_capability_discovery_never_opens_capture": 0,
+  "tests/test_ui_voice.py::test_settings_dialog_saves_integer_duration_and_device_zero": 0,
+  "tests/test_ui_voice_settings_section.py::test_level_test_completion_preserves_actionable_error_in_service_callback_order": 0,
+  "tests/test_ui_voice_settings_section.py::test_runtime_theme_switch_updates_scroll_rows_labels_and_native_focus_backgrounds": 0
+}

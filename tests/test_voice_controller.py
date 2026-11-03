@@ -764,3 +764,18 @@ def test_playback_failure_closes_simultaneous_barge_in_microphone(runtime):
         assert len(errors) == 1 and not requests
     finally:
         c.close()
+
+
+def test_binding_another_session_discards_previous_private_speech(runtime):
+    speaker = Speaker()
+    instance, dispatch, *_ = controller(runtime, speaker=speaker)
+    try:
+        assert instance.speak('Private answer in the previous session')
+        assert speaker.started.wait(1)
+        assert instance.can_replay_speech
+        instance.bind_session('another-existing-session')
+        assert not instance.can_replay_speech
+        assert not instance.replay_speech()
+        assert len(speaker.calls) == 1
+    finally:
+        instance.shutdown(2)

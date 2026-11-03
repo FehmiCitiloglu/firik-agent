@@ -1,0 +1,15 @@
+tests/test_ui_voice_settings_section.py::test_runtime_theme_switch_updates_scroll_rows_labels_and_native_focus_backgrounds
+.                                                                        [100%]
+1 passed in 1.10s
+
+tests/test_ui_voice_settings_section.py::test_settings_canvas_controls_support_keyboard_focus_activation_and_menu_selection
+.                                                                        [100%]
+1 passed in 1.12s
+
+tests/test_ui_voice_settings_section.py::test_voice_form_fits_narrow_native_window_and_theme_without_horizontal_clipping[Light]
+.                                                                        [100%]
+1 passed in 1.12s
+
+tests/test_ui_voice_settings_section.py::test_voice_form_fits_narrow_native_window_and_theme_without_horizontal_clipping[Dark]
+.                                                                        [100%]
+1 passed in 1.06s

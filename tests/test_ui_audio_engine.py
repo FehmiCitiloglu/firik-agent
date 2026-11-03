@@ -8,9 +8,9 @@ import customtkinter as ctk
 from firik_agent.core.events import AgentEventType
 from firik_agent.voice.audio_devices import AudioDevice
 from firik_agent.voice.config import VoiceSettings
-from test_ui_chat import emit
+from test_ui_chat import emit, pump
 from test_ui_coding_workspace import workspace, settle
-from test_ui_voice import voice_chat
+from test_ui_voice import voice_chat, foreground_voice_window
 
 
 def until(app, predicate):
@@ -37,6 +37,7 @@ def test_native_chat_reads_stable_sentences_before_stream_completion(workspace, 
     view.input_textbox.insert('1.0', 'Explain this briefly')
     view._on_send_pressed()
     stream = streams[-1]
+    foreground_voice_window(app)
     emit(app, stream, AgentEventType.TEXT_DELTA, content='Hello. ')
     until(app, lambda: spoken == ['Hello.'])
     assert view.is_streaming
@@ -54,6 +55,7 @@ def test_settings_device_picker_persists_stable_ids_and_controls_are_visible(voi
     service.audio_devices_async = lambda done, error: done({'input': [inputs], 'output': [outputs]})
     panel = workspace.current.voice_panel
     panel.open_settings()
+    pump(root, .1)  # Device enumeration is requested lazily when settings map.
     def descendants(widget):
         for child in widget.winfo_children():
             yield child
@@ -69,4 +71,6 @@ def test_settings_device_picker_persists_stable_ids_and_controls_are_visible(voi
     assert service.voice_settings.input_device == inputs.id
     assert service.voice_settings.output_device == outputs.id
     assert panel.input_level.winfo_ismapped()
-    assert panel.speech_pause_button.winfo_ismapped() and panel.replay_button.winfo_ismapped()
+    surface = panel.show_voice_surface()
+    pump(root, .1)
+    assert surface.pause_speech_button.winfo_ismapped() and surface.replay_button.winfo_ismapped()

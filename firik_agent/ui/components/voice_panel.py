@@ -1,10 +1,9 @@
 """Session-bound desktop voice controls; all widget work stays on the Tk thread."""
 from __future__ import annotations
 
-from dataclasses import replace
 import time
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox  # Retained for existing embedded-panel error adapters.
 
 import customtkinter as ctk
 
@@ -15,7 +14,8 @@ from firik_agent.voice.config import VoiceSettings
 class VoicePanel(ctk.CTkFrame):
     def __init__(self, master, service, *, on_dictation, actions, on_submit=None,
                  get_session_id=None, is_busy=None, on_submit_request=None,
-                 get_project_id=None, get_workspace_id=None, target="conversation", **kwargs):
+                 get_project_id=None, get_workspace_id=None, target="conversation",
+                 compact=False, on_text_fallback=None, **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
         self.service, self.on_dictation, self.actions = service, on_dictation, actions
         self.on_submit = on_submit
@@ -23,6 +23,14 @@ class VoicePanel(ctk.CTkFrame):
         self.get_project_id = get_project_id or (lambda: None)
         self.get_workspace_id = get_workspace_id or (lambda: None)
         self.target = target
+        self.compact = compact
+        self.on_text_fallback = on_text_fallback or (lambda: None)
+        self.composer_mic_button = None
+        self._voice_surface = None
+        self._response_preview_text = ""
+        self._last_transcript = ""
+        self._last_operation = "idle"
+        self._last_state = "idle"
         self._capture_scope = None
         self._voice_request = None
         self._request_router = None
@@ -46,6 +54,8 @@ class VoicePanel(ctk.CTkFrame):
         self._duration_start = None
         self._duration_job = None
         self._speech_paused = False
+        self._automatic_speech = False
+        self._audio_guard_job = None
         self._state_label = "Ses kapalı" if not self._settings().enabled else "Hazır"
         self._shortcut_bindings = []
         self._bound_shortcut = None
@@ -58,6 +68,8 @@ class VoicePanel(ctk.CTkFrame):
         self.toggle_button = ctk.CTkButton(self, text="Aç / bitir", width=85, height=28,
                                           command=self.toggle_preferred_interaction)
         self.mode = ctk.CTkOptionMenu(self, values=["Bas-konuş", "Sesli komut"], width=106, height=28)
+        from firik_agent.ui.components.voice_settings import make_voice_controls_accessible
+        self._mode_focus_controls = make_voice_controls_accessible(self.mode, include_self=True)
         self.settings_button = ctk.CTkButton(self, text="Ses ayarları", width=85, height=28,
                                             command=self.open_settings)
         self.session_button = ctk.CTkButton(self, text="Sesli sohbet", width=104, height=28,
@@ -84,6 +96,7 @@ class VoicePanel(ctk.CTkFrame):
         self.review.grid_columnconfigure(0, weight=1)
         self.command_text = ctk.CTkEntry(self.review, placeholder_text="Transkripti inceleyip düzenleyin")
         self.command_text.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 4))
+        self.command_text.bind("<KeyRelease>", lambda event: self._sync_surface_draft(), add="+")
         self.review_actions = ctk.CTkFrame(self.review, fg_color="transparent")
         self.review_actions.grid(row=1, column=0, columnspan=4, sticky="w")
         self.apply_button = ctk.CTkButton(self.review_actions, text="Gönder", width=64, command=self.apply_transcript)
@@ -92,11 +105,16 @@ class VoicePanel(ctk.CTkFrame):
         self.discard_button = ctk.CTkButton(self.review_actions, text="Vazgeç", width=64, command=self.dismiss_command)
         for column, button in enumerate((self.apply_button, self.copy_button, self.retry_button, self.discard_button)):
             button.grid(row=0, column=column, padx=(0, 3), pady=(0, 3))
+        self.error_actions = ctk.CTkFrame(self, fg_color="transparent")
+        self.error_retry = ctk.CTkButton(self.error_actions, text="Yeniden dene", width=100, height=28, command=self.retry_voice_error)
+        self.text_fallback_button = ctk.CTkButton(self.error_actions, text="Metinle devam et", width=120, height=28, command=self.use_text_input)
+        self.error_retry.grid(row=0, column=0, padx=(0, 4))
+        self.text_fallback_button.grid(row=0, column=1)
         for button in (self.mic_button, self.toggle_button, self.settings_button, self.session_button,
                        self.pause_button, self.exit_button, self.stop_button, self.speech_button,
                        self.agent_button, self.speech_pause_button, self.replay_button,
                        self.apply_button, self.copy_button, self.retry_button,
-                       self.discard_button):
+                       self.discard_button, self.error_retry, self.text_fallback_button):
             self._make_accessible(button)
         if not hasattr(service, "create_voice_controller"):
             for button in (self.mic_button, self.toggle_button, self.session_button):
@@ -104,13 +122,35 @@ class VoicePanel(ctk.CTkFrame):
         self.bind("<Configure>", self._layout, add="+")
         self._layout()
         self._bind_shortcut()
+        if hasattr(service, "add_voice_settings_listener"):
+            service.add_voice_settings_listener(self.refresh_settings)
+
+    def mount_composer_microphone(self, master, *, button=None, **grid_options):
+        """Tk cannot reparent a widget: both controls delegate to one controller."""
+        if button is None:
+            button = ctk.CTkButton(master, width=64, height=40)
+        button.configure(text="🎙 Ses", fg_color="transparent", border_width=1,
+                         text_color=("gray20", "gray90"), command=self._mic_invoked)
+        button.bind("<ButtonPress-1>", self._press_mic, add="+")
+        button.bind("<ButtonRelease-1>", self._release_mic, add="+")
+        self._make_accessible(button)
+        button.grid(**grid_options)
+        self.composer_mic_button = button
+        return button
+
+    def _set_appearance_mode(self, mode_string):
+        super()._set_appearance_mode(mode_string)
+        from firik_agent.ui.components.voice_settings import refresh_voice_focus_colors
+        refresh_voice_focus_colors(getattr(self, "_mode_focus_controls", ()), self._apply_appearance_mode)
 
     def _layout(self, event=None):
         width = event.width if event else self.winfo_width()
         narrow = width < 500
         if narrow != self._narrow:
             self._narrow = narrow
-            if narrow:
+            if self.compact:
+                rows = ((self.session_button, self.mode, self.settings_button),)
+            elif narrow:
                 rows = ((self.mic_button, self.mode), (self.toggle_button, self.settings_button),
                         (self.session_button, self.pause_button), (self.exit_button, self.stop_button),
                         (self.speech_button, self.agent_button), (self.speech_pause_button, self.replay_button))
@@ -134,13 +174,18 @@ class VoicePanel(ctk.CTkFrame):
         # CTkButton draws on a Canvas; explicitly include that native widget in
         # keyboard traversal and support ordinary Space/Return activation.
         button._canvas.configure(takefocus=1)
+        resting_border = button.cget("border_width")
         def invoke(event):
             button.invoke()
             return "break"
         button.bind("<Return>", invoke, add="+")
         button.bind("<space>", invoke, add="+")
-        button.bind("<FocusIn>", lambda event: button.configure(border_width=2), add="+")
-        button.bind("<FocusOut>", lambda event: button.configure(border_width=0), add="+")
+        def focused(event):
+            from firik_agent.ui.components.keyboard_focus import reveal_in_scroll_frame
+            button.configure(border_width=2)
+            reveal_in_scroll_frame(button)
+        button.bind("<FocusIn>", focused, add="+")
+        button.bind("<FocusOut>", lambda event: button.configure(border_width=resting_border), add="+")
 
     def _settings(self):
         return getattr(self.service, "voice_settings", VoiceSettings())
@@ -212,7 +257,7 @@ class VoicePanel(ctk.CTkFrame):
         # CTk invokes its command before our release binding. A pointer hold is
         # finalized by _release_mic; keyboard/assistive invoke remains a toggle.
         if not self._holding:
-            self.toggle_recording()
+            self.toggle_preferred_interaction()
 
     def _press_mic(self, event=None):
         self._begin_hold("pointer")
@@ -262,25 +307,26 @@ class VoicePanel(ctk.CTkFrame):
             return
         self.toggle_recording()
 
-    def _bind_shortcut(self):
+    def _bind_shortcut(self, *, force=False):
         shortcut = getattr(self._settings(), "shortcut", "<Control-space>")
-        if shortcut == self._bound_shortcut:
+        if shortcut == self._bound_shortcut and not force:
             return
         self._unbind_shortcut()
         try:
-            top = self.winfo_toplevel()
             # Tk matches the *shifted* keysym (V), even when a user writes the
             # more familiar <Control-Shift-v> preference.
             sequence = shortcut
             key = shortcut[1:-1].split("-")[-1]
             if "Shift-" in shortcut and len(key) == 1 and key.isalpha():
                 sequence = shortcut[:-len(key) - 1] + key.upper() + ">"
-            self._shortcut_bindings = [
-                (sequence, top.bind(sequence, self._shortcut_press, add="+")),
-                ("<KeyRelease>", top.bind("<KeyRelease>", self._shortcut_release, add="+")),
-                ("<FocusOut>", top.bind("<FocusOut>", self._focus_out, add="+")),
-                ("<ButtonRelease-1>", top.bind("<ButtonRelease-1>", self._release_mic, add="+")),
-            ]
+            surfaces = [self.winfo_toplevel()]
+            if self._voice_surface is not None:
+                surfaces.append(self._voice_surface)
+            for top in surfaces:
+                for pattern, callback in ((sequence, self._shortcut_press),
+                        ("<KeyRelease>", self._shortcut_release), ("<FocusOut>", self._focus_out),
+                        ("<Unmap>", self._focus_out), ("<ButtonRelease-1>", self._release_mic)):
+                    self._shortcut_bindings.append((top, pattern, top.bind(pattern, callback, add="+")))
             self._bound_shortcut = shortcut
             self._shortcut_release_keys = {key.casefold()}
             modifiers = {"Control": ("control_l", "control_r"), "Shift": ("shift_l", "shift_r"),
@@ -295,13 +341,12 @@ class VoicePanel(ctk.CTkFrame):
             self.status.configure(text="Kısayol geçersiz; Ses ayarları bölümünden değiştirin.")
 
     def _unbind_shortcut(self):
-        try:
-            top = self.winfo_toplevel()
-            for sequence, identifier in self._shortcut_bindings:
+        for top, sequence, identifier in self._shortcut_bindings:
+            try:
                 if identifier:
                     top.unbind(sequence, identifier)
-        except tk.TclError:
-            pass
+            except tk.TclError:
+                pass
         self._shortcut_bindings = []
         self._bound_shortcut = None
 
@@ -320,6 +365,8 @@ class VoicePanel(ctk.CTkFrame):
     def _focus_out(self, event):
         if self._holding and self.focus_displayof() is None:
             self._finish_hold()
+        if self._automatic_speech:
+            self._schedule_audio_guard(0)
 
     def start_conversation(self):
         if not self._prepare_capture():
@@ -331,6 +378,7 @@ class VoicePanel(ctk.CTkFrame):
             self._conversation, self._paused = True, False
             self.session_button.configure(text="Sesli sohbet açık")
             self.pause_button.configure(text="Duraklat")
+            self.show_voice_surface()
 
     def toggle_pause(self):
         if not self._conversation or not self.controller:
@@ -341,13 +389,16 @@ class VoicePanel(ctk.CTkFrame):
                 self.status.configure(text="Önce transkripti gönderin veya vazgeçin.")
                 return
             self._capture_session = self.get_session_id()
-            self.controller.resume_conversation()
+            if self.controller.resume_conversation() is False:
+                self.status.configure(text="Dinleme sürdürülemedi. Yeniden deneyin veya metinle devam edin.")
+                return
         else:
             self.controller.pause_conversation()
         self._paused = paused
         self.pause_button.configure(text="Devam et" if self._paused else "Duraklat")
         if self._paused:
             self.status.configure(text="Sesli sohbet duraklatıldı; mikrofon kapalı.")
+        self._sync_voice_surface()
 
     def exit_conversation(self):
         if self.controller:
@@ -361,10 +412,46 @@ class VoicePanel(ctk.CTkFrame):
         self.pause_button.configure(text="Duraklat")
         self.dismiss_command(resolve=False)
         self._stop_duration()
+        self._close_voice_surface()
+
+    def show_voice_surface(self):
+        if self._voice_surface is not None and self._voice_surface.winfo_exists():
+            self._voice_surface.lift()
+            return self._voice_surface
+        from firik_agent.ui.components.voice_session import VoiceSessionPanel
+        self._voice_surface = VoiceSessionPanel(self)
+        self._bind_shortcut(force=True)
+        self._voice_surface.set_transcript(self._last_transcript, pending=self._pending)
+        self._voice_surface.set_preview(self._response_preview_text)
+        self._sync_voice_surface()
+        return self._voice_surface
+
+    def _close_voice_surface(self):
+        surface, self._voice_surface = self._voice_surface, None
+        if surface is not None and surface.winfo_exists():
+            surface.destroy()
+            if not self._closed:
+                self._bind_shortcut(force=True)
+
+    def _sync_voice_surface(self):
+        if self._voice_surface is not None and self._voice_surface.winfo_exists():
+            canonical = getattr(self.controller, "state_id", self._last_state)
+            canonical = getattr(canonical, "value", canonical)
+            self._voice_surface.update_state(canonical,
+                recording=self._last_state in {"recording", "listening", "speech_detected"},
+                paused=self._paused, conversation=self._conversation)
+
+    def _sync_surface_draft(self):
+        if self._voice_surface is not None and self._pending:
+            self._voice_surface.set_transcript(self.command_text.get(), pending=True)
 
     def _on_state(self, state):
         if self._closed or not self._active:
             return
+        self._last_state = state
+        if state in {"recording", "listening", "speech_detected", "transcribing", "speaking"}:
+            self._last_operation = state
+            self.error_actions.grid_remove()
         if self.controller:
             generation = getattr(self.controller, "generation", None)
             if self._pending and generation != self._review_generation:
@@ -375,6 +462,10 @@ class VoicePanel(ctk.CTkFrame):
                 self.session_button.configure(text="Sesli sohbet açık" if self._conversation else "Sesli sohbet")
                 self.pause_button.configure(text="Devam et" if self._paused else "Duraklat")
         recording = state in ("recording", "listening", "speech_detected")
+        if self.composer_mic_button is not None:
+            self.composer_mic_button.configure(text="■ Bitir" if recording else "🎙 Ses",
+                fg_color=("#dc2626", "#b91c1c") if recording else "transparent",
+                text_color="white" if recording else ("gray20", "gray90"))
         self.toggle_button.configure(text="Kaydı bitir" if recording else "Aç / bitir")
         self._state_label = {
             "disabled": "Ses kapalı", "idle": "Hazır", "ready": "Hazır",
@@ -397,10 +488,13 @@ class VoicePanel(ctk.CTkFrame):
         if state != "speaking":
             self._speech_paused = False
             self.speech_pause_button.configure(text="Sesi duraklat")
+        self._sync_voice_surface()
 
     def _on_level(self, value):
         if self._active and not self._closed:
             self.input_level.set(max(0, min(1, float(value))))
+            if self._voice_surface is not None:
+                self._voice_surface.update_level(value)
 
     def _tick_duration(self):
         self._duration_job = None
@@ -428,18 +522,24 @@ class VoicePanel(ctk.CTkFrame):
                 or self._capture_session != self.get_session_id()):
             return
         self._pending = True
+        self._last_transcript = str(text)
         self._stop_duration()
         self.toggle_button.configure(text="Aç / bitir")
         self._review_generation = getattr(self.controller, "generation", None)
         self.command_text.delete(0, "end")
         self.command_text.insert(0, text)
         self._show_review()
+        if self._voice_surface is not None:
+            self._voice_surface.set_transcript(text, pending=True)
+            self._voice_surface.show_error("")
         if self.on_submit is not None or self.on_submit_request is not None:
             try:
                 self._voice_request = self._router().create_request(str(text), self._capture_scope or self._voice_scope(),
                     recognized_language=getattr(text, "recognized_language", None))
             except ValueError as error:
                 self.status.configure(text=str(error))
+                if self._voice_surface is not None:
+                    self._voice_surface.show_error(error)
                 return
         # Preserve the legacy dictation-only embedding API. Actual chat/coding
         # panels supply on_submit and keep unsent speech solely in this review.
@@ -468,6 +568,21 @@ class VoicePanel(ctk.CTkFrame):
         if not self._closed and self._active:
             self._stop_duration()
             self.status.configure(text=message)
+            self.error_actions.grid(row=self._status_row + 3, column=0, columnspan=4, sticky="w", pady=4)
+            if self._voice_surface is not None:
+                self._voice_surface.show_error(message)
+
+    def retry_voice_error(self):
+        if self._last_operation == "speaking":
+            self.replay_speech()
+        else:
+            self.retry_transcript()
+
+    def use_text_input(self):
+        self.exit_conversation()
+        self.error_actions.grid_remove()
+        self.status.configure(text="Metin girişi kullanılabilir.")
+        self.on_text_fallback()
 
     def apply_transcript(self, *, _from_auto=False, _command_only=False):
         if (not self._active or self._closed or not self._pending or self._submitting
@@ -495,18 +610,25 @@ class VoicePanel(ctk.CTkFrame):
             accepted = router.route(request)
         except ValueError as error:
             self.status.configure(text=str(error))
+            if self._voice_surface is not None:
+                self._voice_surface.show_error(error)
             return
         finally:
             self._submitting = False
         if self._closed or not self._active:
             return
         if accepted:
-            self.dismiss_command(resolve=False)
+            self._last_transcript = request.request_text
+            self.dismiss_command(resolve=False, sent=True)
+            if self._voice_surface is not None:
+                self._voice_surface.mark_transcript_sent()
             if self.controller and hasattr(self.controller, "transcript_resolved"):
                 self.controller.transcript_resolved(submitted=request.command is None)
         else:
             self.status.configure(text=("Etkin işlem sürüyor. Transkript bekliyor; işlem bitince gönderebilirsiniz."
                                        if self.is_busy() else "Transkript gönderilmedi. Mevcut taslağı veya etkin işlemi kontrol edin."))
+            if self._voice_surface is not None:
+                self._voice_surface.show_error(self.status.cget("text"))
 
     def apply_command(self):
         self.apply_transcript(_command_only=True)
@@ -535,7 +657,7 @@ class VoicePanel(ctk.CTkFrame):
             self.controller.transcript_resolved(False)
         self.toggle_recording()
 
-    def dismiss_command(self, resolve=True):
+    def dismiss_command(self, resolve=True, *, sent=False):
         if self._voice_request is not None and self._voice_request.pending:
             self._voice_request.cancellation_token.set()
         self._voice_request = None
@@ -544,10 +666,18 @@ class VoicePanel(ctk.CTkFrame):
         self._review_generation = None
         self.review.grid_remove()
         self.command_text.delete(0, "end")
+        if not sent:
+            self._last_transcript = ""
+        if self._voice_surface is not None:
+            self._voice_surface.set_transcript(self._last_transcript, pending=False)
         if pending and resolve and self.controller and hasattr(self.controller, "transcript_resolved"):
             self.controller.transcript_resolved(submitted=False)
 
     def response_started(self, state="thinking"):
+        self._stop_audio_guard()
+        self._response_preview_text = ""
+        if self._voice_surface is not None:
+            self._voice_surface.set_preview("")
         settings = self._settings()
         if self._active and not self._closed and (self.controller or
                 settings.enabled and settings.read_replies and settings.stream_replies):
@@ -572,26 +702,97 @@ class VoicePanel(ctk.CTkFrame):
 
     def response_delta(self, text):
         settings = self._settings()
+        self._update_response_preview(text, append=True)
         if (self._active and not self._closed and self.winfo_ismapped() and settings.enabled
-                and settings.read_replies and settings.stream_replies):
+                and settings.read_replies and settings.stream_replies and self._automatic_audio_allowed()):
             controller = self._controller()
             if hasattr(controller, "response_delta"):
                 controller.response_delta(text)
+                self._watch_automatic_speech()
 
     def response_completed(self, text):
         settings = self._settings()
+        self._update_response_preview(text or "")
         if not (self._active and not self._closed and self.winfo_ismapped() and settings.enabled) or self.is_busy():
             return
         controller = self._controller()
+        automatic = bool(text and settings.read_replies and self._automatic_audio_allowed())
         if hasattr(controller, "response_completed"):
-            controller.response_completed(text if settings.read_replies else None)
-        elif text and settings.read_replies:
+            controller.response_completed(text if automatic else None)
+        elif automatic:
             controller.speak(text)
+        if automatic:
+            self._watch_automatic_speech()
+
+    def _watch_automatic_speech(self):
+        self._automatic_speech = True
+        if self._audio_guard_job is None:
+            self._schedule_audio_guard()
+
+    def _schedule_audio_guard(self, delay=80):
+        if self._audio_guard_job is not None:
+            self.after_cancel(self._audio_guard_job)
+        self._audio_guard_job = self.after(delay, self._guard_automatic_speech)
+
+    def _stop_audio_guard(self):
+        self._automatic_speech = False
+        if self._audio_guard_job is not None:
+            self.after_cancel(self._audio_guard_job)
+            self._audio_guard_job = None
+
+    def _guard_automatic_speech(self):
+        self._audio_guard_job = None
+        if not self._automatic_speech or self._closed:
+            return
+        if not self._settings().read_replies or not self._automatic_audio_allowed():
+            self.stop_speaking()
+            return
+        state = getattr(self.controller, "state_id", getattr(self.controller, "state", None))
+        if getattr(state, "value", state) == "speaking" or self.is_busy():
+            self._schedule_audio_guard()
+        else:
+            self._automatic_speech = False
+
+    def _update_response_preview(self, text, *, append=False):
+        if not self._settings().enabled or not self._active or self._closed:
+            return
+        self._response_preview_text = ((self._response_preview_text + str(text)) if append else str(text))[:2048]
+        if self._voice_surface is not None:
+            from firik_agent.projects.indexer import sanitize_secrets
+            from firik_agent.voice.speech import speech_text
+            self._voice_surface.set_preview(speech_text(sanitize_secrets(self._response_preview_text)))
+
+    def _automatic_audio_allowed(self):
+        if (not self._settings().enabled or not self._active or self._closed
+                or not self.winfo_ismapped() or self._pending or self._holding):
+            return False
+        if self._dialog is not None:
+            return False
+        if getattr(self.controller, "_muted", False):
+            return False
+        top = self.winfo_toplevel()
+        try:
+            if top.state() in {"iconic", "withdrawn"}:
+                return False
+            focus = top.focus_displayof()
+            if focus is None or focus.winfo_toplevel() not in (top, self._voice_surface):
+                return False
+        except tk.TclError:
+            return False
+        return self._last_state not in {"recording", "listening", "speech_detected", "transcribing", "awaiting_confirmation"}
+
+    def coding_completion(self, text, *, outcome="completed"):
+        settings = self._settings()
+        if (outcome == "completed" and getattr(settings, "completion_chime", False) and self._automatic_audio_allowed()
+                and not (self._conversation and not self._paused)):
+            self.bell()
+        self.response_completed(text)
 
     def read_text(self, text):
         if not self._settings().enabled:
             self.open_settings()
         elif text and self._active and not self._closed:
+            self.stop_speaking()
             self._controller().speak(text)
 
     def stop_listening(self):
@@ -605,8 +806,10 @@ class VoicePanel(ctk.CTkFrame):
         self.pause_button.configure(text="Devam et" if self._paused else "Duraklat")
         self._stop_duration()
         self.status.configure(text="Dinleme durduruldu; etkin ajan işlemi sürer.")
+        self._sync_voice_surface()
 
     def stop_speaking(self):
+        self._stop_audio_guard()
         if self.controller and hasattr(self.controller, "stop_speaking"):
             self.controller.stop_speaking()
 
@@ -616,9 +819,11 @@ class VoicePanel(ctk.CTkFrame):
             if getattr(self.controller, action, lambda: False)():
                 self._speech_paused = not self._speech_paused
                 self.speech_pause_button.configure(text="Sese devam et" if self._speech_paused else "Sesi duraklat")
+                self._sync_voice_surface()
 
     def replay_speech(self):
         if self.controller:
+            self.stop_speaking()
             return getattr(self.controller, "replay_speech", lambda: False)()
         return False
 
@@ -635,15 +840,19 @@ class VoicePanel(ctk.CTkFrame):
                 action()
 
     def cancel(self):
+        self._stop_audio_guard()
         if self._voice_request is not None and self._voice_request.pending:
             self._voice_request.cancellation_token.set()
         self._voice_request = None
         self._capture_scope = None
+        self._response_preview_text = self._last_transcript = ""
         if self.controller:
             self.controller.cancel()
         self._holding, self._hold_source = False, None
         self._conversation, self._paused = False, False
         self._stop_duration()
+        self._close_voice_surface()
+        self.error_actions.grid_remove()
         if not self._closed:
             self.session_button.configure(text="Sesli sohbet")
             self.pause_button.configure(text="Duraklat")
@@ -670,6 +879,10 @@ class VoicePanel(ctk.CTkFrame):
 
     def destroy(self):
         self._closed = True
+        self._stop_audio_guard()
+        if hasattr(self.service, "remove_voice_settings_listener"):
+            self.service.remove_voice_settings_listener(self.refresh_settings)
+        self._close_voice_surface()
         if self._request_router is not None:
             self._request_router.close()
         self._stop_duration()
@@ -680,198 +893,46 @@ class VoicePanel(ctk.CTkFrame):
             self._dialog.destroy()
         super().destroy()
 
+    def refresh_settings(self):
+        if self._closed:
+            return
+        self.cancel()
+        self.dismiss_command(resolve=False)
+        if self.controller is not None:
+            self.controller.settings = self._settings()
+        self._bind_shortcut()
+        self._state_label = "Hazır" if self._settings().enabled else "Ses kapalı"
+        self.status.configure(text=self._state_label)
+
     def open_settings(self):
         if self._dialog is not None and self._dialog.winfo_exists():
             self._dialog.lift()
             return
         self.stop_listening()
-        settings = self._settings()
+        from firik_agent.ui.components.voice_settings import VoiceSettingsFrame
         dialog = self._dialog = ctk.CTkToplevel(self)
         dialog.title("Ses ayarları")
-        dialog.geometry("620x720")
+        width = min(680, max(380, dialog.winfo_screenwidth() - 80))
+        height = min(740, max(500, dialog.winfo_screenheight() - 100))
+        dialog.geometry(f"{width}x{height}")
+        dialog.minsize(380, 480)
         dialog.transient(self.winfo_toplevel())
         dialog.grid_columnconfigure(0, weight=1)
         dialog.grid_rowconfigure(0, weight=1)
-        body = ctk.CTkScrollableFrame(dialog, fg_color="transparent")
-        body.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        body.grid_columnconfigure(1, weight=1)
-        enabled = tk.BooleanVar(value=settings.enabled)
-        read = tk.BooleanVar(value=settings.read_replies)
-        auto = tk.BooleanVar(value=getattr(settings, "auto_send", False))
-        review = tk.BooleanVar(value=getattr(settings, "review_before_send", True))
-        stream = tk.BooleanVar(value=settings.stream_replies)
-        barge = tk.BooleanVar(value=getattr(settings, "barge_in", False))
-        vad_enabled = tk.BooleanVar(value=settings.vad_enabled)
-        ctk.CTkCheckBox(body, text="Ses özelliklerini etkinleştir", variable=enabled).grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=10)
-        ctk.CTkLabel(body, text="Bas-konuş: yalnızca basılı tutarken kayıt. Aç / bitir erişilebilir alternatiftir.\nSesli sohbeti açıkça başlatın; yerel VAD tamamlanan sözleri ayırır.\nEvren ASR seçiliyse tamamlanan ses Evren'e gönderilir; ham ses diske yazılmaz.\nEvren TTS yanıt metnini Evren'e gönderir; sistem TTS yerel çalışır.\nDuraklat / çıkış mikrofonu kapatır. Yazılı sohbet her zaman kullanılabilir.", justify="left", anchor="w", wraplength=550).grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=8)
-        for row, (label, variable) in enumerate((("Tamamlanan yanıtları sesli oku", read),
-                ("Sıradan istekleri otomatik gönder", auto), ("Göndermeden önce her transkripti incele", review)), 2):
-            ctk.CTkCheckBox(body, text=label, variable=variable).grid(row=row, column=0, columnspan=2, sticky="w", padx=8, pady=6)
-        barge.set(False)
-        ctk.CTkLabel(body, text="Yankı iptali yok: yanıt okunurken mikrofon kapalıdır.\nAraya girmek için Basılı tut düğmesi sesi durdurur. Kulaklık önerilir.",
-                       justify="left", wraplength=550).grid(row=5, column=0, columnspan=2, sticky="w", padx=8, pady=6)
-        ctk.CTkLabel(body, text="Hassas işlemler ve ajanı durdurma komutları her zaman inceleme gerektirir.", wraplength=550, justify="left").grid(row=6, column=0, columnspan=2, sticky="w", padx=8, pady=6)
-        ctk.CTkLabel(body, text="Konuşma dili").grid(row=7, column=0, sticky="w", padx=8, pady=6)
-        language = ctk.CTkOptionMenu(body, values=["Otomatik", "Türkçe", "İngilizce"])
-        language.set({"auto": "Otomatik", "tr": "Türkçe", "en": "İngilizce"}[settings.language])
-        language.grid(row=7, column=1, sticky="ew", padx=8)
-        entries = {}
-        fields = [("max_record_seconds", "En uzun söz (5–120 sn)", str(settings.max_record_seconds)),
-                  ("speech_rate", "Okuma hızı (kelime/dakika)", str(settings.speech_rate)),
-                  ("playback_speed", "Seslendirme hız çarpanı (0.25–4)", str(settings.playback_speed)),
-                  ("shortcut", "Bas-konuş kısayolu (Tk biçimi)", getattr(settings, "shortcut", "<Control-space>")),
-                  ("vad_threshold", "Konuşma eşiği (PCM RMS)", str(getattr(settings, "vad_threshold", 350))),
-                  ("vad_silence_ms", "Söz sonu sessizlik (ms)", str(getattr(settings, "vad_silence_ms", 700))),
-                  ("input_gain", "Mikrofon kazancı (0.1–4)", str(settings.input_gain)),
-                  ("output_volume", "Yanıt ses düzeyi (0–1)", str(settings.output_volume)),
-                  ("vad_min_speech_ms", "En kısa konuşma (ms)", str(settings.vad_min_speech_ms)),
-                  ("vad_pre_roll_ms", "Konuşma öncesi koruma (ms)", str(settings.vad_pre_roll_ms)),
-                  ("asr_request_seconds", "İstek başına ses (1–30 sn)", str(settings.asr_request_seconds))]
-        selections, menus, choices = {}, {}, {}
-        for row, kind, title, current in ((8, "input", "Mikrofon", settings.input_device),
-                                           (9, "output", "Hoparlör", settings.output_device)):
-            selections[kind] = current
-            initial = "Sistem varsayılanı" if current is None else f"Seçili: {current}"
-            choices[kind] = {"Sistem varsayılanı": None, initial: current}
-            def selected(label, kind=kind):
-                selections[kind] = choices[kind][label]
-            ctk.CTkLabel(body, text=title).grid(row=row, column=0, sticky="w", padx=8, pady=6)
-            menus[kind] = ctk.CTkOptionMenu(body, values=list(choices[kind]), command=selected)
-            menus[kind].set(initial)
-            menus[kind].grid(row=row, column=1, sticky="ew", padx=8)
 
-        def devices_loaded(devices):
-            if self._closed or self._dialog is not dialog or not dialog.winfo_exists():
-                return
-            for kind, items in devices.items():
-                # Duplicate labels remain distinguishable and IDs resolve
-                # ambiguously rather than silently choosing another device.
-                for item in items:
-                    choices[kind][f"{item.name} · {item.host_api} ({item.index})"] = item.id
-                menus[kind].configure(values=list(choices[kind]))
-            device_status.configure(text="Aygıt seçimi sonraki kayıtta / oynatmada uygulanır.")
-        def devices_error(message):
-            if not self._closed and self._dialog is dialog and dialog.winfo_exists():
-                device_status.configure(text=message)
-        device_status = ctk.CTkLabel(body, text="Ses aygıtları taranıyor…", wraplength=550, justify="left")
-        device_status.grid(row=10, column=0, columnspan=2, sticky="w", padx=8, pady=4)
-        if hasattr(self.service, "audio_devices_async"):
-            self.service.audio_devices_async(devices_loaded, devices_error)
-        else:
-            device_status.configure(text="Sistem varsayılanını veya kayıtlı aygıtı seçin.")
-        for row, (key, label, value) in enumerate(fields, 11):
-            ctk.CTkLabel(body, text=label).grid(row=row, column=0, sticky="w", padx=8, pady=6)
-            entry = ctk.CTkEntry(body)
-            entry.insert(0, value)
-            entry.grid(row=row, column=1, sticky="ew", padx=8)
-            entries[key] = entry
-        next_row = 11 + len(fields)
-        provider_menus = {}
-        for key, label, options, current in (
-                ("asr_provider", "Ses çözümleme sağlayıcısı", ["evren"], settings.asr_provider),
-                ("asr_model", "Ses çözümleme modeli", ["qwen3-asr-1.7b"], settings.asr_model),
-                ("tts_provider", "Seslendirme sağlayıcısı", ["evren", "system"], settings.tts_provider),
-                ("tts_model", "Evren seslendirme modeli", ["voxcpm2"], settings.tts_model),
-                ("tts_voice", "Evren sesi", ["default"], settings.tts_voice),
-                ("tts_format", "Evren ses biçimi", ["wav", "mp3", "flac", "opus", "pcm"], settings.tts_format),
-                ("interaction_mode", "Tercih edilen etkileşim", ["push_to_talk", "conversation"], settings.interaction_mode)):
-            ctk.CTkLabel(body, text=label).grid(row=next_row, column=0, sticky="w", padx=8, pady=6)
-            menu = ctk.CTkOptionMenu(body, values=options)
-            if key == "interaction_mode":
-                menu.configure(command=lambda value: vad_enabled.set(value == "conversation"))
-            # Future/local configurations remain visible instead of silently
-            # switching a provider. Validation/runtime reports availability.
-            menu.set(current)
-            menu.grid(row=next_row, column=1, sticky="ew", padx=8)
-            provider_menus[key] = menu
-            next_row += 1
-        ctk.CTkLabel(body, text="ASR, sohbet modeli ve TTS birbirinden bağımsızdır. Kodlama modeli değişmez.\nEvren ses API sözleşmesi belgelenmiştir; hesabınızdaki model erişimi ve\nTürkçe / İngilizce ses kalitesi canlı istekle henüz doğrulanmamıştır.\nYalnızca default sesi sunulur. Ses klonlama kapalıdır.\nWAV yerleşik oynatılır; diğer biçimler isteğe bağlı çözücü gerektirebilir.",
-                       justify="left", wraplength=550).grid(row=next_row, column=0, columnspan=2, sticky="w", padx=8, pady=8)
-        next_row += 1
-        capability_status = ctk.CTkLabel(body, text="Model erişimi henüz sorgulanmadı.", justify="left", wraplength=550)
-        capability_status.grid(row=next_row, column=0, columnspan=2, sticky="w", padx=8, pady=4)
-        next_row += 1
+        def saved(settings):
+            if self._dialog is dialog:
+                self._dialog = None
+                dialog.destroy()
+            self.refresh_settings()
 
-        def capabilities_loaded(capabilities):
-            if self._closed or self._dialog is not dialog or not dialog.winfo_exists():
-                return
-            summaries = []
-            for kind in ("asr", "tts"):
-                capability = capabilities.get(kind)
-                if capability is None:
-                    continue
-                if getattr(capability, "provider", "") == "system":
-                    summaries.append(f"{kind.upper()}: sistem seslendirmesi seçili.")
-                    continue
-                available = getattr(capability, "available_models", None)
-                if getattr(capability, "authenticated", False) and available is not None:
-                    summaries.append(f"{kind.upper()}: " + (", ".join(available) if available else "hesapta uygun ses modeli görünmüyor."))
-                else:
-                    summaries.append(f"{kind.upper()}: hesap erişimi doğrulanmadı.")
-            capability_status.configure(text="\n".join(summaries) or "Ses yetenekleri henüz doğrulanmadı.")
-            capability_button.configure(state="normal")
-
-        def capabilities_error(message):
-            if self._closed or self._dialog is not dialog or not dialog.winfo_exists():
-                return
-            capability_status.configure(text=str(message))
-            capability_button.configure(state="normal")
-
-        def discover_capabilities():
-            capability_status.configure(text="Evren model erişimi sorgulanıyor; mikrofon açılmaz…")
-            capability_button.configure(state="disabled")
-            self.service.discover_voice_capabilities_async(capabilities_loaded, capabilities_error)
-
-        capability_button = ctk.CTkButton(body, text="Evren model erişimini kontrol et", command=discover_capabilities)
-        capability_button.grid(row=next_row, column=0, columnspan=2, sticky="w", padx=8, pady=6)
-        if not hasattr(self.service, "discover_voice_capabilities_async"):
-            capability_button.configure(state="disabled")
-        next_row += 1
-        ctk.CTkCheckBox(body, text="Aç / bitir düğmesinde yerel VAD sohbetini tercih et", variable=vad_enabled,
-                       command=lambda: provider_menus["interaction_mode"].set("conversation" if vad_enabled.get() else "push_to_talk")).grid(row=next_row, column=0, columnspan=2, sticky="w", padx=8, pady=6)
-        next_row += 1
-        ctk.CTkLabel(body, text="Konuşma algılama").grid(row=next_row, column=0, sticky="w", padx=8)
-        vad_engine = ctk.CTkOptionMenu(body, values=["energy", "webrtc"])
-        vad_engine.set(settings.vad_engine)
-        vad_engine.grid(row=next_row, column=1, sticky="ew", padx=8)
-        ctk.CTkCheckBox(body, text="Yanıt cümleleri tamamlandıkça oku", variable=stream).grid(row=next_row + 1, column=0, columnspan=2, sticky="w", padx=8, pady=6)
-        ctk.CTkLabel(body, text="WebRTC için isteğe bağlı voice-vad paketini kurun.\nAraç ve plan onayları mevcut onay ekranından verilir.\nUyandırma sözcüğü: yerel doğruluk doğrulanmadığı için devre dışı.", justify="left", wraplength=550).grid(row=next_row + 2, column=0, columnspan=2, sticky="w", padx=8, pady=10)
-
-        def save():
-            try:
-                shortcut = entries["shortcut"].get().strip()
-                # Ask Tk to parse the actual binding before persisting it.
-                binding_id = dialog.bind(shortcut, lambda event: None, add="+")
-                if binding_id:
-                    dialog.unbind(shortcut, binding_id)
-                values = dict(enabled=enabled.get(), read_replies=read.get(), stream_replies=stream.get(),
-                    language={"Otomatik": "auto", "Türkçe": "tr", "İngilizce": "en"}[language.get()],
-                    model=provider_menus["asr_model"].get(), max_record_seconds=int(entries["max_record_seconds"].get()),
-                    asr_provider=provider_menus["asr_provider"].get(),
-                    tts_provider=provider_menus["tts_provider"].get(), tts_model=provider_menus["tts_model"].get(),
-                    tts_voice=provider_menus["tts_voice"].get(), tts_format=provider_menus["tts_format"].get(),
-                    interaction_mode=provider_menus["interaction_mode"].get(),
-                    vad_enabled=vad_enabled.get() or provider_menus["interaction_mode"].get() == "conversation",
-                    playback_speed=float(entries["playback_speed"].get()),
-                    input_device=selections["input"], output_device=selections["output"],
-                    input_gain=float(entries["input_gain"].get()), output_volume=float(entries["output_volume"].get()),
-                    vad_min_speech_ms=int(entries["vad_min_speech_ms"].get()),
-                    vad_pre_roll_ms=int(entries["vad_pre_roll_ms"].get()), vad_engine=vad_engine.get(),
-                    asr_request_seconds=int(entries["asr_request_seconds"].get()),
-                    speech_rate=int(entries["speech_rate"].get()))
-                additions = dict(auto_send=auto.get(), review_before_send=review.get(), barge_in=barge.get(),
-                    shortcut=shortcut, vad_threshold=int(entries["vad_threshold"].get()),
-                    vad_silence_ms=int(entries["vad_silence_ms"].get()))
-                values.update({key: value for key, value in additions.items() if key in VoiceSettings.__dataclass_fields__})
-                validated = replace(settings, **values)
-                self.service.update_voice_settings(VoiceSettings.from_mapping(validated.to_dict()))
-            except (ValueError, OSError, tk.TclError) as exc:
-                messagebox.showerror("Ses ayarları", f"Ayarlar kaydedilemedi: {exc}", parent=dialog)
-                return
-            dialog.destroy()
-            self._dialog = None
-            self.cancel()
-            self.dismiss_command(resolve=False)
-            self._bind_shortcut()
-
-        ctk.CTkButton(dialog, text="Kaydet", command=save).grid(row=1, column=0, pady=(0, 10))
+        form = VoiceSettingsFrame(dialog, self.service, on_saved=saved, show_save=False)
+        form.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self._settings_form = form
+        def closed(event):
+            if event.widget is dialog and self._dialog is dialog:
+                self._dialog = None
+                self._settings_form = None
+        dialog.bind("<Destroy>", closed, add="+")
+        ctk.CTkButton(dialog, text="Kaydet", command=form.save).grid(row=1, column=0, pady=(0, 10))
+        dialog.bind("<Escape>", lambda event: dialog.destroy())

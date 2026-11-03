@@ -1,0 +1,61 @@
+1/15 tests/test_ui_voice_experience.py::test_composer_microphone_shares_send_row_and_keyboard_activates_existing_controller[conversation]: 0
+.                                                                        [100%]
+1 passed in 1.53s
+
+2/15 tests/test_ui_voice_experience.py::test_composer_microphone_shares_send_row_and_keyboard_activates_existing_controller[coding]: 0
+.                                                                        [100%]
+1 passed in 1.59s
+
+3/15 tests/test_ui_voice_experience.py::test_dedicated_session_edits_final_transcript_into_same_chat_without_partial_text: 0
+.                                                                        [100%]
+1 passed in 1.90s
+
+4/15 tests/test_ui_voice_experience.py::test_session_mute_resume_and_window_close_release_capture_without_agent_cancel: 0
+.                                                                        [100%]
+1 passed in 1.41s
+
+5/15 tests/test_ui_voice_experience.py::test_microphone_permission_error_exposes_retry_and_text_fallback: 0
+.                                                                        [100%]
+1 passed in 1.55s
+
+6/15 tests/test_ui_voice_experience.py::test_response_preview_respects_disabled_auto_reading_and_retains_text: 0
+.                                                                        [100%]
+1 passed in 1.42s
+
+7/15 tests/test_ui_voice_experience.py::test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible[hidden]: 0
+.                                                                        [100%]
+1 passed in 1.40s
+
+8/15 tests/test_ui_voice_experience.py::test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible[minimized]: 0
+.                                                                        [100%]
+1 passed in 2.58s
+
+9/15 tests/test_ui_voice_experience.py::test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible[other_window]: 0
+.                                                                        [100%]
+1 passed in 1.55s
+
+10/15 tests/test_ui_voice_experience.py::test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible[settings_modal]: 0
+.                                                                        [100%]
+1 passed in 1.38s
+
+11/15 tests/test_ui_voice_experience.py::test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible[pending_review]: 0
+.                                                                        [100%]
+1 passed in 1.39s
+
+12/15 tests/test_ui_voice_experience.py::test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible[muted]: 0
+.                                                                        [100%]
+1 passed in 1.39s
+
+13/15 tests/test_ui_voice_experience.py::test_completion_chime_is_opt_in_and_suppressed_during_voice_capture: 0
+.                                                                        [100%]
+1 passed in 1.40s
+
+14/15 tests/test_ui_voice_experience.py::test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes[Light]: 0
+.                                                                        [100%]
+1 passed in 2.34s
+
+15/15 tests/test_ui_voice_experience.py::test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes[Dark]: 0
+.                                                                        [100%]
+1 passed in 2.22s
+
+Cases: 15, failures: 0

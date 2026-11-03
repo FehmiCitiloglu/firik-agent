@@ -100,6 +100,9 @@ class FirikService(CodingBridge):
     def __init__(self, dispatch=None, config_path=None) -> None:
         self._dispatch = dispatch or (lambda callback, *args: callback(*args))
         self._voice_controllers = weakref.WeakSet()
+        self._voice_input_tests = weakref.WeakSet()
+        self._voice_input_tests_closing = False
+        self._voice_settings_listeners = []
         from firik_agent.voice.controller import CaptureCoordinator
         self._voice_capture = CaptureCoordinator()
         from firik_agent.voice.providers import VoiceRequestGate
@@ -536,9 +539,44 @@ class FirikService(CodingBridge):
         config["voice"] = validated.to_dict()
         save_config(config, self.config_path)
         self.config["voice"] = config["voice"]
+        for test in list(getattr(self, "_voice_input_tests", ())):
+            test.cancel()
         for controller in list(self._voice_controllers):
             controller.settings = validated
             controller.cancel()
+        self._notify_voice_settings_listeners()
+
+    def add_voice_settings_listener(self, callback):
+        """Weak listeners refresh mounted voice controls after a settings save."""
+        listeners = [reference for reference in getattr(self, "_voice_settings_listeners", ())
+                     if reference() is not None]
+        if not any(reference() == callback for reference in listeners):
+            try:
+                listeners.append(weakref.WeakMethod(callback))
+            except TypeError:
+                listeners.append(weakref.ref(callback))
+        self._voice_settings_listeners = listeners
+
+    def remove_voice_settings_listener(self, callback):
+        self._voice_settings_listeners = [reference for reference in
+            getattr(self, "_voice_settings_listeners", ()) if reference() is not None and reference() != callback]
+
+    def _deliver_voice_settings_listener(self, reference):
+        if reference not in getattr(self, "_voice_settings_listeners", ()):
+            return
+        callback = reference()
+        if callback is not None:
+            try:
+                callback()
+            except Exception:
+                logger.debug("Ses ayarı dinleyicisi yenilenemedi.")
+
+    def _notify_voice_settings_listeners(self):
+        listeners = [reference for reference in getattr(self, "_voice_settings_listeners", ())
+                     if reference() is not None]
+        self._voice_settings_listeners = listeners
+        for reference in listeners:
+            self._dispatch(self._deliver_voice_settings_listener, reference)
 
     @property
     def voice_capabilities(self):
@@ -655,8 +693,32 @@ class FirikService(CodingBridge):
         return controller
 
     def stop_voice(self) -> None:
+        for test in list(getattr(self, "_voice_input_tests", ())):
+            test.cancel()
         for controller in list(getattr(self, "_voice_controllers", ())):
             controller.cancel()
+
+    def start_voice_input_test(self, on_level, on_done, on_error, settings=None):
+        """Explicit local microphone level check; never transcribes or uploads."""
+        from firik_agent.voice.config import VoiceSettings
+        from firik_agent.voice.diagnostics import InputLevelTest
+        from firik_agent.voice.controller import CaptureCoordinator
+        settings = self.voice_settings if settings is None else VoiceSettings.from_mapping(settings.to_dict())
+        if not hasattr(self, "_voice_capture"):
+            self._voice_capture = CaptureCoordinator()
+        if not hasattr(self, "_voice_input_tests"):
+            self._voice_input_tests = weakref.WeakSet()
+        test = InputLevelTest(coordinator=self._voice_capture, dispatch=self._dispatch,
+            settings=settings, on_level=on_level, on_done=on_done, on_error=on_error)
+        self._voice_input_tests.add(test)
+        if getattr(self, "_voice_input_tests_closing", False):
+            return test.reject("Uygulama kapanıyor; mikrofon testi başlatılamaz.")
+        return test.start()
+
+    def voice_diagnostics(self):
+        """Offline setup facts, without microphone/network/credential access."""
+        from firik_agent.voice.diagnostics import voice_diagnostics
+        return voice_diagnostics(self.voice_settings)
 
     def validate_voice_request(self, request) -> None:
         """Resolve only already-owned sessions; voice cannot create an ID here."""
@@ -1316,11 +1378,17 @@ class FirikService(CodingBridge):
 
     def shutdown(self) -> None:
         """Cleanly shutdown runtime and all MCP child processes."""
+        self._voice_input_tests_closing = True
+        input_tests = list(getattr(self, "_voice_input_tests", ()))
+        for test in input_tests:
+            test.cancel()
         for controller in list(self._voice_controllers):
             controller.close()
         for controller in list(self._voice_controllers):
             if hasattr(controller, "shutdown"):
                 controller.shutdown(timeout=3.0)
+        for test in input_tests:
+            test.shutdown(timeout=3.0)
         self.cancel_active_stream()
         try:
             self.runtime.run_sync(self.mcp_manager.shutdown(), timeout=5.0)

@@ -1,5 +1,6 @@
 """Real Tk voice integration: reviewed dictation, existing sessions, safe controls."""
 from dataclasses import replace
+import time
 
 import customtkinter as ctk
 import pytest
@@ -65,8 +66,25 @@ def dictate(panel, service, text):
     controller = service.controllers[-1]
     panel.toggle_recording()
     controller.state = "idle"
+    # The real controller emits its legacy idle alias after finalized PTT ASR.
+    controller.callbacks["on_state"]("idle")
     controller.callbacks["on_transcript"](text)
     return controller
+
+
+def foreground_voice_window(root):
+    """Automatic speech requires actual foreground focus, including on Aqua."""
+    root.deiconify()
+    root.lift()
+    root.focus_force()
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline:
+        pump(root, .01)
+        focused = root.focus_displayof()
+        if focused is not None and focused.winfo_toplevel() is root:
+            return
+    focused = root.focus_displayof()
+    assert focused is not None and focused.winfo_toplevel() is root
 
 
 def test_dictation_review_uses_existing_model_session_and_completion(voice_chat):
@@ -85,6 +103,7 @@ def test_dictation_review_uses_existing_model_session_and_completion(voice_chat)
     stream = service.streams[-1]
     assert stream["prompt"] == "Türkçe and English"
     assert stream["session_id"] == sid and view.session.model == model
+    foreground_voice_window(root)
     emit(root, stream, AgentEventType.DONE, content="Tamamlandı.")
     stream["on_done"]("Tamamlandı.")
     pump(root)
@@ -169,12 +188,15 @@ def test_coding_voice_uses_project_run_path_and_preserves_approvals(workspace, m
     monkeypatch.setattr(app.service, "create_voice_controller", create)
     panel = view.coding_voice_panel
     panel.toggle_recording()
+    controllers[-1].state = "idle"
+    controllers[-1].callbacks["on_state"]("idle")
     controllers[-1].callbacks["on_transcript"]("main.py dosyasını incele")
     assert not streams
     panel.apply_transcript()
     assert streams[-1]["session_id"] == view._coding_state()["session"].session_id
     assert streams[-1]["cwd"] == project.local_path
     assert "main.py" in streams[-1]["prompt"]
+    foreground_voice_window(app)
     streams[-1]["on_done"]("İncelendi.")
     settle(app)
     assert len(controllers[-1].spoken) == 1
@@ -253,6 +275,7 @@ def test_real_desktop_pipeline_queues_audio_http_and_speech_on_existing_session(
     view.voice_panel.apply_transcript()
     stream = streams[-1]
     assert stream["session_id"] == view.session.session_id
+    foreground_voice_window(app)
     stream["on_done"]("Normal ajan yanıtı")
     deadline = time.monotonic() + 3
     while not spoken and time.monotonic() < deadline:

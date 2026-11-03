@@ -118,6 +118,7 @@ voice:
   max_utterance_duration: 60
   auto_send: false
   speak_responses: false
+  completion_chime: false
   barge_in: false
   wake_word_enabled: false
   retain_audio: false

@@ -1,0 +1,145 @@
+1/15 tests/test_ui_voice_experience.py::test_composer_microphone_shares_send_row_and_keyboard_activates_existing_controller[conversation]: 0
+.                                                                        [100%]
+1 passed in 1.63s
+
+2/15 tests/test_ui_voice_experience.py::test_composer_microphone_shares_send_row_and_keyboard_activates_existing_controller[coding]: 0
+.                                                                        [100%]
+1 passed in 1.59s
+
+3/15 tests/test_ui_voice_experience.py::test_dedicated_session_edits_final_transcript_into_same_chat_without_partial_text: 0
+.                                                                        [100%]
+1 passed in 1.67s
+
+4/15 tests/test_ui_voice_experience.py::test_session_mute_resume_and_window_close_release_capture_without_agent_cancel: 0
+.                                                                        [100%]
+1 passed in 1.37s
+
+5/15 tests/test_ui_voice_experience.py::test_microphone_permission_error_exposes_retry_and_text_fallback: 0
+.                                                                        [100%]
+1 passed in 1.55s
+
+6/15 tests/test_ui_voice_experience.py::test_response_preview_respects_disabled_auto_reading_and_retains_text: 0
+.                                                                        [100%]
+1 passed in 1.44s
+
+7/15 tests/test_ui_voice_experience.py::test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible[hidden]: 0
+.                                                                        [100%]
+1 passed in 1.42s
+
+8/15 tests/test_ui_voice_experience.py::test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible[minimized]: 0
+.                                                                        [100%]
+1 passed in 2.55s
+
+9/15 tests/test_ui_voice_experience.py::test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible[other_window]: 0
+.                                                                        [100%]
+1 passed in 1.50s
+
+10/15 tests/test_ui_voice_experience.py::test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible[settings_modal]: 0
+.                                                                        [100%]
+1 passed in 1.38s
+
+11/15 tests/test_ui_voice_experience.py::test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible[pending_review]: 0
+.                                                                        [100%]
+1 passed in 1.38s
+
+12/15 tests/test_ui_voice_experience.py::test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible[muted]: 0
+.                                                                        [100%]
+1 passed in 1.47s
+
+13/15 tests/test_ui_voice_experience.py::test_completion_chime_is_opt_in_and_suppressed_during_voice_capture: 0
+.                                                                        [100%]
+1 passed in 1.39s
+
+14/15 tests/test_ui_voice_experience.py::test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes[Light]: 1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes[Light] _
+
+workspace = (<firik_agent.ui.app.FirikApp object .>, <firik_agent.ui.views.projects_view.ProjectsView object .!ctkframe2.!projects...1.996566+00:00', last_activity_at='2026-11-03T08:03:51.996566+00:00', last_commit_hash='', last_commit_message=''), [])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108680b00>
+theme = 'Light'
+
+    @pytest.mark.parametrize('theme',['Light','Dark'])
+    def test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes(workspace,monkeypatch,theme):
+        ctk.set_appearance_mode(theme)
+        app,view,panel,controller,capture,speaker,streams = setup_chat(workspace,monkeypatch)
+        app.geometry('940x620')
+        settle(app,.1)
+        mic,send = view.voice_mic_button,view.send_btn
+        assert mic.winfo_ismapped() and panel.session_button.winfo_ismapped()
+        assert not panel.mic_button.winfo_ismapped()
+        assert send.winfo_rootx()+send.winfo_width()<=app.winfo_rootx()+app.winfo_width()
+        assert panel.winfo_height()<150
+        snapshot(app,'composer-'+theme.lower())
+        panel.start_conversation()
+        surface = panel._voice_surface
+        surface.geometry('380x540')
+        until(app,lambda:len(capture.windows)==1 and panel._last_state=='listening')
+        panel._on_level(.63)
+        settle(app,.12)
+        assert surface.exit_button.winfo_ismapped()
+        assert surface.exit_button.winfo_rooty()+surface.exit_button.winfo_height()<=surface.winfo_rooty()+surface.winfo_height()
+        assert surface.state_label.winfo_width()>180
+        assert surface.transcript.winfo_width()<=surface.winfo_width()
+>       assert surface.body.winfo_height()<surface.winfo_height()
+E       assert 636 < 540
+E        +  where 636 = winfo_height()
+E        +    where winfo_height = <customtkinter.windows.widgets.ctk_scrollable_frame.CTkScrollableFrame object .!ctkframe2.!chatworkspace.!ctkframe2.!chatview.!ctkframe7.!voicepanel.!voicesessionpanel.!ctkframe.!canvas.!ctkscrollableframe>.winfo_height
+E        +      where <customtkinter.windows.widgets.ctk_scrollable_frame.CTkScrollableFrame object .!ctkframe2.!chatworkspace.!ctkframe2.!chatview.!ctkframe7.!voicepanel.!voicesessionpanel.!ctkframe.!canvas.!ctkscrollableframe> = <firik_agent.ui.components.voice_session.VoiceSessionPanel object .!ctkframe2.!chatworkspace.!ctkframe2.!chatview.!ctkframe7.!voicepanel.!voicesessionpanel>.body
+E        +  and   540 = winfo_height()
+E        +    where winfo_height = <firik_agent.ui.components.voice_session.VoiceSessionPanel object .!ctkframe2.!chatworkspace.!ctkframe2.!chatview.!ctkframe7.!voicepanel.!voicesessionpanel>.winfo_height
+
+/Users/alien/Development/evren/tests/test_ui_voice_experience.py:311: AssertionError
+---------------------------- Captured log teardown -----------------------------
+WARNING  firik_agent.computer_use.security:security.py:67 Emergency stop requested for Computer Use.
+=========================== short test summary info ============================
+FAILED tests/test_ui_voice_experience.py::test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes[Light]
+1 failed in 2.04s
+
+15/15 tests/test_ui_voice_experience.py::test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes[Dark]: 1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes[Dark] _
+
+workspace = (<firik_agent.ui.app.FirikApp object .>, <firik_agent.ui.views.projects_view.ProjectsView object .!ctkframe2.!projects...4.775365+00:00', last_activity_at='2026-11-03T08:03:54.775365+00:00', last_commit_hash='', last_commit_message=''), [])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bf48b00>
+theme = 'Dark'
+
+    @pytest.mark.parametrize('theme',['Light','Dark'])
+    def test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes(workspace,monkeypatch,theme):
+        ctk.set_appearance_mode(theme)
+        app,view,panel,controller,capture,speaker,streams = setup_chat(workspace,monkeypatch)
+        app.geometry('940x620')
+        settle(app,.1)
+        mic,send = view.voice_mic_button,view.send_btn
+        assert mic.winfo_ismapped() and panel.session_button.winfo_ismapped()
+        assert not panel.mic_button.winfo_ismapped()
+        assert send.winfo_rootx()+send.winfo_width()<=app.winfo_rootx()+app.winfo_width()
+        assert panel.winfo_height()<150
+        snapshot(app,'composer-'+theme.lower())
+        panel.start_conversation()
+        surface = panel._voice_surface
+        surface.geometry('380x540')
+        until(app,lambda:len(capture.windows)==1 and panel._last_state=='listening')
+        panel._on_level(.63)
+        settle(app,.12)
+        assert surface.exit_button.winfo_ismapped()
+        assert surface.exit_button.winfo_rooty()+surface.exit_button.winfo_height()<=surface.winfo_rooty()+surface.winfo_height()
+        assert surface.state_label.winfo_width()>180
+        assert surface.transcript.winfo_width()<=surface.winfo_width()
+>       assert surface.body.winfo_height()<surface.winfo_height()
+E       assert 636 < 540
+E        +  where 636 = winfo_height()
+E        +    where winfo_height = <customtkinter.windows.widgets.ctk_scrollable_frame.CTkScrollableFrame object .!ctkframe2.!chatworkspace.!ctkframe2.!chatview.!ctkframe7.!voicepanel.!voicesessionpanel.!ctkframe.!canvas.!ctkscrollableframe>.winfo_height
+E        +      where <customtkinter.windows.widgets.ctk_scrollable_frame.CTkScrollableFrame object .!ctkframe2.!chatworkspace.!ctkframe2.!chatview.!ctkframe7.!voicepanel.!voicesessionpanel.!ctkframe.!canvas.!ctkscrollableframe> = <firik_agent.ui.components.voice_session.VoiceSessionPanel object .!ctkframe2.!chatworkspace.!ctkframe2.!chatview.!ctkframe7.!voicepanel.!voicesessionpanel>.body
+E        +  and   540 = winfo_height()
+E        +    where winfo_height = <firik_agent.ui.components.voice_session.VoiceSessionPanel object .!ctkframe2.!chatworkspace.!ctkframe2.!chatview.!ctkframe7.!voicepanel.!voicesessionpanel>.winfo_height
+
+/Users/alien/Development/evren/tests/test_ui_voice_experience.py:311: AssertionError
+---------------------------- Captured log teardown -----------------------------
+WARNING  firik_agent.computer_use.security:security.py:67 Emergency stop requested for Computer Use.
+=========================== short test summary info ============================
+FAILED tests/test_ui_voice_experience.py::test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes[Dark]
+1 failed in 1.96s
+
+Cases: 15, failures: 2
