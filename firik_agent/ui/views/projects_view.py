@@ -59,11 +59,13 @@ class ProjectsView(CodingEvidenceMixin, CodingWorkspaceMixin, ctk.CTkFrame):
         self.show_list_screen()
 
     def show_list_screen(self) -> None:
+        self.set_voice_active(False)
         self.workspace_container.grid_remove()
         self.list_container.grid()
         self.refresh_projects_list()
 
     def show_workspace_screen(self, project_id: str) -> None:
+        self.set_voice_active(False)
         self.current_project_id = project_id
         self.project_service.scheduler.set_active_project(project_id)
         self.list_container.grid_remove()

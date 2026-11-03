@@ -9,6 +9,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import customtkinter as ctk
 from firik_agent.ui.components.effort_selector import EffortSelector
+from firik_agent.ui.components.voice_panel import VoicePanel
 
 from firik_agent.projects.workspace import workspace_path
 from firik_agent.projects.indexer import is_sensitive_file, sanitize_secrets
@@ -275,6 +276,19 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         self.coding_composer_hint = ctk.CTkLabel(input_area, text=f"@ bağlam · / komut · Enter: çalıştır · Shift+Enter: satır · {primary}+K: palet", height=18,
                      anchor="w", font=ctk.CTkFont(size=10))
         self.coding_composer_hint.grid(row=2, column=0, columnspan=2, sticky="ew")
+        self.coding_voice_panel = VoicePanel(input_area, self.service,
+            on_dictation=self._insert_coding_dictation,
+            on_submit=self._submit_coding_voice_transcript,
+            on_submit_request=self._submit_coding_voice_request,
+            get_session_id=lambda: self._coding_state()["session"].session_id,
+            get_project_id=lambda: self.current_project_id, target="coding",
+            get_workspace_id=self._voice_workspace_id,
+            is_busy=lambda: self._coding_state()["busy"],
+            actions={"stop_response": lambda: self._control_coding("cancel"),
+                     "read_last": self._voice_read_coding_last,
+                     "stop_speech": lambda: self.coding_voice_panel.stop_speaking(),
+                     "switch_coding": lambda: self.winfo_toplevel().open_existing_coding_conversation()})
+        self.coding_voice_panel.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(3, 0))
         right.grid_columnconfigure(0, weight=1)
         right.grid_rowconfigure(1, weight=1)
         inspector_head = ctk.CTkFrame(right, fg_color="transparent")
@@ -655,25 +669,15 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         request = state["pending_approvals"][request_id]
         session_id = state["session"].session_id
         project_id = self.current_project_id
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("İşlem Onayı")
-        dialog.geometry("780x580")
-        ctk.CTkLabel(dialog, text=f"{request.get('tool_name', 'İşlem')}\n{request.get('reason', '')}", wraplength=730).pack(fill="x", padx=12, pady=10)
-        box = ctk.CTkTextbox(dialog, wrap="none", font=ctk.CTkFont(family="monospace", size=12))
-        box.pack(fill="both", expand=True, padx=12, pady=6)
-        box.insert("end", json.dumps(request.get("arguments", {}), ensure_ascii=False, indent=2))
-        box.configure(state="disabled")
-        footer = ctk.CTkFrame(dialog, fg_color="transparent")
-        footer.pack(fill="x", padx=12, pady=10)
         def decide(allowed):
             # The reviewed request stays bound to its original project/session.
             self.service.coding_control(session_id, "approve", request_id, allowed)
             state["pending_approvals"].pop(request_id, None)
-            dialog.destroy()
             if self._coding_visible(project_id):
                 self._refresh_coding_control()
-        ctk.CTkButton(footer, text="Bu İşleme İzin Ver", command=lambda: decide(True)).pack(side="right", padx=4)
-        ctk.CTkButton(footer, text="Reddet", command=lambda: decide(False)).pack(side="right", padx=4)
+        from firik_agent.ui.components.operation_approval import OperationApprovalDialog
+        OperationApprovalDialog(self, tool_name=request.get("tool_name", "İşlem"),
+            arguments=request.get("arguments", {}), reason=request.get("reason", ""), on_decision=decide)
 
     def _dispatch_coding_composer(self, composer):
         """Route explicit commands to their real evidence view before inference."""
@@ -690,8 +694,12 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             self._show_coding_inspector("Ajanlar")
 
     def _run_coding_prompt(self, prompt, prepared=None):
+        panel = getattr(self, "coding_voice_panel", None)
         project_id = self.current_project_id
         state = self._coding_state()
+        voice_request = getattr(self, "_pending_coding_voice_request", None)
+        if voice_request is not None:
+            self.service.validate_voice_request(voice_request)
         if state["busy"]:
             return
         resume_source = state.pop("resume_source_run_id", None)
@@ -706,9 +714,12 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         state.update(busy=True, stopped=False, paused=False, last_prompt=prompt, before=None,
                      changes=[], activities=[], pending_approvals={}, inspection_warning="", run_error="", agent_paths={}, record=None,
                      usage={}, harness_metrics={}, usage_requests={}, model_iteration=0)
+        if panel is not None and panel.winfo_exists():
+            panel.response_started("thinking")
         state["run_id"] += 1
         generation = state["run_id"]
-        state["messages"].append({"role": "user", "content": prompt})
+        state["messages"].append({"role": "user", "content": prompt,
+            **({"execution": voice_request.to_metadata()} if voice_request is not None else {})})
         response = {"role": "assistant", "content": ""}
         state["messages"].append(response)
         state["text"] += f"\n[Siz]: {prompt}\n[firik]: "
@@ -768,6 +779,11 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                     if activity["status"] == "Çalışıyor":
                         activity["status"] = "Kesildi"
                 state["cockpit"].finish(status=outcome, changes=state["changes"])
+                if visible() and hasattr(self, "coding_voice_panel"):
+                    from firik_agent.voice.summaries import coding_speech_summary
+                    self.coding_voice_panel.response_completed(coding_speech_summary(
+                        response["content"], outcome=outcome, activities=state["activities"],
+                        agents=state["cockpit"].agents, project_name=project.name))
                 refresh(True)
             self.service.inspect_workspace_async(project.local_path, inspected,
                 lambda e: inspected(inspection_error=e), before=state["before"])
@@ -795,6 +811,8 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 state["text"] += content
                 refresh()
             elif kind == "tool_call_started":
+                if visible() and panel is not None and panel.winfo_exists():
+                    panel.agent_activity("executing")
                 state["activities"].append({"tool": event.tool_name or "Araç", "arguments": event.arguments or {},
                                              "status": "Çalışıyor", "output": "", "duration_ms": None,
                                              "call_id": event.metadata.get("tool_call_id")})
@@ -830,6 +848,8 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 state["plan"] = event.metadata.get("plan", event.metadata.get("steps", []))
                 refresh(True)
             elif kind == "model_request_started":
+                if visible() and panel is not None and panel.winfo_exists():
+                    panel.agent_activity("thinking")
                 if event.metadata.get("request_kind") != "compaction":
                     state["model_iteration"] = event.metadata.get("iteration", state["model_iteration"] + 1)
                 state["status"] = "Model isteği gönderiliyor…"
@@ -868,6 +888,8 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                        "mcp_servers": state["preferences"].get("mcp_servers", []),
                        "mcp_tools": state["preferences"].get("mcp_tools", []),
                        "capabilities": state["capabilities"]}
+            if voice_request is not None:
+                options["voice_request"] = voice_request
             if resume_source:
                 options.update(resume_run_id=resume_source, resume_approved=resume_approved)
                 if resume_prepared:
@@ -953,7 +975,56 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         state["mode"] = MODES.get(label, LEGACY_MODES.get(label, state["mode"]))
         self._save_coding_preferences({"mode": state["mode"]})
 
+    def _insert_coding_dictation(self, text):
+        existing = self.coding_input.get().rstrip()
+        self.coding_input.insert("end", (" " if existing else "") + text)
+        self.coding_input.focus_set()
+
+    def _submit_coding_voice_transcript(self, text):
+        if self._coding_state()["busy"] or self.coding_input.get().strip():
+            return False
+        self.coding_input.insert(0, text)
+        self._send_coding_prompt()
+        return bool(self._coding_state()["busy"])
+
+    def _submit_coding_voice_request(self, request):
+        if request.session_id != self._coding_state()["session"].session_id or request.project_id != self.current_project_id:
+            return False
+        self._pending_coding_voice_request = request
+        try:
+            return self._submit_coding_voice_transcript(request.request_text)
+        finally:
+            self._pending_coding_voice_request = None
+
+    def _voice_workspace_id(self):
+        """The project model has no separate workspace ID: bind its actual root."""
+        project = self.project_service.db.get_project(self.current_project_id)
+        return str(Path(project.local_path).resolve()) if project and project.local_path else None
+
+    def _voice_read_coding_last(self):
+        state = self._coding_state()
+        if state["busy"]:
+            return
+        for message in reversed(state["messages"]):
+            if message.get("role") == "assistant":
+                from firik_agent.voice.summaries import coding_speech_summary
+                project = self.project_service.db.get_project(self.current_project_id)
+                self.coding_voice_panel.read_text(coding_speech_summary(message.get("content", ""),
+                    activities=state["activities"], agents=state["cockpit"].agents,
+                    project_name=project.name if project else None))
+                break
+
+    def set_voice_active(self, active):
+        panel = getattr(self, "coding_voice_panel", None)
+        if panel is not None and panel.winfo_exists():
+            if active:
+                panel.activate()
+            else:
+                panel.deactivate()
+
     def _control_coding(self, action):
+        if action == "cancel" and hasattr(self, "coding_voice_panel") and self.coding_voice_panel.winfo_exists():
+            self.coding_voice_panel.cancel()
         state = self._coding_state()
         if action == "resume" and not state["busy"]:
             if state["record"]:
@@ -1283,6 +1354,8 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             if custom_policy.get():
                 self._coding_mode_selected("Özel")
                 self.coding_mode_combo.set("Özel")
+            if provider_combo.get() != state["preferences"].get("provider", self.service.provider):
+                self.service.stop_voice()
             self._save_coding_preferences({"permissions": state["permissions"],
                 "policy": state["policy"],
                 "execution_config": asdict(selected_execution), "dirty_start": dirty_combo.get(),

@@ -1,0 +1,37 @@
+1/9 tests/test_ui_voice_routing.py::test_reviewed_voice_uses_existing_session_and_preserves_original_language_metadata: 0
+.                                                                        [100%]
+1 passed in 1.32s
+
+2/9 tests/test_ui_voice_routing.py::test_coding_voice_uses_real_project_context_permissions_and_same_execution_bridge: 0
+.                                                                        [100%]
+1 passed in 1.23s
+
+3/9 tests/test_ui_voice_routing.py::test_explicit_voice_navigation_restores_real_chat_without_starting_execution: 0
+.                                                                        [100%]
+1 passed in 1.22s
+
+4/9 tests/test_ui_voice_routing.py::test_navigation_to_existing_project_preserves_other_coding_work: 0
+.                                                                        [100%]
+1 passed in 1.30s
+
+5/9 tests/test_ui_voice_routing.py::test_exact_operation_dialog_cannot_be_approved_by_a_transcript: 0
+.                                                                        [100%]
+1 passed in 1.25s
+
+6/9 tests/test_ui_voice_routing.py::test_cancelled_chat_rejects_and_closes_pending_exact_operation_dialog: 0
+.                                                                        [100%]
+1 passed in 1.26s
+
+7/9 tests/test_ui_voice_routing.py::test_stale_scope_after_project_change_does_not_submit_or_create_ids: 0
+.                                                                        [100%]
+1 passed in 1.17s
+
+8/9 tests/test_ui_voice_routing.py::test_navigation_can_destroy_originating_coding_widgets_without_touching_an_agent: 0
+.                                                                        [100%]
+1 passed in 1.47s
+
+9/9 tests/test_ui_voice_routing.py::test_replaced_workspace_root_under_same_project_and_session_requires_new_capture: 0
+.                                                                        [100%]
+1 passed in 1.18s
+
+Cases: 9, failures: 0

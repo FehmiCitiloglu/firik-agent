@@ -74,6 +74,12 @@ COMMANDS_CATALOG: List[Dict[str, str]] = [
         "description": "Agent diagnostics (provider, model, tools, skills, turns)",
     },
     {
+        "command": "/doctor",
+        "category": "Diagnostics",
+        "syntax": "/doctor [--probe] [--json]",
+        "description": "Check configuration, model budgets and last failure; --probe reads /models only",
+    },
+    {
         "command": "/provider",
         "category": "Providers",
         "syntax": "/provider [name]",
@@ -280,6 +286,12 @@ class AgentCompleter(Completer if HAVE_PROMPT_TOOLKIT else object):  # type: ign
                 for cat in categories:
                     if cat.startswith(prefix):
                         yield Completion(cat, start_position=-len(parts[1]), display_meta="Filter category")
+
+        elif root == "/doctor":
+            if len(parts) == 2:
+                for flag in ("--probe", "--json"):
+                    if flag.startswith(parts[1]):
+                        yield Completion(flag, start_position=-len(parts[1]), display_meta="Diagnostics option")
 
         elif root == "/provider":
             if len(parts) == 2:
@@ -509,6 +521,7 @@ def print_help() -> None:
     d_table.add_column("Command", style="bold cyan", no_wrap=True)
     d_table.add_column("Description & Beneficial Usage Example")
     d_table.add_row("/status", "Display complete agent diagnostics (provider, model, tools, skills, memory)")
+    d_table.add_row("/doctor [--probe] [--json]", "Check model/context/resource budgets and last failure; --probe reads /models without sending a prompt")
     d_table.add_row("/terms", "Check FIRIK terms of service status [dim](GET /v1/terms/status)[/dim]")
     d_table.add_row("/api <command>", "All direct API commands: /api --help, /api quota, /api ocr --file scan.png")
     d_table.add_row("/terms text", "Read the current terms before accepting")
@@ -592,6 +605,14 @@ async def handle_slash_command(agent: Agent, cmd: str) -> bool:
                               default_model=prov.current_model)
             except SystemExit:
                 pass  # argparse help/errors must not terminate the REPL.
+
+    elif root == "/doctor":
+        from firik_agent.diagnostics import inspect_agent, render_report
+        if any(part not in {"--probe", "--json"} for part in parts[1:]):
+            console.print(Text("Usage: /doctor [--probe] [--json]", style="yellow"))
+        else:
+            report = await inspect_agent(agent, probe="--probe" in parts[1:])
+            console.print(Text(render_report(report, as_json="--json" in parts[1:])))
 
     elif root == "/status":
         prov = agent.providers.get_active()
@@ -957,6 +978,19 @@ def ensure_provider_key(agent: Agent, provider) -> None:
         provider.api_key = ensure_api_key(provider.name, config, base_url=provider.base_url)
 
 
+def report_cli_failure(agent: Optional[Agent], error: Exception, *, stderr=False) -> None:
+    """Expose bounded typed details, never raw exception/provider bodies."""
+    from firik_agent.core.failures import format_failure
+    details = format_failure(error)
+    if agent is not None:
+        agent._cli_last_failure = details
+    if stderr:
+        print("Error: " + details + "\nRun `firik-agent doctor` for configuration checks.", file=sys.stderr)
+    else:
+        console.print(Text("Error: " + details, style="bold red"))
+        console.print(Text("Use /doctor for configuration checks and the last failure.", style="dim"))
+
+
 async def run_repl(agent: Agent) -> None:
     await agent.initialize()
     print_banner(agent)
@@ -1106,12 +1140,16 @@ async def run_repl(agent: Agent) -> None:
             console.print("\n[cyan]Session terminated. Goodbye![/cyan]")
             break
         except Exception as e:
-            console.print(f"[bold red]Error:[/bold red] {e}")
+            activity.failure(e)
+            report_cli_failure(agent, e)
 
     await agent.close()
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "doctor":
+        from firik_agent.diagnostics import main as doctor_main
+        raise SystemExit(doctor_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "sandbox":
         from firik_agent.projects.sandbox_cli import main as sandbox_main
         raise SystemExit(sandbox_main(sys.argv[2:]))
@@ -1132,7 +1170,7 @@ def main():
         raise SystemExit(cu_main(sys.argv[2:]))
     parser = argparse.ArgumentParser(
         description="Firik Agent CLI",
-        epilog="Harness Lab: firik-agent harness doctor | firik-agent harness bench --suite offline-smoke | MCP: firik-agent mcp --help | Computer Use: firik-agent computer-use doctor | API: firik-agent api --help",
+        epilog="Diagnostics: firik-agent doctor | Harness Lab: firik-agent harness doctor | firik-agent harness bench --suite offline-smoke | MCP: firik-agent mcp --help | Computer Use: firik-agent computer-use doctor | API: firik-agent api --help",
     )
 
     parser.add_argument("--prompt", "-p", type=str, help="Single-shot prompt to execute")
@@ -1157,21 +1195,26 @@ def main():
     else:
         logging.basicConfig(level=logging.WARNING)
 
-    agent = Agent(config_path=args.config)
-    if args.execution_backend or args.sandbox_image:
-        from dataclasses import replace
-        agent.configure_execution(replace(agent.execution_config,
-            backend=args.execution_backend or agent.execution_config.backend,
-            image=args.sandbox_image or agent.execution_config.image))
-    if args.harness_profile:
-        from firik_agent.projects.harness_profiles import resolve_harness_profile
-        agent.harness_profile = resolve_harness_profile(session_override=args.harness_profile,
-                                                        user_config=agent.config.get("agent", {}))
+    agent = None
+    try:
+        agent = Agent(config_path=args.config)
+        if args.execution_backend or args.sandbox_image:
+            from dataclasses import replace
+            agent.configure_execution(replace(agent.execution_config,
+                backend=args.execution_backend or agent.execution_config.backend,
+                image=args.sandbox_image or agent.execution_config.image))
+        if args.harness_profile:
+            from firik_agent.projects.harness_profiles import resolve_harness_profile
+            agent.harness_profile = resolve_harness_profile(session_override=args.harness_profile,
+                                                            user_config=agent.config.get("agent", {}))
 
-    if args.provider:
-        agent.providers.set_active(args.provider)
-    if args.model:
-        agent.providers.get_active().set_model(args.model)
+        if args.provider:
+            agent.providers.set_active(args.provider)
+        if args.model:
+            agent.providers.get_active().set_model(args.model)
+    except Exception as error:
+        report_cli_failure(agent, error, stderr=True)
+        raise SystemExit(2) from None
 
     local_prompt = args.prompt is not None and args.prompt.lstrip().startswith("!")
     if not local_prompt:
@@ -1191,6 +1234,9 @@ def main():
                 else:
                     response = await agent.run(args.prompt)
                     print(response)
+            except Exception as error:
+                report_cli_failure(agent, error, stderr=True)
+                raise SystemExit(1) from None
             finally:
                 await agent.close()
 

@@ -1,0 +1,309 @@
+{
+  "retrieved_at": "2026-11-02",
+  "source": "https://evren-llmapi.ssyz.org.tr/openapi.json",
+  "method": "GET",
+  "status": 200,
+  "docs_status": 200,
+  "models_status": 401,
+  "authenticated_access_available": false,
+  "paths": {
+    "/v1/audio/transcriptions": {
+      "post": {
+        "summary": "Audio Transcriptions",
+        "operationId": "audio_transcriptions_v1_audio_transcriptions_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_audio_transcriptions_v1_audio_transcriptions_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/audio/speech": {
+      "post": {
+        "summary": "Audio Speech",
+        "operationId": "audio_speech_v1_audio_speech_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "schemas": {
+    "Body_audio_transcriptions_v1_audio_transcriptions_post": {
+      "properties": {
+        "file": {
+          "type": "string",
+          "format": "binary",
+          "title": "File",
+          "description": "Audio file to transcribe."
+        },
+        "model": {
+          "type": "string",
+          "title": "Model",
+          "description": "ID of the transcription model to use."
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Language",
+          "description": "ISO 639-1 language code hint, if known."
+        },
+        "prompt": {
+          "type": "string",
+          "title": "Prompt",
+          "description": "Optional text to guide the model's style or vocabulary.",
+          "default": ""
+        },
+        "response_format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "text",
+            "srt",
+            "verbose_json",
+            "diarized_json"
+          ],
+          "title": "Response Format",
+          "description": "Output format: `json`, `text`, `srt`, `verbose_json` or `diarized_json`.",
+          "default": "json"
+        },
+        "temperature": {
+          "type": "number",
+          "title": "Temperature",
+          "description": "Sampling temperature between 0 and 1.",
+          "default": 0.0
+        }
+      },
+      "type": "object",
+      "required": [
+        "file",
+        "model"
+      ],
+      "title": "Body_audio_transcriptions_v1_audio_transcriptions_post"
+    },
+    "SpeechBody": {
+      "properties": {
+        "model": {
+          "type": "string",
+          "title": "Model",
+          "description": "Text-to-speech model, e.g. `voxcpm2`."
+        },
+        "input": {
+          "type": "string",
+          "title": "Input",
+          "description": "Text to synthesize. Long text is split at sentence boundaries."
+        },
+        "voice": {
+          "type": "string",
+          "title": "Voice",
+          "description": "`default`; OpenAI voice names (alloy, nova, ...) map to it.",
+          "default": "default"
+        },
+        "response_format": {
+          "type": "string",
+          "enum": [
+            "mp3",
+            "wav",
+            "flac",
+            "opus",
+            "pcm"
+          ],
+          "title": "Response Format",
+          "description": "Audio format. `pcm` is raw 16-bit mono 48 kHz.",
+          "default": "mp3"
+        },
+        "speed": {
+          "type": "number",
+          "maximum": 4.0,
+          "minimum": 0.25,
+          "title": "Speed",
+          "description": "Speaking speed, 0.25-4.0.",
+          "default": 1.0
+        },
+        "instructions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Instructions",
+          "description": "Voice description in English (voice design), e.g. 'A calm, middle-aged male voice'."
+        },
+        "stream": {
+          "type": "boolean",
+          "title": "Stream",
+          "description": "Stream raw PCM as sentences are generated (requires `pcm`).",
+          "default": false
+        }
+      },
+      "type": "object",
+      "required": [
+        "model",
+        "input"
+      ],
+      "title": "SpeechBody",
+      "description": "OpenAI `/v1/audio/speech` sözleşmesi - SDK değişmeden çalışır."
+    },
+    "ModelInfo": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "Id",
+          "description": "Model identifier to pass as the `model` parameter in requests."
+        },
+        "object": {
+          "type": "string",
+          "title": "Object",
+          "description": "Object type, always `model`.",
+          "default": "model"
+        },
+        "created": {
+          "type": "integer",
+          "title": "Created",
+          "description": "Unix timestamp of model registration."
+        },
+        "owned_by": {
+          "type": "string",
+          "title": "Owned By",
+          "description": "Organization that owns the model.",
+          "default": "evren"
+        },
+        "task": {
+          "type": "string",
+          "title": "Task",
+          "description": "EVREN extension (non-standard): the model's capability - chat, vision_chat, embedding, rerank, ocr, audio_transcription, or tts (text-to-speech, POST /v1/audio/speech)."
+        },
+        "modalities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Modalities",
+          "description": "EVREN extension (non-standard): accepted/produced content types - any of text, image, audio."
+        },
+        "pricing": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/ModelPricing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "EVREN extension: active per-token prices. Null only during an incomplete registry rollout."
+        },
+        "context_length": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Context Length",
+          "description": "EVREN extension: context window in tokens; `max_tokens` + prompt must fit in it."
+        },
+        "default_max_output_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Default Max Output Tokens",
+          "description": "EVREN extension: `max_tokens` applied when the request omits it; null = no default."
+        },
+        "capabilities": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/ModelCapabilities"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "EVREN extension: request parameters this model accepts."
+        },
+        "precision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Precision",
+          "description": "EVREN extension: served weight precision (e.g. FP8, BF16); null when not declared."
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "created",
+        "task"
+      ],
+      "title": "ModelInfo",
+      "description": "OpenAI `/v1/models` sözleşmesiyle aynı şekil - mevcut SDK'lar değişmeden çalışır."
+    }
+  }
+}

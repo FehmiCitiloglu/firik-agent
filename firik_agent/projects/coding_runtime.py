@@ -315,10 +315,16 @@ class CodingRunControl:
                  on_event: Optional[Callable[[AgentEvent], None]] = None,
                  run_id: Optional[str] = None, policy: Optional[Dict[str, str]] = None,
                  inherited_policy: Optional[Dict[str, str]] = None, excluded_paths: Optional[list[str]] = None,
-                 execution_config: ExecutionConfig | dict | None = None):
+                 execution_config: ExecutionConfig | dict | None = None, voice_request=None):
         if mode not in MODES:
             raise ValueError("Geçersiz kodlama çalışma modu.")
         self.session_id, self.project_id, self.task_id = session_id, project_id, task_id
+        self._voice_request = voice_request
+        self._voice_metadata = {}
+        if voice_request is not None:
+            from firik_agent.voice.execution import voice_metadata
+            self._voice_metadata = voice_metadata(voice_request, session_id=session_id,
+                                                 project_id=project_id, target="coding")
         self.mode = mode
         self.execution_config = (execution_config if isinstance(execution_config, ExecutionConfig)
                                  else ExecutionConfig(**(execution_config or {})))
@@ -494,6 +500,11 @@ class CodingRunControl:
             # An unrestricted process or external MCP handler could read the
             # excluded source behind the guarded filesystem tools.
             decision = "deny"
+        if self._voice_request is not None and action == "filesystem.write":
+            # Typed policy can allow unattended writes. A finalized transcript
+            # never grants that authority: exact edits use the existing trusted
+            # approval UI. Parent snapshots propagate this narrowing to children.
+            decision = max((decision, "ask"), key=_POLICY_RANK.get)
         return decision
 
     def policy_snapshot(self) -> dict[str, str]:
@@ -525,7 +536,8 @@ class CodingRunControl:
             event = AgentEvent(event_type, self.session_id, content=safe_text(content),
                                project_id=self.project_id, task_id=self.task_id,
                                metadata=safe_payload({"run_id": self.run_id, "project_id": self.project_id,
-                                   "task_id": self.task_id, **metadata, **self.actor_metadata()}))
+                                   "task_id": self.task_id, **metadata, **self.actor_metadata(),
+                                   **self._voice_metadata}))
             try:
                 self.on_event(event)
             except DurableExecutionError:
@@ -556,9 +568,12 @@ class CodingRunControl:
         self.set_state("cancelled", "Çalışma kullanıcı tarafından durduruldu.")
 
     async def checkpoint(self) -> None:
-        while self.pause_event.is_set() and not self.cancel_event.is_set():
+        def cancelled():
+            return self.cancel_event.is_set() or (self._voice_request is not None
+                and self._voice_request.cancellation_token.is_set())
+        while self.pause_event.is_set() and not cancelled():
             await asyncio.sleep(0.025)
-        if self.cancel_event.is_set():
+        if cancelled():
             raise asyncio.CancelledError
 
     def decide_approval(self, request_id: str, allowed: bool) -> bool:
@@ -625,7 +640,8 @@ class CodingRunControl:
                     "plan": [dict(p) for p in self.plan], "changes": [dict(c) for c in self.changes],
                     "verifications": [dict(v) for v in self.verifications],
                     "tests": [dict(v) for v in self.verifications if v.get("kind") == "test"],
-                    "pending_approvals": dict(self.pending_approvals)}
+                    "pending_approvals": dict(self.pending_approvals),
+                    **({"request_metadata": dict(self._voice_metadata)} if self._voice_metadata else {})}
 
 
 @dataclass

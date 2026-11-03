@@ -79,3 +79,27 @@ class DynamicEchoPlugin(BasePlugin):
     )
     res_echo = await registry.execute(tc_echo)
     assert res_echo.content == "ECHO: FirikAgent Rocks"
+
+
+@pytest.mark.asyncio
+async def test_logger_failure_exposes_diagnostics_without_raw_exception_text(caplog):
+    from firik_agent.plugins.builtins.logger import LoggerPlugin
+    from firik_agent.core.failures import FailureKind, RuntimeFailure
+
+    error = RuntimeFailure(FailureKind.REQUEST_TOO_LARGE, http_status=413, request_id="req-log-123",
+                           source_type="HTTPStatusError")
+    error.args = ("password=TOP-SECRET private provider body",)
+    await LoggerPlugin().on_error(error)
+    assert "failure_kind=request_too_large" in caplog.text
+    assert "http_status=413" in caplog.text
+    assert "provider_request_id=req-log-123" in caplog.text
+    assert "TOP-SECRET" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_logger_never_logs_unknown_exception_messages(caplog):
+    from firik_agent.plugins.builtins.logger import LoggerPlugin
+
+    await LoggerPlugin().on_error(ValueError("private prompt TOP-SECRET"))
+    assert "error_type=ValueError" in caplog.text
+    assert "TOP-SECRET" not in caplog.text

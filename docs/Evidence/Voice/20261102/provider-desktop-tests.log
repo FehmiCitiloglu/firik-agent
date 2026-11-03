@@ -1,0 +1,213 @@
+1/26 tests/test_ui_voice.py::test_dictation_review_uses_existing_model_session_and_completion: 0
+.                                                                        [100%]
+1 passed in 0.88s
+
+2/26 tests/test_ui_voice.py::test_switching_chat_rejects_delayed_transcript_and_speech: 0
+.                                                                        [100%]
+1 passed in 0.81s
+
+3/26 tests/test_ui_voice.py::test_reviewed_commands_cancel_only_originating_session_and_reject_approval: 0
+.                                                                        [100%]
+1 passed in 0.80s
+
+4/26 tests/test_ui_voice.py::test_errors_and_disabled_voice_keep_text_operation: 0
+.                                                                        [100%]
+1 passed in 0.87s
+
+5/26 tests/test_ui_voice.py::test_settings_dialog_saves_integer_duration_and_device_zero: 0
+.                                                                        [100%]
+1 passed in 0.86s
+
+6/26 tests/test_ui_voice.py::test_coding_voice_uses_project_run_path_and_preserves_approvals: 0
+.                                                                        [100%]
+1 passed in 1.46s
+
+7/26 tests/test_ui_voice.py::test_voice_controls_wrap_inside_compact_coding_pane: 0
+.                                                                        [100%]
+1 passed in 0.86s
+
+8/26 tests/test_ui_voice.py::test_real_desktop_pipeline_queues_audio_http_and_speech_on_existing_session: 0
+.                                                                        [100%]
+1 passed in 1.46s
+
+9/26 tests/test_ui_voice.py::test_voice_auto_send_never_cancels_active_chat: 0
+.                                                                        [100%]
+1 passed in 0.89s
+
+10/26 tests/test_ui_voice.py::test_voice_auto_send_sends_ordinary_requests_once_and_reviews_sensitive: 0
+.                                                                        [100%]
+1 passed in 0.88s
+
+11/26 tests/test_ui_voice.py::test_voice_submission_never_cancels_active_coding: 0
+.                                                                        [100%]
+1 passed in 2.07s
+
+12/26 tests/test_ui_voice.py::test_voice_navigation_reuses_existing_coding_session: 0
+.                                                                        [100%]
+1 passed in 1.34s
+
+13/26 tests/test_ui_voice.py::test_application_close_does_not_wait_for_service_shutdown: 0
+.                                                                        [100%]
+1 passed in 1.19s
+
+14/26 tests/test_ui_voice.py::test_running_agent_events_do_not_discard_new_spoken_interruption: 0
+.                                                                        [100%]
+1 passed in 1.32s
+
+15/26 tests/test_ui_voice_modes.py::test_press_hold_records_once_and_release_finalizes: 0
+.                                                                        [100%]
+1 passed in 0.79s
+
+16/26 tests/test_ui_voice_modes.py::test_transcript_edit_copy_retry_discard_and_single_submission: 0
+.                                                                        [100%]
+1 passed in 0.75s
+
+17/26 tests/test_ui_voice_modes.py::test_auto_send_only_ordinary_requests_and_never_cancels_busy_agent: 0
+.                                                                        [100%]
+1 passed in 0.93s
+
+18/26 tests/test_ui_voice_modes.py::test_conversation_controls_do_not_cancel_agent_and_reuse_controller: 0
+.                                                                        [100%]
+1 passed in 0.74s
+
+19/26 tests/test_ui_voice_modes.py::test_session_switch_rejects_late_transcript_and_hidden_shortcut: 0
+.                                                                        [100%]
+1 passed in 0.74s
+
+20/26 tests/test_ui_voice_modes.py::test_native_shortcut_and_accessible_toggle_finalize_once: 0
+.                                                                        [100%]
+1 passed in 0.86s
+
+21/26 tests/test_ui_voice_modes.py::test_provider_generation_invalidates_send_and_command_review: 0
+.                                                                        [100%]
+1 passed in 0.74s
+
+22/26 tests/test_ui_voice_conversation.py::test_real_conversation_followups_use_one_chat_and_pause_resume_cleanly: 1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_real_conversation_followups_use_one_chat_and_pause_resume_cleanly ____
+
+workspace = (<firik_agent.ui.app.FirikApp object .>, <firik_agent.ui.views.projects_view.ProjectsView object .!ctkframe2.!projects...5.483253+00:00', last_activity_at='2026-11-02T17:02:15.483253+00:00', last_commit_hash='', last_commit_message=''), [])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10dc16650>
+
+    def test_real_conversation_followups_use_one_chat_and_pause_resume_cleanly(workspace, monkeypatch):
+        """VAD utterances -> real runtime/HTTP -> actual chat submit -> follow-up."""
+        app, projects, project, streams = workspace
+        main_thread = threading.get_ident()
+        requests, spoken, workers, delivered = [], [], [], []
+        app.service.config["voice"] = replace(
+            VoiceSettings(), enabled=True, read_replies=False,
+            auto_send=True, review_before_send=False,
+        ).to_dict()
+        monkeypatch.setattr(app.service, "get_key", lambda: "fixture-key")
+
+        class LocalVAD:
+            def __init__(self):
+                self.windows = []
+                self.active = 0
+                self.max_active = 0
+                self.lock = threading.Lock()
+
+            def record_utterance(self, stop, cancel, max_seconds, device=None,
+                                 on_speech_start=None, **options):
+                workers.append(threading.get_ident())
+                window = {"end": threading.Event(), "closed": threading.Event(), "cancel": cancel}
+                with self.lock:
+                    self.windows.append(window)
+                    index = len(self.windows)
+                    self.active += 1
+                    self.max_active = max(self.max_active, self.active)
+                try:
+                    deadline = time.monotonic() + 5
+                    while not (window["end"].is_set() or stop.is_set() or cancel.is_set()):
+                        if time.monotonic() >= deadline:
+                            raise AssertionError("Test did not finish its simulated local VAD window")
+                        cancel.wait(.01)
+                    if stop.is_set() or cancel.is_set():
+                        return b""
+                    on_speech_start()
+                    output = io.BytesIO()
+                    with wave.open(output, "wb") as wav:
+                        wav.setnchannels(1)
+                        wav.setsampwidth(2)
+                        wav.setframerate(16000)
+                        wav.writeframes(b"\xe8\x03\x18\xfc" * 2400)
+                    return output.getvalue()
+                finally:
+                    with self.lock:
+                        self.active -= 1
+                    window["closed"].set()
+
+        recorder = LocalVAD()
+        monkeypatch.setattr("firik_agent.voice.audio.SoundDeviceRecorder", lambda: recorder)
+
+        class Speaker:
+            def speak(self, text, cancel, language, rate):
+                spoken.append(text)
+        monkeypatch.setattr("firik_agent.voice.synthesis.EngineSpeaker", lambda **kwargs: Speaker())
+        transcripts = ["Firik, explain the current project architecture.",
+                       "Firik, explain that again in Turkish."]
+
+        def respond(request):
+            workers.append(threading.get_ident())
+            requests.append(request)
+            return httpx.Response(200, json={"text": transcripts[len(requests) - 1]})
+
+        monkeypatch.setattr("firik_agent.ui.service.FirikAPI", lambda *args, **kwargs:
+                            FirikAPI(*args, **kwargs, transport=httpx.MockTransport(respond)))
+        app.show_view("chat")
+        view = app.views["chat"].current
+        panel = view.voice_panel
+        session_id = view.session.session_id
+        original = panel._on_transcript
+
+        def received(text):
+            delivered.append((threading.get_ident(), text))
+            original(text)
+        panel._on_transcript = received
+        panel.session_button.invoke()
+        until(app, lambda: len(recorder.windows) == 1)
+        assert panel.controller.conversation_active
+        assert not requests and not streams  # Ambient waiting is entirely local.
+        assert not [message for message in view.messages if message["role"] == "user"]
+
+        recorder.windows[0]["end"].set()
+>       until(app, lambda: len(streams) == 1)
+
+/Users/alien/Development/evren/tests/test_ui_voice_conversation.py:104:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+app = <firik_agent.ui.app.FirikApp object .>
+predicate = <function test_real_conversation_followups_use_one_chat_and_pause_resume_cleanly.<locals>.<lambda> at 0x128730680>
+timeout = 4
+
+    def until(app, predicate, timeout=4):
+        end = time.monotonic() + timeout
+        while not predicate() and time.monotonic() < end:
+            settle(app, .02)
+>       assert predicate()
+E       assert False
+E        +  where False = <function test_real_conversation_followups_use_one_chat_and_pause_resume_cleanly.<locals>.<lambda> at 0x128730680>()
+
+/Users/alien/Development/evren/tests/test_ui_voice_conversation.py:19: AssertionError
+---------------------------- Captured log teardown -----------------------------
+WARNING  firik_agent.computer_use.security:security.py:67 Emergency stop requested for Computer Use.
+=========================== short test summary info ============================
+FAILED tests/test_ui_voice_conversation.py::test_real_conversation_followups_use_one_chat_and_pause_resume_cleanly
+1 failed in 5.23s
+
+23/26 tests/test_ui_audio_engine.py::test_native_chat_reads_stable_sentences_before_stream_completion: 0
+.                                                                        [100%]
+1 passed in 1.38s
+
+24/26 tests/test_ui_audio_engine.py::test_settings_device_picker_persists_stable_ids_and_controls_are_visible: 0
+.                                                                        [100%]
+1 passed in 0.85s
+
+25/26 tests/test_ui_voice_provider_settings.py::test_provider_settings_preserve_chat_model_and_save_preferred_vad: 0
+.                                                                        [100%]
+1 passed in 0.85s
+
+26/26 tests/test_ui_voice_provider_settings.py::test_capability_discovery_never_opens_capture: 0
+.                                                                        [100%]
+1 passed in 0.86s

@@ -13,6 +13,11 @@ from uuid import UUID
 
 import httpx
 
+from .audio import (MAX_AUDIO_BYTES, MAX_TRANSCRIPT_BYTES, SpeechResult,
+                    TranscriptionResult, normalize_transcription,
+                    speech_parameters, transcription_parameters, validate_speech,
+                    validate_wav)
+
 DEFAULT_BASE_URL = "https://evren-llmapi.ssyz.org.tr/v1"
 
 
@@ -44,6 +49,10 @@ class FirikAPIError(RuntimeError):
             503: "Servis şu anda hazır değil veya kapasitesi dolu.",
         }.get(status, "")
         super().__init__(f"FIRIK HTTP {status}: {detail}" + (f" (request_id={request_id})" if request_id else "") + (f"\n{hint}" if hint else ""))
+
+
+class AudioRequestError(RuntimeError):
+    """User-safe transport error; never contains a request URL, key or body."""
 
 
 class FirikAPI:
@@ -216,11 +225,86 @@ class FirikAPI:
 
     async def transcribe(self, filename: str | Path, model: str, **options: Any) -> Any:
         path = Path(filename)
-        data = {key: str(value) for key, value in options.items() if value is not None}
-        data["model"] = model
-        with path.open("rb") as audio:
-            return await self.request("POST", "/v1/audio/transcriptions", data=data,
-                                      files={"file": (path.name, audio, mimetypes.guess_type(path.name)[0] or "application/octet-stream")})
+        if not path.is_file() or not 44 < path.stat().st_size <= MAX_AUDIO_BYTES:
+            raise ValueError("Ses dosyası boş veya 25 MiB istemci sınırını aşıyor.")
+        with path.open("rb") as source:
+            audio = source.read(MAX_AUDIO_BYTES + 1)
+        return await self._transcribe_audio(audio, model, path.name, options)
+
+    async def transcribe_bytes(self, audio: bytes, model: str, **options: Any) -> Any:
+        """Transcribe an in-memory microphone WAV without persisting private audio."""
+        return await self._transcribe_audio(audio, model, "microphone.wav", options)
+
+    async def _bounded_audio_response(self, path: str, *, limit: int, **kwargs: Any) -> httpx.Response:
+        # Keep the published path allowlist for both JSON and binary operations.
+        # No retry: a timeout/disconnect may have completed billable inference.
+        self._check_path("POST", path)
+        try:
+            async with self._client.stream("POST", self.base_url + path,
+                                           headers=self._headers(path), **kwargs) as response:
+                self._capture(response)
+                budget = limit if response.is_success else 65536
+                size, chunks = 0, []
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > budget:
+                        raise ValueError("Ses API yanıtı istemci boyut sınırını aşıyor.")
+                    chunks.append(chunk)
+                buffered = httpx.Response(response.status_code, headers=response.headers,
+                                          content=b"".join(chunks), request=response.request)
+                if not buffered.is_success:
+                    self._decode(buffered)
+                return buffered
+        except httpx.TimeoutException:
+            raise AudioRequestError("Ses isteği zaman aşımına uğradı. Ücretli işlem yinelenmesin diye otomatik tekrar yapılmadı.") from None
+        except httpx.HTTPError:
+            raise AudioRequestError("Ses hizmetine bağlantı kurulamadı. Otomatik tekrar yapılmadı; metinle devam edebilirsiniz.") from None
+
+    async def _transcribe_audio(self, audio: bytes, model: str, filename: str, options: dict) -> Any:
+        validate_wav(audio)
+        data = transcription_parameters(model, options)
+        response = await self._bounded_audio_response("/v1/audio/transcriptions", limit=MAX_TRANSCRIPT_BYTES,
+            data=data, files={"file": (filename, audio, "audio/wav")})
+        content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
+        if content_type not in ("application/json", "text/plain", "application/x-subrip", "text/srt"):
+            raise ValueError("Ses çözümleme yanıtının içerik türü geçersiz.")
+        # Recognized words such as '123', 'true' or 'null' are still text, even
+        # though a generic JSON decoder would turn them into scalars.
+        if options.get("response_format") in ("text", "srt") or content_type != "application/json":
+            try:
+                return response.content.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                raise ValueError("Transkript yanıtı geçerli UTF-8 metni değil.") from None
+        try:
+            return response.json()
+        except ValueError:
+            raise ValueError("Ses çözümleme yanıtı geçerli JSON değil.") from None
+
+    async def transcribe_normalized(self, filename: str | Path, model: str = "qwen3-asr-1.7b", **options: Any) -> TranscriptionResult:
+        result = await self.transcribe(filename, model, **options)
+        return normalize_transcription(result, options.get("response_format", "json"), self._redact(self.last_metadata))
+
+    async def transcribe_bytes_normalized(self, audio: bytes, model: str = "qwen3-asr-1.7b", **options: Any) -> TranscriptionResult:
+        result = await self.transcribe_bytes(audio, model, **options)
+        return normalize_transcription(result, options.get("response_format", "json"), self._redact(self.last_metadata))
+
+    async def synthesize(self, text: str, model: str = "voxcpm2", *, voice: str = "default",
+                         response_format: str = "wav", speed: float = 1.0,
+                         instructions: str | None = None) -> SpeechResult:
+        """Bounded non-streaming speech using the verified public Evren contract.
+
+        Public documentation advertises fields/formats, but deployment availability,
+        output media types and language quality still require authenticated testing.
+        Voice cloning/reference-audio parameters are deliberately absent.
+        """
+        body = speech_parameters(text, model, voice, response_format, speed, instructions)
+        response = await self._bounded_audio_response("/v1/audio/speech", limit=MAX_AUDIO_BYTES, json=body)
+        content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        validate_speech(response.content, content_type, response_format)
+        return SpeechResult(response.content, content_type, response_format,
+                            self._redact(self.last_metadata),
+                            48000 if response_format == "pcm" else None,
+                            1 if response_format == "pcm" else None)
 
     async def initiate_media(self, content_type: str, size_bytes: int) -> Any:
         if size_bytes <= 0:

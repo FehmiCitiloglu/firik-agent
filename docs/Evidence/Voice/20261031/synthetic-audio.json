@@ -1,0 +1,16 @@
+[
+  {
+    "language": "tr",
+    "expected": "Merhaba. Bu bir sesli etkileşim testidir. Ankara Türkiye.",
+    "synthetic_wav_bytes": 153722,
+    "live_stt": "success",
+    "transcript": "Merhaba. Bu bir sesli etkileşim testidir. Ankara, Türkiye."
+  },
+  {
+    "language": "en",
+    "expected": "Hello. This is a voice interaction test. The microphone is turned off.",
+    "synthetic_wav_bytes": 150742,
+    "live_stt": "success",
+    "transcript": "Hello. This is a voice interaction test. The microphone is turned off."
+  }
+]

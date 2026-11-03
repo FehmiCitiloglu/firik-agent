@@ -1,6 +1,6 @@
 # FIRIK API kapsamı
 
-Kaynaklar (22 Eylül 2026):
+Kaynaklar (temel sözleşme 22 Eylül 2026, ses sözleşmesi 2 Kasım 2026):
 
 - [Resmî OpenAPI](https://evren-llmapi.ssyz.org.tr/openapi.json)
 - [Resmî model/API kataloğu ve istek örnekleri](https://evren.ssyz.org.tr/llm/models)
@@ -28,13 +28,18 @@ OpenAPI'nin genel uçları ve gerekli şemaları `firik_agent/api/openapi.json` 
 | POST | `/v1/media/{media_id}/finalize` | `media finalize`, `media upload --finalize` |
 | GET | `/v1/media/{media_id}` | `media status` |
 | POST | `/v1/audio/transcriptions` | `transcribe` |
+| POST | `/v1/audio/speech` | `synthesize --input METİN --output ses.wav` |
 | GET | `/v1/quota` | `quota` |
 | GET | `/v1/terms/status` | `terms status` |
 | GET | `/v1/terms/text` | `terms text` |
 | POST | `/v1/terms/accept` | `terms accept VERSION` |
 | GET | `/v1/requests/{request_id}` | `request-status` |
 
-20/20 genel işlem için doğrudan komut ve HTTP kontrat testi bulunur. JSON yanıtları alan kaybı olmadan verilir; böylece fiyat, kredi, kullanım, araç çağrısı ve sunucu uzantıları görünür kalır. Chat/Completions SSE ile Responses'ın türlenmiş SSE akışı ayrı olay bilgileri korunarak ayrıştırılır. Model seçenekleri, yapılandırılmış mesajlar ve araç şemaları `--body`/`--set` ile iletilir; hangi özelliği hangi modelin desteklediğine API karar verir.
+21/21 kayıtlı genel işlem için doğrudan komut ve HTTP kontrat testi bulunur. JSON yanıtları alan kaybı olmadan verilir; böylece fiyat, kredi, kullanım, araç çağrısı ve sunucu uzantıları görünür kalır. Chat/Completions SSE ile Responses'ın türlenmiş SSE akışı ayrı olay bilgileri korunarak ayrıştırılır. Model seçenekleri, yapılandırılmış mesajlar ve araç şemaları `--body`/`--set` ile iletilir; hangi özelliği hangi modelin desteklediğine API karar verir. `synthesize` ikili ses verisini atomik olarak çıktı dosyasına yazar.
+
+Ses için varsayılan modeller `qwen3-asr-1.7b` ve `voxcpm2`'dir. ASR/TTS sohbet modelinden bağımsızdır. Dosya/mikrofon ASR istemcisi süreyi doğrulayabilmek için PCM WAV ile sınırlıdır (25 MiB/120 saniye); bunlar sunucu sınırı iddiası değildir. TTS varsayılan sesi `default`, masaüstü biçimi WAV, hız aralığı 0.25–4'tür. Diğer belgelenmiş biçimler MP3, FLAC, Opus ve 48 kHz mono PCM'dir. Ses klonlama uygulanmamıştır.
+
+2 Kasım 2026 salt okunur kontrolde resmî OpenAPI ve Swagger UI erişilebildi; `/v1/models` anahtarsız isteğe 401 döndürdü. Yerel kayıtlı anahtar bulunmadı. Kimlik doğrulamalı ASR/TTS, gerçek yanıt medya türleri ve Türkçe/İngilizce ses kalitesi mock testleriyle doğrulanmış sayılmaz. [Keşif kanıtı ve sınırlar](Evidence/Voice/20261102/API_DISCOVERY.md).
 
 ## Bilinen sınırlar
 

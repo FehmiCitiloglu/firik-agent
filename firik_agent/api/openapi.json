@@ -635,6 +635,37 @@
           }
         }
       }
+    },
+    "/v1/audio/speech": {
+      "post": {
+        "summary": "Audio Speech",
+        "operationId": "audio_speech_v1_audio_speech_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1088,7 +1119,7 @@
           "task": {
             "type": "string",
             "title": "Task",
-            "description": "FIRIK extension (non-standard): the model's capability - chat, vision_chat, embedding, rerank, ocr, or audio_transcription."
+            "description": "EVREN extension (non-standard): the model's capability - chat, vision_chat, embedding, rerank, ocr, audio_transcription, or tts (text-to-speech, POST /v1/audio/speech)."
           },
           "modalities": {
             "items": {
@@ -1562,9 +1593,77 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "SpeechBody": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "description": "Text-to-speech model, e.g. `voxcpm2`."
+          },
+          "input": {
+            "type": "string",
+            "title": "Input",
+            "description": "Text to synthesize. Long text is split at sentence boundaries."
+          },
+          "voice": {
+            "type": "string",
+            "title": "Voice",
+            "description": "`default`; OpenAI voice names (alloy, nova, ...) map to it.",
+            "default": "default"
+          },
+          "response_format": {
+            "type": "string",
+            "enum": [
+              "mp3",
+              "wav",
+              "flac",
+              "opus",
+              "pcm"
+            ],
+            "title": "Response Format",
+            "description": "Audio format. `pcm` is raw 16-bit mono 48 kHz.",
+            "default": "mp3"
+          },
+          "speed": {
+            "type": "number",
+            "maximum": 4.0,
+            "minimum": 0.25,
+            "title": "Speed",
+            "description": "Speaking speed, 0.25-4.0.",
+            "default": 1.0
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions",
+            "description": "Voice description in English (voice design), e.g. 'A calm, middle-aged male voice'."
+          },
+          "stream": {
+            "type": "boolean",
+            "title": "Stream",
+            "description": "Stream raw PCM as sentences are generated (requires `pcm`).",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "input"
+        ],
+        "title": "SpeechBody",
+        "description": "OpenAI `/v1/audio/speech` sözleşmesi - SDK değişmeden çalışır."
       }
     }
   },
   "x-source": "https://evren-llmapi.ssyz.org.tr/openapi.json",
-  "x-retrieved-at": "2026-09-22"
+  "x-retrieved-at": "2026-09-22",
+  "x-speech-contract-verified-at": "2026-11-02",
+  "x-speech-contract-source": "https://evren-llmapi.ssyz.org.tr/openapi.json"
 }

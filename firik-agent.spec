@@ -5,10 +5,11 @@ macOS (firik-agent.app), Windows (firik-agent.exe) ve Linux (firik-agent)
 için tek tıkla çalıştırılabilir ikili (binary) paketler üretir.
 """
 from importlib.metadata import version
+from importlib.util import find_spec
 import os
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 datas = []
 binaries = []
@@ -18,6 +19,18 @@ hiddenimports.append({
     "win32": "keyring.backends.Windows",
 }.get(sys.platform, "keyring.backends.SecretService"))
 app_version = version("firik-agent")
+
+# Audio is optional for source installs. The sounddevice hook collects the
+# platform PortAudio library; recursive metadata retains dependency licenses.
+if find_spec("sounddevice") is not None:
+    hiddenimports.append("sounddevice")
+    datas += copy_metadata("sounddevice", recursive=True)
+
+# Optional codecs/VAD are collected only when deliberately installed.
+for audio_module, audio_distribution in (("soundfile", "soundfile"), ("webrtcvad", "webrtcvad-wheels")):
+    if find_spec(audio_module) is not None:
+        hiddenimports.append(audio_module)
+        datas += copy_metadata(audio_distribution, recursive=True)
 
 
 # CustomTkinter varlıkları (fontlar, JSON tema dosyaları, ikonlar)
@@ -74,6 +87,14 @@ a = Analysis(
     optimize=0,
 )
 
+# Windows speech capture uses the normal host APIs. Do not redistribute the
+# separately licensed ASIO SDK variant shipped alongside some upstream wheels.
+# Some collection hooks classify DLLs as data, so filter both Analysis tables.
+a.binaries = [entry for entry in a.binaries
+              if not Path(entry[0]).name.lower().endswith("-asio.dll")]
+a.datas = [entry for entry in a.datas
+           if not Path(entry[0]).name.lower().endswith("-asio.dll")]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -95,7 +116,7 @@ exe = EXE(
     argv_emulation=False,
     target_arch=None,
     codesign_identity=os.environ.get("FIRIK_CODESIGN_IDENTITY") if is_mac else None,
-    entitlements_file=None,
+    entitlements_file="firik_agent/ui/assets/macos-voice.entitlements" if is_mac else None,
     icon=icon_file,
 )
 
@@ -114,5 +135,6 @@ if is_mac:
             "CFBundleVersion": app_version,
             "CFBundleShortVersionString": app_version,
             "NSHighResolutionCapable": "True",
+            "NSMicrophoneUsageDescription": "Bas-konuş düğmesini basılı tuttuğunuzda veya sesli sohbeti açıkça başlattığınızda konuşmanızı yazıya dönüştürmek için mikrofon kullanılır. Dinlemeyi duraklatabilir veya kapatabilirsiniz.",
         },
     )

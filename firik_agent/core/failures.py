@@ -23,6 +23,9 @@ class FailureKind(str, Enum):
     AUTHENTICATION_FAILED = "authentication_failed"
     PERMISSION_DENIED = "permission_denied"
     CONTEXT_OVERFLOW = "context_overflow"
+    INVALID_REQUEST = "invalid_request"
+    MODEL_NOT_FOUND = "model_not_found"
+    REQUEST_TOO_LARGE = "request_too_large"
     UNSUPPORTED_CAPABILITY = "unsupported_capability"
     INVALID_TOOL_ARGUMENTS = "invalid_tool_arguments"
     STREAM_INTERRUPTED = "stream_interrupted"
@@ -52,6 +55,9 @@ _MESSAGES = {
     FailureKind.AUTHENTICATION_FAILED: "Provider authentication failed; resolve the configured credentials.",
     FailureKind.PERMISSION_DENIED: "Operation denied by the active permission policy.",
     FailureKind.CONTEXT_OVERFLOW: "Provider context limit exceeded.",
+    FailureKind.INVALID_REQUEST: "Provider rejected the request format or parameters; inspect model compatibility and request settings.",
+    FailureKind.MODEL_NOT_FOUND: "Selected model is unavailable at the configured endpoint; list available models with /model.",
+    FailureKind.REQUEST_TOO_LARGE: "Provider rejected an oversized request; reduce the input or attachments.",
     FailureKind.UNSUPPORTED_CAPABILITY: "Provider does not support the requested capability or schema.",
     FailureKind.INVALID_TOOL_ARGUMENTS: "Tool arguments are invalid.",
     FailureKind.STREAM_INTERRUPTED: "Incomplete streamed tool call or truncated SSE response; output was not replayed.",
@@ -61,8 +67,10 @@ _MESSAGES = {
     FailureKind.BUDGET_EXCEEDED: "Run resource budget exhausted.",
     FailureKind.POLICY_REFUSAL: "Provider policy refusal; automatic bypass is forbidden.",
     FailureKind.CANCELLED: "Operation cancelled.",
-    FailureKind.UNKNOWN: "Operation failed with an unclassified error; inspect the recorded error type.",
+    FailureKind.UNKNOWN: "Operation failed with an unclassified error.",
 }
+
+_CREDENTIAL_ERROR_CODES = frozenset({"invalid_api_key", "missing_api_key", "api_key_expired", "invalid_token", "token_expired"})
 
 
 def _identifier(value: Any) -> Optional[str]:
@@ -88,7 +96,7 @@ class RuntimeFailure(RuntimeError):
         for key, value in (("provider", provider), ("provider_code", provider_code),
                            ("provider_request_id", request_id), ("error_type", source_type)):
             safe = _identifier(value)
-            if key == "provider_code" and isinstance(value, str) and value in {"invalid_api_key", "missing_api_key", "api_key_expired", "invalid_token", "token_expired"}:
+            if key == "provider_code" and isinstance(value, str) and value in _CREDENTIAL_ERROR_CODES:
                 safe = value  # Known diagnostic codes describe credentials, not their values.
             if safe:
                 self.metadata[key] = safe
@@ -97,6 +105,33 @@ class RuntimeFailure(RuntimeError):
         if self.retry_after is not None:
             self.metadata["retry_after"] = self.retry_after
         super().__init__(_MESSAGES[self.kind])
+
+
+def format_failure(error: BaseException) -> str:
+    """Render actionable diagnostics without raw exception or provider messages.
+
+    Metadata remains mutable for runtime integrations, so validate it again at
+    this display boundary rather than assuming construction-time filtering.
+    """
+    failure = normalize_failure(error)
+    kind = failure.kind if isinstance(failure.kind, FailureKind) else FailureKind.UNKNOWN
+    phase = failure.phase if isinstance(failure.phase, RequestPhase) else None
+    metadata = failure.metadata if isinstance(failure.metadata, dict) else {}
+    details = [f"failure_kind={kind.value}"]
+    if phase is not None:
+        details.append(f"request_phase={phase.value}")
+    for key in ("error_type", "http_status", "provider", "provider_code", "provider_request_id"):
+        value = metadata.get(key)
+        if key == "http_status":
+            safe = value if isinstance(value, int) and not isinstance(value, bool) and 100 <= value <= 599 else None
+        else:
+            safe = _identifier(value)
+            if key == "provider_code" and isinstance(value, str) and value in _CREDENTIAL_ERROR_CODES:
+                safe = value
+        if safe is not None:
+            details.append(f"{key}={safe}")
+    return (f"{_MESSAGES[kind]} ({', '.join(details)}) "
+            "Run /doctor or firik-agent doctor --probe for checks.")
 
 
 def parse_retry_after(value: Optional[str], *, now: Optional[datetime] = None) -> Optional[float]:
@@ -138,6 +173,8 @@ def provider_failure(response: httpx.Response, *, provider: Optional[str] = None
         kind = FailureKind.AUTHENTICATION_FAILED
     elif status == 403:
         kind = FailureKind.PERMISSION_DENIED
+    elif status == 413:
+        kind = FailureKind.REQUEST_TOO_LARGE
     elif any(word in hint for word in ("context_length", "context_window", "context window", "context limit", "maximum context", "too many tokens")):
         kind = FailureKind.CONTEXT_OVERFLOW
     elif status == 402 or any(word in hint for word in ("insufficient_quota", "budget_exceeded", "credit_balance", "billing_hard_limit", "quota_exceeded")):
@@ -148,6 +185,11 @@ def provider_failure(response: httpx.Response, *, provider: Optional[str] = None
         kind = FailureKind.PROVIDER_OVERLOADED
     elif any(word in hint for word in ("unsupported", "not supported", "invalid_tool_schema", "invalid schema", "invalid_function_parameters")):
         kind = FailureKind.UNSUPPORTED_CAPABILITY
+    elif status == 404 and isinstance(code, str) and code.casefold() in {
+            "model_not_found", "invalid_model", "unknown_model", "model_does_not_exist", "model_not_available"}:
+        kind = FailureKind.MODEL_NOT_FOUND
+    elif status in {400, 422}:
+        kind = FailureKind.INVALID_REQUEST
     else:
         kind = FailureKind.UNKNOWN
     return RuntimeFailure(kind, phase=phase, provider=provider, http_status=status,

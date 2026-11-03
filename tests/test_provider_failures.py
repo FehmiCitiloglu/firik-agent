@@ -6,7 +6,7 @@ import json
 import httpx
 import pytest
 
-from firik_agent.core.failures import FailureKind, RequestPhase, RuntimeFailure, normalize_failure, parse_retry_after
+from firik_agent.core.failures import FailureKind, RequestPhase, RuntimeFailure, format_failure, normalize_failure, parse_retry_after
 from firik_agent.core.types import Message
 from firik_agent.providers.firik import FirikProvider
 from firik_agent.providers.openai_provider import OpenAIProvider
@@ -32,6 +32,11 @@ def mock_client(monkeypatch, respond):
     (403, "policy_refusal", FailureKind.POLICY_REFUSAL),
     (400, "context_length_exceeded", FailureKind.CONTEXT_OVERFLOW),
     (400, "invalid_tool_schema", FailureKind.UNSUPPORTED_CAPABILITY),
+    (400, "invalid_request_error", FailureKind.INVALID_REQUEST),
+    (422, "validation_error", FailureKind.INVALID_REQUEST),
+    (413, "request_too_large", FailureKind.REQUEST_TOO_LARGE),
+    (404, "model_not_found", FailureKind.MODEL_NOT_FOUND),
+    (404, "route_not_found", FailureKind.UNKNOWN),
     (429, "insufficient_quota", FailureKind.BUDGET_EXCEEDED),
     (500, "unclassified", FailureKind.UNKNOWN),
 ])
@@ -163,6 +168,65 @@ def test_metadata_rejects_non_identifier_and_credential_shapes():
     error = RuntimeFailure(FailureKind.UNKNOWN, provider="https://secret:pwd@host", provider_code="sk-secret",
                            request_id="password=secret", source_type="ValueError")
     assert error.metadata == {"failure_kind": "unknown", "request_phase": "submitted_no_output", "error_type": "ValueError"}
+
+
+def test_failure_formatter_exposes_safe_diagnostics_and_checks_without_exception_text():
+    error = RuntimeFailure(FailureKind.INVALID_REQUEST, provider="firik", http_status=422,
+                           provider_code="invalid_request_error", request_id="req-safe-123",
+                           source_type="HTTPStatusError")
+    # Exception arguments are not a trusted presentation source either.
+    error.args = ("raw provider response TOP-SECRET",)
+    formatted = format_failure(error)
+    for detail in ("failure_kind=invalid_request", "request_phase=submitted_no_output", "error_type=HTTPStatusError",
+                   "http_status=422", "provider=firik", "provider_code=invalid_request_error",
+                   "provider_request_id=req-safe-123", "/doctor", "firik-agent doctor --probe"):
+        assert detail in formatted
+    assert "TOP-SECRET" not in formatted
+    assert "Provider rejected the request format" in formatted
+
+
+def test_failure_formatter_never_displays_arbitrary_exception_messages():
+    class DiagnosticError(Exception):
+        def __str__(self):
+            raise AssertionError("format_failure must not inspect raw exception text")
+
+    formatted = format_failure(DiagnosticError("password=TOP-SECRET"))
+    assert "error_type=DiagnosticError" in formatted
+    assert "failure_kind=unknown" in formatted
+    assert "TOP-SECRET" not in formatted
+
+
+def test_failure_formatter_revalidates_mutated_metadata_and_enum_fields():
+    error = RuntimeFailure(FailureKind.UNKNOWN, source_type="ValueError")
+    error.metadata.update({"error_type": "ValueError\nTOP-SECRET", "http_status": True,
+                           "provider": "https://user:password@private.invalid",
+                           "provider_code": "password=TOP-SECRET", "provider_request_id": "[link=private]TOP-SECRET",
+                           "failure_kind": "TOP-SECRET", "request_phase": "TOP-SECRET", "message": "TOP-SECRET"})
+    error.kind = "TOP-SECRET"
+    error.phase = "TOP-SECRET"
+    formatted = format_failure(error)
+    assert "failure_kind=unknown" in formatted
+    assert "TOP-SECRET" not in formatted
+    assert "http_status=" not in formatted
+    assert "request_phase=" not in formatted
+    assert "private.invalid" not in formatted
+
+
+def test_failure_formatter_ignores_replaced_metadata_container():
+    error = RuntimeFailure(FailureKind.AUTHENTICATION_FAILED, provider_code="invalid_api_key")
+    assert "provider_code=invalid_api_key" in format_failure(error)
+    error.metadata = "TOP-SECRET"
+    assert "TOP-SECRET" not in format_failure(error)
+
+
+@pytest.mark.parametrize("kind", [FailureKind.INVALID_REQUEST, FailureKind.MODEL_NOT_FOUND, FailureKind.REQUEST_TOO_LARGE])
+def test_rejected_request_diagnostics_do_not_enable_automatic_retry(kind):
+    from firik_agent.core.recovery import AdaptiveRecoveryEngine, RecoveryAction, RecoveryBudget, RecoveryContext, SideEffectRisk
+    context = RecoveryContext("run", "attempt", kind, RequestPhase.SUBMITTED_NO_OUTPUT,
+                              SideEffectRisk.PURE_READ, {}, RecoveryBudget())
+    decision = AdaptiveRecoveryEngine().decide(context)
+    assert decision.action == RecoveryAction.FAIL
+    assert decision.metadata()["retry_eligible"] is False
 
 
 def test_cancelled_is_classified_without_its_message():

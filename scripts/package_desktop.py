@@ -57,7 +57,7 @@ Priority: optional
 Architecture: amd64
 Maintainer: FIRIK <noreply@ssyz.org.tr>
 Depends: libc6 (>= 2.35), libx11-6, libxext6, libxft2, libxrender1, libfontconfig1
-Recommends: gnome-keyring
+Recommends: gnome-keyring, espeak-ng
 Description: Firik Agent desktop client
  Chat, OCR, transcription and reranking with FIRIK APIs.
 """)
@@ -75,6 +75,7 @@ License: Proprietary
 BuildArch: x86_64
 AutoReqProv: no
 Requires: glibc >= 2.35, libX11, libXext, libXft, libXrender, fontconfig
+Recommends: espeak-ng
 %description
 Chat, OCR, transcription and reranking with FIRIK APIs.
 %install

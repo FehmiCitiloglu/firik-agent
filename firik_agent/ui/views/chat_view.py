@@ -25,6 +25,7 @@ from firik_agent.core.session import ChatSession
 from firik_agent.ui.components.tool_card import ToolActivityGroup
 from firik_agent.ui.components.live_activity import LiveActivity, command_preview
 from firik_agent.ui.components.markdown_message import MarkdownMessage
+from firik_agent.ui.components.voice_panel import VoicePanel
 from firik_agent.ui.service import FirikService, turkce_hata_mesaji
 from firik_agent.ui.theme import THEME_COLORS
 
@@ -528,6 +529,15 @@ class ChatView(ctk.CTkFrame):
         )
         self.send_btn.grid(row=1, column=2, padx=(6, 10), pady=10)
 
+        self.voice_panel = VoicePanel(bottom_box, self.service, on_dictation=self._insert_dictation,
+            on_submit=self._submit_voice_transcript, get_session_id=lambda: self.session.session_id,
+            on_submit_request=self._submit_voice_request,
+            is_busy=lambda: self.is_streaming,
+            actions={"stop_response": self._voice_stop_response, "new_chat": self.new_chat,
+                     "read_last": self._voice_read_last, "stop_speech": lambda: self.voice_panel.stop_speaking(),
+                     "switch_coding": lambda: self.winfo_toplevel().open_existing_coding_conversation()})
+        self.voice_panel.grid(row=2, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 4))
+
         # Kısayol İpucu
         hint_lbl = ctk.CTkLabel(
             self,
@@ -536,6 +546,66 @@ class ChatView(ctk.CTkFrame):
             text_color=("gray50", "gray60"),
         )
         hint_lbl.grid(row=7, column=0, sticky="w", padx=22, pady=(0, 6))
+
+    def _insert_dictation(self, text: str) -> None:
+        existing = self.input_textbox.get("1.0", "end-1c")
+        self.input_textbox.insert("end", (" " if existing and not existing[-1].isspace() else "") + text)
+        self.input_textbox.focus_set()
+
+    def _voice_stop_response(self) -> None:
+        if self.is_streaming:
+            self._on_send_pressed()
+
+    def _submit_voice_transcript(self, text: str) -> bool:
+        # The normal send button doubles as cancellation. Voice must never
+        # enter that branch or silently overwrite a typed draft/attachment.
+        if (self.is_streaming or self.attached_image_path
+                or self.input_textbox.get("1.0", "end-1c").strip()):
+            return False
+        self.input_textbox.insert("1.0", text)
+        self._on_send_pressed()
+        if self.is_streaming:
+            return True
+        self.input_textbox.delete("1.0", "end")
+        return False
+
+    def _submit_voice_request(self, request) -> bool:
+        if request.session_id != self.session.session_id or request.intended_target != "conversation":
+            return False
+        self._pending_voice_request = request
+        try:
+            return self._submit_voice_transcript(request.request_text)
+        finally:
+            self._pending_voice_request = None
+
+    def _show_voice_tool_approval(self, payload, decide):
+        if payload.get("session_id") != self.session.session_id or not self.is_streaming or not self.winfo_exists():
+            decide(False)
+            return
+        from firik_agent.ui.components.operation_approval import OperationApprovalDialog
+        dialog = OperationApprovalDialog(self,
+            tool_name=payload["tool_name"], arguments=payload["arguments"], reason=payload.get("reason", ""),
+            on_decision=decide)
+        dialogs = getattr(self, "_voice_approval_dialogs", None)
+        if dialogs is None:
+            self._voice_approval_dialogs = dialogs = set()
+        dialogs.add(dialog)
+        def cleanup(event):
+            if event.widget is dialog:
+                dialogs.discard(dialog)
+        dialog.bind("<Destroy>", cleanup, add="+")
+
+    def _voice_read_last(self) -> None:
+        for record in reversed(self.messages):
+            if record.get("role") == "assistant" and not record.get("pending"):
+                self.voice_panel.read_text(str(record.get("content", "")))
+                break
+
+    def set_voice_active(self, active: bool) -> None:
+        if active:
+            self.voice_panel.activate()
+        else:
+            self.voice_panel.deactivate()
 
     def _open_mcp_selector(self) -> None:
         MCPChatSelectorDialog(self, service=self.service, session=self.session, on_changed=self._update_mcp_chips)
@@ -842,9 +912,12 @@ class ChatView(ctk.CTkFrame):
                 self._current_activity.finish(cancelled=True)
             self._finish_streaming(following=following)
             self._save_history()
+            self.voice_panel.response_completed("")
+
             return
 
         text = self.input_textbox.get("1.0", "end-1c").strip()
+        voice_request = getattr(self, "_pending_voice_request", None)
         if not text and not self.attached_image_path:
             return
 
@@ -880,7 +953,8 @@ class ChatView(ctk.CTkFrame):
         self._remove_attached_image()
         self.input_textbox.delete("1.0", "end")
         self.messages.append({"role": "user", "content": user_content,
-                              "timestamp": user_bubble.timestamp, "image_path": image_to_send})
+                              "timestamp": user_bubble.timestamp, "image_path": image_to_send,
+                              **({"execution": voice_request.to_metadata()} if voice_request is not None else {})})
 
         # Asistan balonunu hazırla
         bot_bubble = self._add_message("assistant", "Yanıt hazırlanıyor...")
@@ -896,6 +970,7 @@ class ChatView(ctk.CTkFrame):
 
         # Akışı Başlat
         self.is_streaming = True
+        self.voice_panel.response_started("thinking")
         self._refresh_effort()
         self._show_activity_stage("Hazırlanıyor", "Model ve araç bağlantıları hazırlanıyor…")
         self.send_btn.configure(text="Durdur", fg_color="#ef4444", hover_color="#dc2626")
@@ -934,12 +1009,14 @@ class ChatView(ctk.CTkFrame):
                 activity.finish(failed=error is not None)
             self._finish_streaming(following=following)
             self._save_history()
+            self.voice_panel.response_completed(text_content if not error else "")
 
         def on_event(evt: AgentEvent):
             nonlocal text_before_tools
             if self._stream_token is not stream_token:
                 return
             if evt.type == AgentEventType.MODEL_REQUEST_STARTED:
+                self.voice_panel.agent_activity("thinking")
                 self._show_activity_stage("Model yanıtı bekleniyor", "Modelin sonraki adımı bekleniyor…")
             elif evt.type == AgentEventType.CONTEXT_COMPACTION_STARTED:
                 self._show_activity_stage("Bağlam sıkıştırılıyor", "Önceki konuşma özetleniyor…")
@@ -954,6 +1031,7 @@ class ChatView(ctk.CTkFrame):
                 self._show_activity_stage("Hazırlanıyor", f"{evt.server_name} bağlandı; model yanıtı bekleniyor…")
             if evt.type == AgentEventType.TEXT_DELTA:
                 if evt.content:
+                    self.voice_panel.response_delta(evt.content)
                     self._show_activity_stage("Yanıt yazılıyor", "Modelden yanıt metni alınıyor…")
                     if text_before_tools and accumulated_chunks:
                         accumulated_chunks.append("\n\n")
@@ -970,6 +1048,7 @@ class ChatView(ctk.CTkFrame):
                     self._scroll_to_bottom()
 
             elif evt.type == AgentEventType.TOOL_CALL_STARTED:
+                self.voice_panel.agent_activity("executing")
                 get_activity().start_tool(evt)
                 self._show_active_tools()
                 text_before_tools = bool(accumulated_chunks)
@@ -985,6 +1064,13 @@ class ChatView(ctk.CTkFrame):
                 self._show_activity_stage("Hazırlanıyor", "MCP bağlantısı kurulamadı; diğer adımlar bekleniyor…")
                 self._scroll_to_bottom()
 
+            elif evt.type == AgentEventType.APPROVAL_REQUIRED:
+                self._show_activity_stage("İşlem onayı gerekiyor", "Gösterilen araç ve tüm parametreleri masaüstü onay ekranından inceleyin.")
+                get_activity().append_reasoning("\nİşlem onayı bekleniyor: " + (evt.tool_name or "Araç") + "\n")
+
+            elif evt.type == AgentEventType.APPROVAL_DECIDED:
+                get_activity().append_reasoning("\nİşlem onayı: " + ("izin verildi" if evt.metadata.get("allowed") else "reddedildi") + "\n")
+
             elif evt.type == AgentEventType.DONE:
                 complete(evt.content or "")
 
@@ -997,16 +1083,24 @@ class ChatView(ctk.CTkFrame):
         def on_error(err_msg: str):
             complete(error=err_msg)
 
-        self.service.chat_agent_stream_async(
-            session_id=self.session.session_id,
-            prompt=text,
-            image_path=image_to_send,
-            on_event=lambda evt: self.after(0, lambda: on_event(evt)),
-            on_done=lambda t: self.after(0, lambda: on_done(t)),
-            on_error=lambda e: self.after(0, lambda: on_error(e)),
-        )
+        voice_options = ({"voice_request": voice_request, "on_approval": self._show_voice_tool_approval}
+                         if voice_request is not None else {})
+        try:
+            self.service.chat_agent_stream_async(
+                session_id=self.session.session_id,
+                prompt=text,
+                image_path=image_to_send,
+                on_event=lambda evt: self.after(0, lambda: on_event(evt)),
+                on_done=lambda t: self.after(0, lambda: on_done(t)),
+                on_error=lambda e: self.after(0, lambda: on_error(e)),
+                **voice_options,
+            )
+        except Exception as error:
+            complete(error=str(error))
 
     def destroy(self) -> None:
+        self._close_voice_approvals()
+        self.voice_panel.deactivate()
         self._save_history()
         self._stream_token = None
         self.live_activity.stop()
@@ -1015,7 +1109,13 @@ class ChatView(ctk.CTkFrame):
             self._scroll_job = None
         super().destroy()
 
+    def _close_voice_approvals(self):
+        for dialog in tuple(getattr(self, "_voice_approval_dialogs", ())):
+            if dialog.winfo_exists():
+                dialog.decide(False)
+
     def _finish_streaming(self, *, following: Optional[bool] = None) -> None:
+        self._close_voice_approvals()
         if following is None:
             following = self._capture_scroll_anchor() is not None
         self.is_streaming = False
@@ -1129,6 +1229,8 @@ class ChatView(ctk.CTkFrame):
 
     def clear_chat(self, *, reset_session: bool = True) -> None:
         """Tüm sohbet geçmişini temizler."""
+        self.voice_panel.cancel()
+        self.voice_panel.dismiss_command()
         if self.is_streaming:
             self.service.cancel_active_stream(self.session.session_id)
             self._finish_streaming()

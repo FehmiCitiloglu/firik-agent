@@ -1,6 +1,6 @@
 """firik masaüstü uygulaması - Ses Çözümleme (Transkripsiyon) Görünümü.
 
-Ses dosyalarını (MP3, WAV, M4A, OGG vb.) FIRIK ses modelleriyle metne
+PCM WAV ses dosyalarını FIRIK ses modelleriyle metne
 veya zaman damgalı SRT altyazıya dönüştürür.
 Tüm arayüz Türkçedir.
 """
@@ -73,7 +73,7 @@ class TranscribeView(ctk.CTkFrame):
 
         self.file_info_lbl = ctk.CTkLabel(
             file_row,
-            text="Henüz ses dosyası seçilmedi (MP3, WAV, M4A, OGG, FLAC)",
+            text="PCM WAV seçin · en çok 120 saniye / 25 MiB",
             font=ctk.CTkFont(size=12),
             text_color=("gray40", "#94a3b8"),
         )
@@ -183,7 +183,7 @@ class TranscribeView(ctk.CTkFrame):
         dosya = filedialog.askopenfilename(
             title="Ses Dosyası Seçin",
             filetypes=[
-                ("Ses Dosyaları", "*.mp3 *.wav *.m4a *.ogg *.flac *.aac *.wma"),
+                ("PCM WAV Ses Dosyaları", "*.wav"),
                 ("Tüm Dosyalar", "*.*"),
             ],
         )

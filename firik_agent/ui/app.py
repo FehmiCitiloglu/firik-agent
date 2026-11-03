@@ -10,6 +10,8 @@ import os
 import platform
 import queue
 import sys
+import threading
+from tkinter import messagebox
 try:
     import tkinter as tk
     import customtkinter as ctk
@@ -65,7 +67,7 @@ def _ensure_tk_environment() -> None:
 class FirikApp(ctk.CTk):
     """firik-agent masaüstü uygulaması ana penceresi."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, config_path=None) -> None:
         _ensure_tk_environment()
         super().__init__()
 
@@ -84,7 +86,7 @@ class FirikApp(ctk.CTk):
         # Servis Başlatma
         self._callbacks = queue.SimpleQueue()
         self._closing = False
-        self.service = FirikService(dispatch=self._enqueue_callback)
+        self.service = FirikService(dispatch=self._enqueue_callback, config_path=config_path)
         self._callback_timer = self.after(25, self._drain_callbacks)
 
         # Izgara Düzeni (Solda Yan Menü, Sağda İçerik)
@@ -125,11 +127,20 @@ class FirikApp(ctk.CTk):
             self._callback_timer = self.after(25, self._drain_callbacks)
 
     def destroy(self) -> None:
+        if self._closing:
+            return
         self._closing = True
+        # Invalidate native and queued voice callbacks before destroying Tk.
+        for controller in list(self.service._voice_controllers):
+            controller.close()
         self.service.cancel_active_stream()
-        self.service.shutdown()
-        if hasattr(self.service, "projects") and hasattr(self.service.projects, "scheduler"):
-            self.service.projects.scheduler.stop()
+        def cleanup():
+            self.service.shutdown()
+            if hasattr(self.service, "projects") and hasattr(self.service.projects, "scheduler"):
+                self.service.projects.scheduler.stop()
+        # Network subprocess shutdown and worker joins must not freeze the UI.
+        self._shutdown_thread = threading.Thread(target=cleanup, name="FirikShutdown", daemon=False)
+        self._shutdown_thread.start()
         self.after_cancel(self._callback_timer)
         super().destroy()
 
@@ -298,11 +309,138 @@ class FirikApp(ctk.CTk):
         self.views["settings"] = SettingsView(self.content_container, service=self.service)
         self.views["about"] = AboutView(self.content_container)
 
+    def open_existing_coding_conversation(self) -> bool:
+        """Navigate to an existing coding session without starting agent work."""
+        projects = self.views["projects"]
+        candidates = []
+        for project in projects.project_service.db.list_projects():
+            if (project.id in projects._coding_states
+                    or self.service.coding_store.latest_run(project.id) is not None):
+                candidates.append(project)
+        current = next((p for p in candidates if p.id == projects.current_project_id), None)
+
+        def open_project(project_id):
+            if projects.current_project_id != project_id or not projects.workspace_container.winfo_ismapped():
+                projects.show_workspace_screen(project_id)
+            if projects.active_workspace_tab != "coding":
+                projects._switch_workspace_tab("coding")
+            self.show_view("projects")
+
+        if current is not None or len(candidates) == 1:
+            open_project((current or candidates[0]).id)
+            return True
+        if not candidates:
+            messagebox.showinfo("Kodlama sohbeti", "Mevcut bir kodlama sohbeti bulunamadı. Önce bir projede kodlama sohbeti açın.", parent=self)
+            return False
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Kodlama sohbetini seçin")
+        dialog.geometry("420x320")
+        dialog.transient(self)
+        ctk.CTkLabel(dialog, text="Hangi mevcut kodlama sohbetine geçilsin?").pack(padx=16, pady=12)
+        choices = ctk.CTkScrollableFrame(dialog)
+        choices.pack(fill="both", expand=True, padx=12, pady=12)
+        for project in candidates:
+            def choose(project_id=project.id):
+                dialog.destroy()
+                open_project(project_id)
+            ctk.CTkButton(choices, text=project.name, command=choose).pack(fill="x", pady=4)
+        return True
+
+    def voice_destinations(self):
+        """Snapshot the application's actual tabs, histories and project IDs."""
+        from firik_agent.voice.requests import VoiceDestination
+        result = [VoiceDestination("tab", name, name) for name in self.views]
+        chat = self.views.get("chat")
+        conversations = {row["session_id"]: row.get("title") or row["session_id"]
+                         for row in self.service.list_chat_history()}
+        for sid, page in getattr(chat, "pages", {}).items():
+            conversations.setdefault(sid, page.session.title)
+        result.extend(VoiceDestination("conversation", sid, title, session_id=sid)
+                      for sid, title in conversations.items())
+        projects = self.views.get("projects")
+        if projects is not None:
+            result.extend(VoiceDestination("project", project.id, project.name, project_id=project.id)
+                          for project in projects.project_service.db.list_projects())
+        return tuple(result)
+
+    def handle_voice_command(self, request) -> bool:
+        """Deterministic UI actions only; agent tasks use their normal composer."""
+        from firik_agent.voice.commands import VoiceCommand
+        from firik_agent.voice.summaries import agent_activity_summary, coding_speech_summary
+        projects, chat = self.views.get("projects"), self.views.get("chat")
+        command, destination = request.command, request.destination
+        if destination is not None:
+            if destination not in self.voice_destinations():
+                return False
+            if command == VoiceCommand.OPEN_TAB and destination.id in self.views:
+                self.show_view(destination.id)
+                return True
+            if command == VoiceCommand.SELECT_CONVERSATION and chat is not None:
+                # open_chat reuses the page or existing session restoration.
+                chat.open_chat(destination.id)
+                self.show_view("chat")
+                return True
+            if command == VoiceCommand.SELECT_PROJECT and projects is not None:
+                projects.show_workspace_screen(destination.id)
+                self.show_view("projects")
+                return True
+        if command == VoiceCommand.NEW_CHAT and chat is not None:
+            chat.new_chat()
+            self.show_view("chat")
+            return True
+        if command == VoiceCommand.SWITCH_CODING:
+            return self.open_existing_coding_conversation()
+        state = getattr(projects, "_coding_states", {}).get(request.project_id) if projects else None
+        page = getattr(chat, "pages", {}).get(request.session_id) if chat else None
+        panel = getattr(projects, "coding_voice_panel", None) if request.intended_target == "coding" else getattr(page, "voice_panel", None)
+        if command in {VoiceCommand.PAUSE_AGENT, VoiceCommand.RESUME_AGENT}:
+            if not state or request.intended_target != "coding":
+                return False
+            action = "pause" if command == VoiceCommand.PAUSE_AGENT else "resume"
+            if not self.service.coding_control(request.session_id, action):
+                return False
+            state["paused"] = action == "pause"
+            state["status"] = "İşlem sınırında duraklatılıyor…" if action == "pause" else "Devam ediliyor…"
+            if projects.current_project_id == request.project_id:
+                projects._refresh_coding_display()
+            return True
+        if command == VoiceCommand.VIEW_ACTIVITY:
+            if state and projects.current_project_id == request.project_id:
+                projects.coding_tabs.set("Etkinlik")
+                return True
+            activity = getattr(page, "_current_activity", None)
+            if activity is not None:
+                if not activity.is_expanded:
+                    activity._toggle_expand()
+                return True
+            return False
+        if command == VoiceCommand.AGENT_STATUS:
+            summary = (agent_activity_summary(state["cockpit"].agents, state["activities"]) if state else
+                       "Mevcut sohbet ajanı yanıt hazırlıyor." if page and page.is_streaming else "Bu oturumda çalışan ajan yok.")
+        elif command == VoiceCommand.DESCRIBE_PROJECT:
+            project_id = request.project_id or getattr(projects, "current_project_id", None)
+            project = projects.project_service.db.get_project(project_id) if projects and project_id else None
+            if project is None:
+                return False
+            project_state = projects._coding_states.get(project_id)
+            summary = coding_speech_summary(project_state["status"] if project_state else "Proje seçili.", project_name=project.name)
+        else:
+            return False
+        if panel is None:
+            return False
+        panel.status.configure(text=summary)
+        panel.read_text(summary)
+        return True
+
 
     def show_view(self, tab_id: str) -> None:
         """Belirtilen görünümü ekranda gösterir."""
         if tab_id not in self.views:
             return
+
+        previous = self.views.get(self.active_tab)
+        if previous is not self.views[tab_id] and hasattr(previous, "set_voice_active"):
+            previous.set_voice_active(False)
 
         # Önceki görünümü gizle
         for vid, view in self.views.items():
@@ -325,6 +463,8 @@ class FirikApp(ctk.CTk):
 
         # Yeni görünümü yerleştir
         self.views[tab_id].grid(row=0, column=0, sticky="nsew")
+        if hasattr(self.views[tab_id], "set_voice_active"):
+            self.views[tab_id].set_voice_active(True)
         self.active_tab = tab_id
 
     def _setup_keybindings(self) -> None:
@@ -372,9 +512,21 @@ class FirikApp(ctk.CTk):
 
 def main() -> int:
     """firik-agent masaüstü uygulamasını başlatır."""
-    app = FirikApp()
     if "--smoke-test" in sys.argv:
-        app.after(250, app.destroy)
+        # Frozen smoke checks must never open the user's config, history,
+        # projects or configured MCP processes. Use a disposable local profile.
+        import tempfile
+        from firik_agent.config import save_config
+        with tempfile.TemporaryDirectory(prefix="firik-smoke-") as directory:
+            config_path = Path(directory) / "config.yaml"
+            save_config({"providers": {"firik": {"base_url": "http://127.0.0.1:9/v1",
+                         "api_key_env": "FIRIK_SMOKE_UNUSED_KEY", "default_model": "glm-5.3"}},
+                         "disabled_default_mcps": ["computer-use", "web"], "timeout": 1}, config_path)
+            app = FirikApp(config_path=config_path)
+            app.after(250, app.destroy)
+            app.mainloop()
+        return 0
+    app = FirikApp()
     app.mainloop()
     return 0
 

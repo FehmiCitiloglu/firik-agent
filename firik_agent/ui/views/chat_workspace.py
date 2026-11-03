@@ -42,6 +42,9 @@ class ChatWorkspace(ctk.CTkFrame):
         self.open_chat(records[0]["session_id"] if records else None)
 
     def new_chat(self):
+        if self.current:
+            self.current.voice_panel.cancel()
+            self.current.voice_panel.dismiss_command()
         if (self.current and not self.current.messages and not self.current.attached_image_path
                 and not self.current.input_textbox.get("1.0", "end-1c").strip()):
             self.current.input_textbox.focus_set()
@@ -50,6 +53,7 @@ class ChatWorkspace(ctk.CTkFrame):
 
     def open_chat(self, session_id: Optional[str]):
         if self.current:
+            self.current.set_voice_active(False)
             self.current.grid_remove()
         page = self.pages.get(session_id) if session_id else None
         if page is None:
@@ -58,9 +62,14 @@ class ChatWorkspace(ctk.CTkFrame):
                             on_history_change=self.refresh_history)
             self.pages[page.session.session_id] = page
         self.current = page
+        page.set_voice_active(True)
         self._unread.discard(page.session.session_id)
         page.grid(row=0, column=0, sticky="nsew")
         self.refresh_history()
+
+    def set_voice_active(self, active: bool):
+        if self.current:
+            self.current.set_voice_active(active)
 
     def refresh_history(self):
         if not hasattr(self, "history_list"):

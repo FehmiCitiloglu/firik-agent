@@ -44,6 +44,12 @@ class ActivityLog:
         ))
         self.notify()
 
+    def failure(self, error: Exception) -> None:
+        from firik_agent.core.failures import format_failure
+        detail = format_failure(error)
+        self.entries.append(ActivityEntry("Error", detail, status="failed", kind="error"))
+        self.notify()
+
     def tool_start(self, name: str, args: dict[str, Any]) -> None:
         self.entries.append(ActivityEntry(
             name, "Arguments:\n" + json.dumps(args, ensure_ascii=False, indent=2),
@@ -74,6 +80,7 @@ class ActivityLog:
         thoughts = sum(entry.kind == "thinking" for entry in self.entries)
         retries = sum(entry.kind == "retry" for entry in self.entries)
         recoveries = sum(entry.kind == "recovery" for entry in self.entries)
+        errors = sum(entry.kind == "error" for entry in self.entries)
         active = next((e.tool_name for e in reversed(self.entries) if e.status == "running"), None)
         state = f"Running {active}" if active else "Firik düşünüyor" if self.running else "Activity"
         detail = f"{state} · {tools} tool calls · {thoughts} thinking blocks"
@@ -81,6 +88,8 @@ class ActivityLog:
             detail += f" · {retries} retries"
         if recoveries:
             detail += f" · {recoveries} recovery events"
+        if errors:
+            detail += f" · {errors} errors"
         return detail
 
     def plain_details(self) -> str:

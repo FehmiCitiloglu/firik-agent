@@ -1,0 +1,27 @@
+.                                                                        [100%]
+1 passed in 1.43s
+.                                                                        [100%]
+1 passed in 1.38s
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_settings_device_picker_persists_stable_ids_and_controls_are_visible ___
+
+voice_chat = (<customtkinter.windows.ctk_tk.CTk object .>, <firik_agent.ui.views.chat_workspace.ChatWorkspace object .!chatworkspace>, <test_ui_voice.Service object at 0x109c701a0>)
+
+    def test_settings_device_picker_persists_stable_ids_and_controls_are_visible(voice_chat):
+        root, workspace, service = voice_chat
+        inputs = AudioDevice('pa:input-stable', 3, 'USB Mic', 'Core Audio', 1, 48000)
+        outputs = AudioDevice('pa:output-stable', 4, 'Headphones', 'Core Audio', 2, 48000)
+        service.audio_devices_async = lambda done, error: done({'input': [inputs], 'output': [outputs]})
+        panel = workspace.current.voice_panel
+        panel.open_settings()
+>       body = next(widget for widget in panel._dialog.winfo_children() if isinstance(widget, ctk.CTkScrollableFrame))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       StopIteration
+
+tests/test_ui_audio_engine.py:57: StopIteration
+=========================== short test summary info ============================
+FAILED tests/test_ui_audio_engine.py::test_settings_device_picker_persists_stable_ids_and_controls_are_visible
+1 failed in 0.83s
+.                                                                        [100%]
+1 passed in 0.86s

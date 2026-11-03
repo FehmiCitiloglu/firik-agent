@@ -1,0 +1,20 @@
+[
+  {
+    "language": "en",
+    "format": "PCM16 WAV",
+    "rate": 22050,
+    "channels": 1,
+    "frames": 66488,
+    "seconds": 3.015328798185941,
+    "bytes": 137072
+  },
+  {
+    "language": "tr",
+    "format": "PCM16 WAV",
+    "rate": 22050,
+    "channels": 1,
+    "frames": 68286,
+    "seconds": 3.09687074829932,
+    "bytes": 140668
+  }
+]

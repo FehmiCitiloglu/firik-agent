@@ -38,6 +38,22 @@ def output_target(filename: str | None):
             temporary.unlink(missing_ok=True)
 
 
+@contextmanager
+def binary_output_target(filename: str):
+    """Preserve existing audio output until a complete, validated response arrives."""
+    target = Path(filename)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="wb", dir=target.absolute().parent,
+                                         prefix=f".{target.name}.", delete=False) as output:
+            temporary = Path(output.name)
+            yield output
+        temporary.replace(target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def read_json(value: str) -> Any:
     if value == "-":
         return json.load(sys.stdin)
@@ -133,6 +149,14 @@ def build_parser(prog: str = "firik") -> argparse.ArgumentParser:
     audio.add_argument("--prompt", default="")
     audio.add_argument("--response-format", choices=["json", "text", "srt", "verbose_json", "diarized_json"], default="json")
     audio.add_argument("--temperature", type=float, default=0.0)
+
+    speech = command("synthesize", "Evren ses sentezi; --output ile ikili ses dosyasına yaz")
+    speech.add_argument("--input", required=True, help="UTF-8 metin, @dosya.txt veya - (stdin)")
+    speech.add_argument("--model", "-m", default="voxcpm2")
+    speech.add_argument("--voice", choices=["default"], default="default", help="Yayımlanmış tek farklı ses: default")
+    speech.add_argument("--response-format", choices=["mp3", "wav", "flac", "opus", "pcm"], default="wav")
+    speech.add_argument("--speed", type=float, default=1.0)
+    speech.add_argument("--instructions", help="İsteğe bağlı İngilizce ses stili açıklaması")
 
     media = command("media", "Medya yükleme ve yaşam döngüsü")
     media_sub = media.add_subparsers(dest="action", required=True)
@@ -306,6 +330,12 @@ async def execute(args: argparse.Namespace, client: FirikAPI, default_model: str
             raise ValueError("Ses temperature değeri 0 ile 1 arasında olmalıdır.")
         result = await client.transcribe(args.file, args.model, language=args.language, prompt=args.prompt,
                                          response_format=args.response_format, temperature=args.temperature)
+    elif name == "synthesize":
+        result = await client.synthesize(read_text(args.input), args.model, voice=args.voice,
+                                        response_format=args.response_format, speed=args.speed,
+                                        instructions=args.instructions)
+        output.write(result.audio)
+        return
     elif name == "media":
         if args.action == "upload":
             result = await client.upload_media(args.file, args.content_type, args.finalize)
@@ -369,7 +399,10 @@ async def run(argv: Sequence[str], *, api_key: str | None = None, base_url: str 
         model = default_model or config.get("default_model", "glm-5.3")
         async with FirikAPI(key, url, getattr(args, "timeout", 180), transport=transport) as client:
             filename = getattr(args, "output", None)
-            with output_target(filename) as output:
+            if args.command == "synthesize" and not filename:
+                raise ValueError("Ses sentezi için --output ses dosyası yolu gereklidir.")
+            target = binary_output_target(filename) if args.command == "synthesize" else output_target(filename)
+            with target as output:
                 await execute(args, client, model, output)
         return 0
     except (ValueError, OSError, RuntimeError, httpx.HTTPError, yaml.YAMLError) as exc:

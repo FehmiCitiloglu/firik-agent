@@ -1,0 +1,26 @@
+{
+  "python_grammar": "3.10",
+  "validated_modules": [
+    "firik_agent/voice/audio_capture.py",
+    "firik_agent/voice/transcription.py",
+    "firik_agent/voice/playback.py",
+    "firik_agent/voice/controller.py",
+    "firik_agent/voice/config.py",
+    "firik_agent/voice/models.py",
+    "firik_agent/voice/intent_router.py",
+    "firik_agent/voice/events.py",
+    "firik_agent/voice/session.py",
+    "firik_agent/voice/audio_devices.py",
+    "firik_agent/voice/__init__.py",
+    "firik_agent/voice/audio.py",
+    "firik_agent/voice/errors.py",
+    "firik_agent/voice/speech.py",
+    "firik_agent/voice/vad.py",
+    "firik_agent/voice/commands.py",
+    "firik_agent/voice/synthesis.py",
+    "firik_agent/ui/service.py",
+    "firik_agent/ui/components/voice_panel.py",
+    "firik_agent/ui/views/chat_view.py",
+    "firik_agent/ui/coding_workspace.py"
+  ]
+}

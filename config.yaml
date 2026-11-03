@@ -99,3 +99,26 @@ plugins:
   - logger
   - calculator
 disabled_default_mcps: []
+voice:
+  enabled: false
+  interaction_mode: push_to_talk
+  asr_provider: evren
+  asr_model: qwen3-asr-1.7b
+  tts_provider: evren
+  tts_model: voxcpm2
+  tts_voice: default
+  tts_format: wav
+  language: auto
+  input_device: null
+  output_device: null
+  push_to_talk_shortcut: <Control-Shift-v>
+  vad_enabled: false
+  vad_threshold: 350
+  silence_timeout: 0.7
+  max_utterance_duration: 60
+  auto_send: false
+  speak_responses: false
+  barge_in: false
+  wake_word_enabled: false
+  retain_audio: false
+  playback_speed: 1.0

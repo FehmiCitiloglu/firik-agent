@@ -52,11 +52,13 @@ def install_desktop(root_dir: Path, venv_python: Path, uv_bin: str | None, platf
     tk = subprocess.run([str(venv_python), "-c", "import tkinter"], capture_output=True, text=True)
     if tk.returncode:
         raise RuntimeError("Tkinter is required for the desktop app. Install the Tk package for your Python and retry.")
-    package = "pyinstaller>=6.16,<7"
+    packages = ["pyinstaller>=6.16,<7", "-e", f"{root_dir}[voice]"]
     if uv_bin:
-        subprocess.run([uv_bin, "pip", "install", "--python", str(venv_python), package], check=True)
+        subprocess.run([uv_bin, "pip", "install", "--python", str(venv_python), *packages], check=True)
     else:
-        subprocess.run([str(venv_python), "-m", "pip", "install", package], check=True)
+        subprocess.run([str(venv_python), "-m", "pip", "install", *packages], check=True)
+    if platform.startswith("linux"):
+        log("  Linux microphone support requires PortAudio (for example: sudo apt install libportaudio2).", "dim")
     if platform == "win32":
         data_dir = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "FIRIK" / "desktop"
     else:

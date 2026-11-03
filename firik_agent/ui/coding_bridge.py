@@ -148,7 +148,20 @@ class CodingBridge(CodingActions):
         project_id = options.get("project_id")
         if not project_id:
             raise ValueError("Kodlama çalışması için proje kimliği gerekli.")
-        options = deepcopy(options)
+        # The request carries a native cancellation Event. Keep this ephemeral
+        # capability out of deepcopy and every durable/model serialization.
+        voice_request = options.get("voice_request")
+        options = deepcopy({key: value for key, value in options.items() if key != "voice_request"})
+        voice_origin = {}
+        if voice_request is not None:
+            # The normal bridge may restore/create typed sessions. Voice must
+            # enter only an already-owned project conversation captured by UI.
+            self.validate_voice_request(voice_request)
+            if not cwd or voice_request.workspace_id != str(Path(cwd).resolve()):
+                raise ValueError("Ses isteği başka bir çalışma alanında yürütülemez.")
+            from firik_agent.voice.execution import voice_metadata
+            voice_origin = voice_metadata(voice_request, session_id=session_id,
+                                          project_id=project_id, target="coding")
         task_id = options.get("task_id")
         cancel_event = threading.Event()
         with self._stream_lock:
@@ -195,6 +208,11 @@ class CodingBridge(CodingActions):
                 self._dispatch(callback, self._coding_redact(final))
 
         def snapshot_messages():
+            if voice_origin:
+                for message in session.messages[state["prior_count"]:]:
+                    if message.role == "user":
+                        message.execution.update(voice_origin)
+                        break
             messages = [m.model_dump(exclude_none=True) for m in session.messages]
             if len(messages) <= state["prior_count"]:
                 messages = list(state["initial_messages"])
@@ -267,7 +285,7 @@ class CodingBridge(CodingActions):
             safe = dataclasses.replace(event, project_id=project_id, task_id=task_id,
                                        content=self._coding_redact(event.content or ""),
                                        arguments=self._coding_redact(event.arguments),
-                                       metadata=self._coding_redact({**event.metadata, **expected}))
+                                       metadata=self._coding_redact({**event.metadata, **expected, **voice_origin}))
             try:
                 self.coding_store.append_event(run_id, safe)
                 run_metrics.observe(safe)
@@ -332,6 +350,8 @@ class CodingBridge(CodingActions):
                 safe_prompt = self._coding_redact(prompt)
                 state["prior_count"] = len(session.messages)
                 state["initial_messages"] = [m.model_dump(exclude_none=True) for m in session.messages] + [{"role": "user", "content": safe_prompt}]
+                if voice_origin:
+                    state["initial_messages"][-1]["execution"] = dict(voice_origin)
                 previous = self.coding_store.latest_run(project_id, session_id=session_id)
                 continuation = None
                 resume_source = options.get("resume_run_id")
@@ -354,7 +374,7 @@ class CodingBridge(CodingActions):
                                            mode=options.get("mode", "approved"), permissions=permissions,
                                            run_id=run_id, policy=options.get("policy"),
                                            excluded_paths=options.get("excluded_paths", []),
-                                           execution_config=options.get("execution_config"))
+                                           execution_config=options.get("execution_config"), voice_request=voice_request)
                 control.capabilities = dict(options.get("capabilities", {}))
                 from firik_agent.harness.config import resolve_harness_configuration
                 harness_settings = resolve_harness_configuration(self.config,
@@ -403,6 +423,8 @@ class CodingBridge(CodingActions):
                     state["prior_count"] = len(session.messages)
                     state["initial_messages"] = [message.model_dump(exclude_none=True) for message in session.messages] + [
                         {"role": "user", "content": safe_prompt}]
+                    if voice_origin:
+                        state["initial_messages"][-1]["execution"] = dict(voice_origin)
                     decisions.extend(deepcopy(candidate.decisions))
                     control.permissions.update({key: value for key, value in record.permissions.items()
                                                 if key in control.permissions})

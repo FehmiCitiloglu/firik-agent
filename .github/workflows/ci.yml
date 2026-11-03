@@ -32,12 +32,16 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-tk libtk8.6 libtcl8.6 libsecret-1-dev xvfb xauth
+          sudo apt-get install -y python3-tk libtk8.6 libtcl8.6 libsecret-1-dev xvfb xauth libportaudio2 espeak-ng
 
       - name: Bağımlılıkları Kur
         run: |
           python -m pip install --upgrade pip
           pip install -e '.[dev]'
+
+      - name: Optional voice dependencies (Python 3.11)
+        if: matrix.python-version == '3.11'
+        run: python -m pip install -e '.[voice]'
 
       - name: Testler (Linux sanal ekran)
         if: runner.os == 'Linux'

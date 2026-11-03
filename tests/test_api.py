@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import wave
 
 import httpx
 import pytest
@@ -44,6 +45,7 @@ CASES = [
 def test_all_public_operations_have_commands():
     covered = {(method.lower(), path.replace(ID, "{request_id}" if "/requests/" in path else "{media_id}")) for _, method, path, _ in CASES}
     covered.add(("post", "/v1/audio/transcriptions"))
+    covered.add(("post", "/v1/audio/speech"))
     assert covered == {(method, path) for path, methods in api_schema()["paths"].items() for method in methods}
 
 
@@ -74,11 +76,15 @@ async def test_cli_contract(argv, method, path, body, capsys):
 @pytest.mark.parametrize("response_format", ["json", "text", "srt", "verbose_json", "diarized_json"])
 async def test_audio_multipart_and_formats(tmp_path, capsys, response_format):
     audio = tmp_path / "örnek.wav"
-    audio.write_bytes(b"RIFF-test-audio")
+    with wave.open(str(audio), "wb") as source:
+        source.setnchannels(1)
+        source.setsampwidth(2)
+        source.setframerate(16000)
+        source.writeframes(b"\x01\x00" * 1600)
     def handler(request):
         assert request.url.path == "/v1/audio/transcriptions"
         assert request.headers["content-type"].startswith("multipart/form-data; boundary=")
-        assert b"RIFF-test-audio" in request.content
+        assert audio.read_bytes() in request.content
         assert b'name="model"' in request.content
         assert b"qwen3-asr-1.7b" in request.content
         assert response_format.encode() in request.content
@@ -248,7 +254,7 @@ async def test_missing_key_and_offline_docs(capsys):
     assert await run(["models"], api_key="", transport=transport) == 1
     assert "FIRIK_API_KEY" in capsys.readouterr().err
     assert await run(["api-docs"], api_key="", transport=transport) == 0
-    assert len(json.loads(capsys.readouterr().out)["operations"]) == 20
+    assert len(json.loads(capsys.readouterr().out)["operations"]) == 21
 
 
 def test_global_options_preserved():

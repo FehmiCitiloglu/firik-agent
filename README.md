@@ -4,7 +4,7 @@ Masaüstü uygulaması: `firik-gui`; agent: `firik-agent`; doğrudan API istemci
 
 FIRIK'in **LLM Çıkarım API'sini terminalden kullanmak** için CLI ve Python istemcisi. Sohbetin yanında görsel anlama, OCR, ses çözümleme, embeddings, rerank, medya yükleme, kota/kredi ve istek durumu sorgularını destekler. Önceki agent, MCP, skill ve plugin özellikleri `firik-agent` komutuyla kullanılmaya devam eder.
 
-**Kapsam:** 22 Eylül 2026 tarihinde okunan [resmî OpenAPI şemasındaki](https://evren-llmapi.ssyz.org.tr/openapi.json) **20 genel işlemin tamamı**. `internal` servis uçları kapsam dışıdır. [Uç nokta ve kapsam tablosu](docs/API.md).
+**Kapsam:** [Resmî OpenAPI şemasından](https://evren-llmapi.ssyz.org.tr/openapi.json) kaydedilen **21 genel işlem** (temel sözleşme 22 Eylül, ses sözleşmesi 2 Kasım 2026). `internal` servis uçları kapsam dışıdır. [Uç nokta ve kapsam tablosu](docs/API.md).
 
 FIRIK portalında **Platform**, **LLM Çıkarım** ve **Model Çıkarımı** farklı anahtar türleridir. Anahtar listesinde “Tümü” bir filtre, “Modeller: Tümü” ise LLM model yetkisidir. Bu istemci `firik_llm_...` biçimindeki **LLM Çıkarım** anahtarını kullanır. Veri seti/etiketleme, GPU rezervasyonu, eğitim işleri, organizasyon veya platform anahtarı yönetimi için doğrulanmış genel API sözleşmesi bulunamadığından bu işlemler eklenmemiştir. Portalın bütün MLOps özelliklerinin bu anahtarla kullanılabildiği varsayılmaz.
 
@@ -166,7 +166,8 @@ Grafik ortamda çift tıklayarak çalıştırmak için:
 ### Temel Özellikler:
 - 💬 **Sohbet:** Gerçek zamanlı akışlı yanıtlar, görsel yükleme, model parametreleri, sağda kullanıcı / solda asistan mesajları, katlanabilir işlem ayrıntıları, otomatik kaydedilen sohbet geçmişi ve dışa aktarma (Markdown/JSON).
 - 👁️ **Görsel & OCR:** Belgeleri, faturaları ve fotoğrafları önizleme, FIRIK OCR modelleriyle metin çıkarma, panoya kopyalama ve `.txt` olarak kaydetme.
-- 🎙️ **Ses Çözümleme:** MP3, WAV, M4A, OGG ve FLAC ses kayıtlarını metne ve zaman damgalı SRT altyazılara dönüştürme.
+- 🎙️ **Ses Çözümleme:** En çok 120 saniyelik / 25 MiB PCM WAV ses kayıtlarını metne ve zaman damgalı SRT altyazılara dönüştürme.
+- 🎤 **Sesli etkileşim:** Bas-konuş, yerel VAD, transkript inceleme ve sohbet modelinden bağımsız Evren ASR (`qwen3-asr-1.7b`) / TTS (`voxcpm2`); ayrıca açıkça seçilen sistem seslendirmesi. `pip install -e '.[voice]'` sonrası **Ses ayarları** ile etkinleştirin. Ses API sözleşmesi doğrulandı; kimlik doğrulamalı ses üretimi ve dil kalitesi henüz doğrulanmadı. Dinleme, konuşma ve ajan için ayrı durdurma kontrolleri bulunur. [Kullanım, durum makinesi ve gizlilik](docs/voice.md).
 - 🔍 **Yeniden Sıralama (Rerank):** Arama sorguları ve belge listelerini semantik alaka puanlarına göre sıralama.
 - 📊 **Kota ve Durum:** Canlı bakiye ve token kotası sorgulama, sunucu sağlık/hazırlık (`/healthz`, `/readyz`) kontrolleri ve resmi Kullanım Şartları (Terms) metnini okuyup onaylama.
 - 🔌 **Gelişmiş MCP Yöneticisi:** Yerel (`stdio`) ve uzak (`sse`/`streamable_http`) Model Context Protocol sunucularını görsel olarak ekleme, test etme, araç şemalarını inceleme, canlı logları izleme, işletim sistemi kasasında (`keyring`) güvenli token saklama ve her sohbet oturumuna özel bağımsız araç seçimi (per-chat MCP isolation).
@@ -252,6 +253,7 @@ firik ocr --file ./taranan.png --model dots-ocr --text -o metin.txt
 firik ocr --file ./taranan.jpg --model deepseek-ocr-2
 firik transcribe ./kayit.wav --language tr --response-format text -o kayit.txt
 firik transcribe ./kayit.wav --response-format srt -o altyazi.srt
+firik synthesize --input 'Merhaba İstanbul. Hello!' --model voxcpm2 --response-format wav --output yanit.wav
 firik transcribe ./kayit.wav --response-format diarized_json -o konusmacilar.json
 ```
 
@@ -331,6 +333,10 @@ asyncio.run(main())
 İstemci `chat`, `completions`, `responses`, `embeddings`, `rerank`, `ocr`, `transcribe`, `upload_media`, medya yaşam döngüsü, şartlar ve durum sorguları için metotlar sunar. Akış için `stream` kullanın; nesneyi `async with` ile veya `await api.close()` çağrısıyla kapatın.
 
 ## Agent ve MCP modu
+
+CLI sorunlarını incelemek için `firik-agent doctor --json` kullanın. Yapılandırma, seçili sağlayıcı/model, bağlam ve kaynak bütçeleri çevrimdışı denetlenir; anahtar okunmaz ve ajan/araç başlatılmaz. `--config`, `--provider` ve `--model` ile seçimi belirleyebilirsiniz. `firik-agent doctor --probe --model mimo-v2.6-pro` seçili sağlayıcının anahtarıyla yalnızca `GET /models` çağrısı yapar; istem veya üretim isteği göndermez. Hatalı yapılandırma ve başarısız bağlantı/model kontrolü sıfırdan farklı çıkış kodu döndürür.
+
+Etkileşimli oturumda `/doctor` mevcut modelin bütçelerini ve son hatanın güvenli ayrıntılarını, `/doctor --probe` bağlantı/model kontrolünü gösterir. Hata türü, HTTP durumu ve istek kimliği mevcutsa terminalde ve `/details` içinde korunur; sağlayıcının ham hata gövdesi gösterilmez.
 
 Claude Code ve Codex CLI benzeri MCP sunucusu ekleme, listeleme ve kaldırma:
 

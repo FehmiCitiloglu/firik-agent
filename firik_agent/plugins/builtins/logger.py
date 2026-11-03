@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from firik_agent.core.types import Message, ToolCall, ToolResult
 from firik_agent.plugins.base import BasePlugin
+from firik_agent.core.failures import format_failure
 
 logger = logging.getLogger("firik.plugins.logger")
 
@@ -53,4 +54,4 @@ class LoggerPlugin(BasePlugin):
         )
 
     async def on_error(self, error: Exception) -> None:
-        logger.error("[Plugin:Logger] Agent encountered error: %s", error)
+        logger.error("[Plugin:Logger] Agent encountered error: %s", format_failure(error))

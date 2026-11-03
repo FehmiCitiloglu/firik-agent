@@ -14,6 +14,7 @@ import logging
 import os
 import threading
 import sys
+import weakref
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -53,11 +54,11 @@ logger = logging.getLogger(__name__)
 # Çevrimdışı veya ilk yüklemede gösterilecek popüler varsayılan modeller
 VARSAYILAN_MODELLER = [
     "glm-5.3",
-    "qwen-2.5-72b-instruct",
-    "deepseek-r1",
-    "dots-ocr",
-    "qwen3-asr-1.7b",
-    "qwen3-reranker-8b",
+    "qwen3.8-flash-next",
+    "deepseek-v4.1-flash",
+    "mimo-v2.6-pro",
+    "gemma-4-31b",
+    "qwen3-vl-30b",
 ]
 
 
@@ -96,15 +97,23 @@ def turkce_hata_mesaji(hata: Exception) -> str:
 class FirikService(CodingBridge):
     """firik masaüstü uygulaması için merkezi API yöneticisi."""
 
-    def __init__(self, dispatch=None) -> None:
+    def __init__(self, dispatch=None, config_path=None) -> None:
         self._dispatch = dispatch or (lambda callback, *args: callback(*args))
-        self.config_path = None
+        self._voice_controllers = weakref.WeakSet()
+        from firik_agent.voice.controller import CaptureCoordinator
+        self._voice_capture = CaptureCoordinator()
+        from firik_agent.voice.providers import VoiceRequestGate
+        self._voice_request_gate = VoiceRequestGate()
+        self._voice_catalogue = None
+        self._voice_catalogue_url = None
+        self._voice_revision = 0
+        self.config_path = Path(config_path) if config_path is not None else None
         is_root_cwd = False
         try:
             is_root_cwd = Path.cwd().parent == Path.cwd()
         except Exception:
             pass
-        if getattr(sys, "frozen", False) or is_root_cwd:
+        if self.config_path is None and (getattr(sys, "frozen", False) or is_root_cwd):
             if sys.platform == "win32":
                 base = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming"))
             elif sys.platform == "darwin":
@@ -171,10 +180,16 @@ class FirikService(CodingBridge):
 
     def set_key(self, key: str) -> None:
         """API anahtarını güvenli kasaya (Keyring) kaydeder."""
+        self.stop_voice()
+        self._voice_catalogue = self._voice_catalogue_url = None
+        self._voice_revision = getattr(self, "_voice_revision", 0) + 1
         set_api_key(self.provider, self._provider_cfg, key, base_url=self.base_url)
 
     def update_settings(self, base_url: str, default_model: str, timeout: float) -> None:
         """Ayarları günceller ve config.yaml dosyasına kaydeder."""
+        self.stop_voice()
+        self._voice_catalogue = self._voice_catalogue_url = None
+        self._voice_revision = getattr(self, "_voice_revision", 0) + 1
         self.base_url = base_url.strip()
         self.default_model = default_model.strip()
         self.timeout = float(timeout)
@@ -281,7 +296,8 @@ class FirikService(CodingBridge):
                         models = [item["id"] if isinstance(item, dict) else item for item in rows
                                   if (isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"])
                                   or (isinstance(item, str) and item)]
-                    return models or VARSAYILAN_MODELLER
+                    from firik_agent.voice.providers import conversational_models
+                    return conversational_models(models, self._model_metadata) or VARSAYILAN_MODELLER
 
             try:
                 loop = asyncio.new_event_loop()
@@ -503,6 +519,214 @@ class FirikService(CodingBridge):
                 self._dispatch(on_error, turkce_hata_mesaji(e))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    @property
+    def voice_settings(self):
+        from firik_agent.voice.config import VoiceSettings
+        try:
+            return VoiceSettings.from_mapping(self.config.get("voice"))
+        except ValueError:
+            # Malformed optional configuration must never prevent text startup.
+            return VoiceSettings()
+
+    def update_voice_settings(self, settings) -> None:
+        from firik_agent.voice.config import VoiceSettings
+        validated = VoiceSettings.from_mapping(settings.to_dict())
+        config = deepcopy(self.config)
+        config["voice"] = validated.to_dict()
+        save_config(config, self.config_path)
+        self.config["voice"] = config["voice"]
+        for controller in list(self._voice_controllers):
+            controller.settings = validated
+            controller.cancel()
+
+    @property
+    def voice_capabilities(self):
+        from firik_agent.voice.providers import evren_capabilities, SystemTextToSpeechProvider
+        endpoint, _ = self._voice_connection()
+        metadata = (getattr(self, "_voice_catalogue", None)
+                    if getattr(self, "_voice_catalogue_url", None) == endpoint else None)
+        result = {operation: evren_capabilities(operation, metadata, authenticated=metadata is not None)
+                  for operation in ("asr", "tts")}
+        if self.voice_settings.tts_provider == "system":
+            result["tts"] = SystemTextToSpeechProvider().capabilities()
+        return result
+
+    def _voice_connection(self):
+        # Scope the credential to the captured Evren endpoint, independently
+        # of later UI/provider changes. Never read a live endpoint's key from
+        # a request bound to an older endpoint.
+        config = deepcopy(self.config.get("providers", {}).get("firik", {}))
+        # `firik` owns the configured Evren origin even if an independent LLM
+        # provider is selected. Never route microphone audio to that LLM's URL.
+        endpoint = config.get("base_url") or (getattr(self, "base_url", DEFAULT_BASE_URL)
+            if getattr(self, "provider", "firik") == "firik" else DEFAULT_BASE_URL)
+        return endpoint, config
+
+    def discover_voice_capabilities_async(self, on_success, on_error) -> None:
+        """Explicit authenticated GET only; never captures or uploads audio."""
+        endpoint, credential_config = self._voice_connection()
+        revision = getattr(self, "_voice_revision", 0)
+        def active():
+            return self._voice_connection()[0] == endpoint and getattr(self, "_voice_revision", 0) == revision
+        async def discover():
+            key = get_api_key("firik", credential_config, base_url=endpoint)
+            async with FirikAPI(key, endpoint, timeout=min(self.timeout, 30)) as client:
+                result = await client.models()
+            rows = result.get("data") if isinstance(result, dict) else result
+            if not isinstance(rows, list):
+                raise ValueError("Geçersiz model kataloğu.")
+            if active():
+                self._voice_catalogue, self._voice_catalogue_url = result, endpoint
+            return self.voice_capabilities
+        from firik_agent.voice.providers import voice_error_message
+        # Check again when the UI callback is delivered, not only at HTTP
+        # completion, so replaced credentials cannot display stale permissions.
+        def deliver(callback, result):
+            if active():
+                callback(result)
+        self.runtime.submit(discover(), on_done=lambda result: self._dispatch(deliver, on_success, result),
+            on_error=lambda error: self._dispatch(deliver, on_error, voice_error_message(error)))
+
+    def _voice_provider(self, operation: str, settings=None):
+        from firik_agent.voice.providers import (EvrenSpeechToTextProvider, EvrenTextToSpeechProvider,
+            SystemTextToSpeechProvider, VoiceRequestGate)
+        from firik_agent.voice.errors import VoiceAudioError
+        settings = settings or self.voice_settings
+        if operation == "tts" and settings.tts_provider == "system":
+            return SystemTextToSpeechProvider()
+        provider = settings.asr_provider if operation == "asr" else settings.tts_provider
+        if provider != "evren":
+            raise VoiceAudioError("Seçilen yerel ses çözümleme sağlayıcısı henüz kurulu değil. Evren'i seçin veya metinle devam edin.")
+        endpoint, credential_config = self._voice_connection()
+        def client_factory():
+            key = get_api_key("firik", credential_config, base_url=endpoint)
+            if not key:
+                raise VoiceAudioError("Evren API anahtarı bulunamadı. Ayarlar bölümünden anahtarınızı girin veya metinle devam edin.")
+            return FirikAPI(key, endpoint, timeout=min(self.timeout, 120.0))
+        if not hasattr(self, "_voice_request_gate"):
+            self._voice_request_gate = VoiceRequestGate()
+        cls = EvrenSpeechToTextProvider if operation == "asr" else EvrenTextToSpeechProvider
+        return cls(client_factory, endpoint=endpoint, gate=self._voice_request_gate,
+                   capabilities=self.voice_capabilities[operation])
+
+    def _create_voice_speaker(self, settings):
+        from firik_agent.voice.providers import ProviderSynthesizer, SystemProviderSynthesizer
+        from firik_agent.voice.synthesis import EngineSpeaker
+        if settings.tts_provider == "system":
+            synthesizer = SystemProviderSynthesizer(self._voice_provider("tts", settings), speed=settings.playback_speed)
+            return EngineSpeaker(output_device=settings.output_device, volume=settings.output_volume, synthesizer=synthesizer)
+        # Evren uses its documented speed multiplier, independently of the
+        # session's LLM and the legacy local words/minute control.
+        synthesizer = ProviderSynthesizer(self.runtime, self._voice_provider("tts", settings),
+            model=settings.tts_model, voice=settings.tts_voice, response_format=settings.tts_format,
+            speed=settings.playback_speed)
+        return EngineSpeaker(output_device=settings.output_device, volume=settings.output_volume, synthesizer=synthesizer)
+
+    async def _transcribe_microphone(self, audio: bytes, model: str, language: str) -> str:
+        from firik_agent.voice.transcription import TranscriptionAdapter, TranscriptionPolicy
+        adapter = TranscriptionAdapter(self._transcribe_microphone_segment,
+            TranscriptionPolicy(max_request_seconds=self.voice_settings.asr_request_seconds))
+        return await adapter.transcribe(audio, model, language)
+
+    async def _transcribe_microphone_segment(self, audio: bytes, model: str, language: str) -> str:
+        result = await self._voice_provider("asr").transcribe(audio, model=model, language=language)
+        text = result.text
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("Konuşma algılanamadı. Lütfen yeniden deneyin.")
+        if len(text) > 32000:
+            raise ValueError("Transkript çok uzun. Daha kısa bir kayıt yapın.")
+        from firik_agent.voice.transcription import FinalTranscript
+        return FinalTranscript(text.strip(), getattr(result, "language", None))
+
+    def create_voice_controller(self, *, on_state, on_transcript, on_error, session_id=None, on_level=None):
+        from firik_agent.voice.controller import CaptureCoordinator, VoiceController
+        if not hasattr(self, "_voice_capture"):
+            self._voice_capture = CaptureCoordinator()
+        controller = VoiceController(
+            runtime=self.runtime, dispatch=self._dispatch,
+            transcribe=self._transcribe_microphone, settings=self.voice_settings,
+            on_state=on_state, on_transcript=on_transcript, on_error=on_error,
+            coordinator=self._voice_capture, session_id=session_id,
+            on_level=on_level,
+            speaker_factory=self._create_voice_speaker,
+        )
+        self._voice_controllers.add(controller)
+        return controller
+
+    def stop_voice(self) -> None:
+        for controller in list(getattr(self, "_voice_controllers", ())):
+            controller.cancel()
+
+    def validate_voice_request(self, request) -> None:
+        """Resolve only already-owned sessions; voice cannot create an ID here."""
+        from firik_agent.voice.execution import voice_metadata
+        voice_metadata(request)
+        if request.cancellation_token.is_set():
+            raise ValueError("Ses isteği iptal edildi.")
+        if request.session_id not in self.sessions:
+            raise ValueError("Ses isteğinin mevcut sohbeti bulunamadı.")
+        if request.intended_target == "coding":
+            project = self.projects.db.get_project(request.project_id) if request.project_id else None
+            if (not request.project_id or
+                    getattr(self, "_coding_session_projects", {}).get(request.session_id) != request.project_id
+                    or project is None):
+                raise ValueError("Ses isteğinin proje / sohbet kapsamı değişti.")
+            if not project.local_path or request.workspace_id != str(Path(project.local_path).resolve()):
+                raise ValueError("Ses isteğinin çalışma alanı değişti; yeniden konuşun.")
+        elif (request.intended_target != "conversation" or request.project_id is not None
+              or request.workspace_id is not None):
+            raise ValueError("Geçersiz ses isteği hedefi.")
+
+    def create_voice_request_router(self, **options):
+        from firik_agent.voice.intent_router import VoiceRequestRouter
+        return VoiceRequestRouter(**options)
+
+    async def _voice_tool_approval(self, payload, callback, cancel_event):
+        """Marshal a trusted button decision to the existing asynchronous run."""
+        if callback is None or cancel_event.is_set():
+            return False
+        loop = asyncio.get_running_loop()
+        answer = loop.create_future()
+        def decide(allowed):
+            def resolve():
+                if not answer.done():
+                    answer.set_result(allowed is True and not cancel_event.is_set())
+            if not loop.is_closed():
+                try:
+                    loop.call_soon_threadsafe(resolve)
+                except RuntimeError:
+                    pass
+        def show():
+            if cancel_event.is_set() or answer.done():
+                decide(False)
+                return
+            try:
+                callback(payload, decide)
+            except Exception:
+                decide(False)
+        self._dispatch(show)
+        try:
+            while not cancel_event.is_set():
+                done, _ = await asyncio.wait({answer}, timeout=.1)
+                if done:
+                    return answer.result()
+            return False
+        finally:
+            if not answer.done():
+                answer.cancel()
+
+    def audio_devices_async(self, on_done, on_error) -> None:
+        """Enumerate optional native devices off Tk, with no microphone opened."""
+        def worker():
+            try:
+                from firik_agent.voice.audio_devices import AudioDeviceCatalog
+                catalog = AudioDeviceCatalog()
+                devices = {kind: catalog.list_devices(kind) for kind in ("input", "output")}
+                self._dispatch(on_done, devices)
+            except Exception:
+                self._dispatch(on_error, "Ses aygıtları okunamadı; ses paketini ve sistem ayarlarını kontrol edin.")
+        threading.Thread(target=worker, name="FirikAudioDevices", daemon=True).start()
 
     def transcribe_async(
         self,
@@ -946,13 +1170,28 @@ class FirikService(CodingBridge):
         on_done: Optional[Callable[[str], None]] = None,
         on_error: Optional[Callable[[str], None]] = None,
         coding_options: Optional[Dict[str, Any]] = None,
+        voice_request=None,
+        on_approval=None,
     ) -> Future:
         """
         Desktop Chat bridge executing the real Agent loop with streaming events and session-scoped MCP tools.
         """
         if coding_options is not None:
+            scoped_request = voice_request if voice_request is not None else coding_options.get("voice_request")
+            if scoped_request is not None:
+                self.validate_voice_request(scoped_request)
+                if scoped_request.session_id != session_id or scoped_request.intended_target != "coding":
+                    raise ValueError("Ses isteği bu kodlama oturumuna ait değil.")
+            if voice_request is not None:
+                coding_options = {**coding_options, "voice_request": voice_request}
             return self._coding_stream_async(session_id, prompt, cwd, on_event, on_done, on_error, coding_options)
-        cancel_event = threading.Event()
+        if voice_request is not None:
+            self.validate_voice_request(voice_request)
+            if voice_request.session_id != session_id or voice_request.intended_target != "conversation":
+                raise ValueError("Ses isteği bu sohbete ait değil.")
+            if prompt != voice_request.request_text or image_path is not None or cwd is not None:
+                raise ValueError("Ses isteğinin incelenen içeriği veya hedefi değiştirilemez.")
+        cancel_event = voice_request.cancellation_token if voice_request is not None else threading.Event()
         with self._stream_lock:
             if session_id in self._streams and not self._streams[session_id].is_set():
                 raise ValueError("Bu sohbette bir yanıt zaten hazırlanıyor.")
@@ -972,6 +1211,12 @@ class FirikService(CodingBridge):
             agent.providers.get_active().set_model(session.model)
             self.configure_model_metadata(agent.providers.get_active())
             tool_filter = SessionToolFilter(agent.tools, self.mcp_manager, self.mcp_manager.tool_registry)
+            if voice_request is not None:
+                from firik_agent.voice.execution import VoiceToolFilter
+                tool_filter = VoiceToolFilter(tool_filter, voice_request,
+                    approve=lambda payload: self._voice_tool_approval(payload, on_approval, cancel_event),
+                    cancel_event=cancel_event,
+                    on_event=(lambda event: self._dispatch(on_event, event)) if on_event else None)
 
             # Acquire/connect active MCPs for this session
             for s_name in list(session.active_mcp_servers):
@@ -1013,6 +1258,8 @@ class FirikService(CodingBridge):
 
             final_text = ""
             context_saved = False
+            message_start = len(session.messages)
+            voice_marked = False
             try:
                 async for evt in agent.run_stream(
                     prompt=augmented_prompt,
@@ -1020,6 +1267,15 @@ class FirikService(CodingBridge):
                     session_tool_filter=tool_filter,
                     cancel_event=cancel_event,
                 ):
+                    if voice_request is not None:
+                        metadata = voice_request.to_metadata()
+                        evt.metadata = {**evt.metadata, **metadata}
+                        if not voice_marked:
+                            for message in session.messages[message_start:]:
+                                if message.role == "user":
+                                    message.execution.update(metadata)
+                                    voice_marked = True
+                                    break
                     if evt.type in {AgentEventType.TOOL_CALL_STARTED, AgentEventType.TOOL_CALL_RESULT,
                                     AgentEventType.TOOL_CALL_ERROR}:
                         # Commit attempt identity before advancing the generator
@@ -1060,6 +1316,11 @@ class FirikService(CodingBridge):
 
     def shutdown(self) -> None:
         """Cleanly shutdown runtime and all MCP child processes."""
+        for controller in list(self._voice_controllers):
+            controller.close()
+        for controller in list(self._voice_controllers):
+            if hasattr(controller, "shutdown"):
+                controller.shutdown(timeout=3.0)
         self.cancel_active_stream()
         try:
             self.runtime.run_sync(self.mcp_manager.shutdown(), timeout=5.0)

@@ -1,0 +1,15 @@
+{
+  "platform": "macOS arm64",
+  "python": "3.13.2",
+  "app_version": "0.2.34",
+  "sounddevice": "0.5.6",
+  "portaudio": "19.7.0",
+  "microphone_purpose": "Konuşmanızı yazıya dönüştürmek için yalnızca mikrofon düğmesine bastığınızda ses kaydedilir.",
+  "entitlements": {
+    "com.apple.security.device.audio-input": true
+  },
+  "portaudio_bundled": true,
+  "asio_dll_count": 0,
+  "signing": "ad-hoc development build",
+  "output": "/tmp/firik-voice-dist/firik-agent.app"
+}
