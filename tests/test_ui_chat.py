@@ -97,7 +97,7 @@ def wait_for_layout(root, condition, timeout=1, diagnostics=None):
     end = time.monotonic() + timeout
     while not condition() and time.monotonic() < end:
         pump(root, 0.01)
-    assert condition(), diagnostics() if diagnostics else "Native layout did not settle"
+    assert condition(), str(diagnostics()) if diagnostics else "Native layout did not settle"
 
 
 @pytest.fixture

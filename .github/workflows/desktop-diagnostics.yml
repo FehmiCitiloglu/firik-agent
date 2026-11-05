@@ -1,0 +1,16 @@
+name: Desktop diagnostics
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-layout:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -e '.[dev,desktop-build]'
+      - run: python -m pytest 'tests/test_ui_markdown.py::test_code_and_wide_tables_fit_without_clipping_reply[Dark-1.25]' -q -s
