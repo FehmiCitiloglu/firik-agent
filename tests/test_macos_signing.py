@@ -1,6 +1,7 @@
 """Credential validation and runner isolation; no real Apple credentials used."""
 import base64
 import os
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,6 +9,31 @@ import pytest
 
 from scripts import setup_macos_signing as setup
 from scripts import sign_macos as signing
+
+
+def test_ticket_service_recovers_after_extended_network_outage(monkeypatch):
+    calls, delays = [], []
+    def run(*args):
+        calls.append(args)
+        if len(calls) <= 5:
+            raise subprocess.CalledProcessError(68, args)
+    monkeypatch.setattr(signing, "run", run)
+    monkeypatch.setattr(signing.time, "sleep", delays.append)
+    signing.stapler("validate", Path("test.dmg"))
+    assert len(calls) == 6 and delays == [10, 20, 40, 60, 60]
+
+
+@pytest.mark.parametrize("code,attempts", [(68, 7), (65, 1)])
+def test_ticket_validation_remains_mandatory_and_bounded(monkeypatch, code, attempts):
+    calls, delays = [], []
+    def run(*args):
+        calls.append(args)
+        raise subprocess.CalledProcessError(code, args)
+    monkeypatch.setattr(signing, "run", run)
+    monkeypatch.setattr(signing.time, "sleep", delays.append)
+    with pytest.raises(subprocess.CalledProcessError):
+        signing.stapler("validate", Path("test.dmg"))
+    assert len(calls) == attempts and len(delays) == attempts - 1
 
 
 def configure(monkeypatch, tmp_path):

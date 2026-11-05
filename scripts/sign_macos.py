@@ -37,14 +37,16 @@ def run(*args, capture=False, env=None):
 def stapler(action, path):
     # Apple's ticket service may temporarily lose a network connection (EX_NOHOST).
     # Keep validation mandatory and retry only that transient failure.
-    for attempt in range(3):
+    delays = (10, 20, 40, 60, 60, 60)
+    for attempt in range(len(delays) + 1):
         try:
             run("xcrun", "stapler", action, path)
             return
         except subprocess.CalledProcessError as exc:
-            if exc.returncode != 68 or attempt == 2:
+            if exc.returncode != 68 or attempt == len(delays):
                 raise
-            time.sleep(10 * (attempt + 1))
+            print(f"Apple ticket service unavailable; retrying {action} in {delays[attempt]}s", flush=True)
+            time.sleep(delays[attempt])
 
 
 def notarize(path, profile):

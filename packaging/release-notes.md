@@ -1,3 +1,9 @@
+## v0.2.38 değişiklikleri
+
+- Apple CloudKit bilet servisindeki geçici bağlantı kesintileri için kademeli, sınırlı yeniden deneme süresi artırıldı.
+- Noter onayı, bilet doğrulaması ve Gatekeeper kontrolleri zorunlu kalır; diğer hata türleri yeniden denenmez.
+- Önceki yayın denemelerindeki tüm ses, öz iyileştirme ve masaüstü düzeltmeleri bu yayına dahildir.
+
 ## v0.2.37 değişiklikleri
 
 - Windows'ta ses penceresi kurulumu sırasında gelen mikrofon hatalarının kaybolması ve tema değişiminde ses penceresinin gizli kalması düzeltildi.
