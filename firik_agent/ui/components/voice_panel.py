@@ -441,6 +441,10 @@ class VoicePanel(ctk.CTkFrame):
         self._voice_surface.set_transcript(self._last_transcript, pending=self._pending)
         self._voice_surface.set_preview(self._response_preview_text)
         self._sync_voice_surface()
+        # Creating a native Windows top-level can pump Tk callbacks before the
+        # constructor returns. Replay an error delivered during that interval.
+        if self._last_state in {"error", "permission_required"}:
+            self._voice_surface.show_error(self.status.cget("text"))
         return self._voice_surface
 
     def _close_voice_surface(self):
