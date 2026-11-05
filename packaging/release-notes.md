@@ -1,3 +1,10 @@
+## v0.2.37 değişiklikleri
+
+- Windows'ta ses penceresi kurulumu sırasında gelen mikrofon hatalarının kaybolması ve tema değişiminde ses penceresinin gizli kalması düzeltildi.
+- Windows'un yerel başlık çubuğu yenilemesi sırasında geçici gizlenmenin mikrofonu yanlışlıkla durdurması önlendi.
+- Platform testleri Canvas koordinatları, gerçek odak olayları ve Windows'ta güvenli kod uygulama sınırlarıyla uyumlu hale getirildi.
+- v0.2.35 ve v0.2.36 için hazırlanan tüm ses, öz iyileştirme ve masaüstü düzeltmeleri bu yayına dahildir.
+
 ## v0.2.36 değişiklikleri
 
 - Dar kodlama pencerelerinde fark önizlemesinin görünür yüksekliği korundu.
