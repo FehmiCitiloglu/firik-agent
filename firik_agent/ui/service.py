@@ -46,6 +46,8 @@ from firik_agent.mcp.models import (
 from firik_agent.projects.service import ProjectService
 from firik_agent.projects.workspace import WorkspaceSnapshot, capture_workspace, compare_workspaces
 from firik_agent.ui.coding_bridge import CodingBridge
+from firik_agent.ui.improvement_bridge import ImprovementBridge
+from firik_agent.voice.telemetry import VoiceAgentTiming
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +96,16 @@ def turkce_hata_mesaji(hata: Exception) -> str:
     return f"Beklenmeyen bir hata oluştu: {str(hata)}"
 
 
-class FirikService(CodingBridge):
+class FirikService(CodingBridge, ImprovementBridge):
     """firik masaüstü uygulaması için merkezi API yöneticisi."""
 
     def __init__(self, dispatch=None, config_path=None) -> None:
         self._dispatch = dispatch or (lambda callback, *args: callback(*args))
         self._voice_controllers = weakref.WeakSet()
         self._voice_input_tests = weakref.WeakSet()
+        self._voice_output_tests = weakref.WeakSet()
         self._voice_input_tests_closing = False
+        self._voice_output_tests_closing = False
         self._voice_settings_listeners = []
         from firik_agent.voice.controller import CaptureCoordinator
         self._voice_capture = CaptureCoordinator()
@@ -144,6 +148,7 @@ class FirikService(CodingBridge):
         if self.config_path:
             db_path = self.config_path.parent / "projects.db"
         self.projects = ProjectService(db_path=db_path)
+        self.projects.coding._improvement_config = self.config
         history_path = (self.config_path.parent if self.config_path else Path.home() / ".firik") / "chats.db"
         self.chat_history = ChatHistoryStore(history_path)
 
@@ -154,6 +159,8 @@ class FirikService(CodingBridge):
         self.session_tool_filter = SessionToolFilter(self.mcp_manager.tool_registry, self.mcp_manager)
         self.sessions: Dict[str, ChatSession] = {}
         self._init_coding_bridge()
+        self.coding_store._improvement_config = self.config
+        self._init_improvement_bridge()
         self.agent: Optional[Agent] = None
         self._mcp_listeners: List[Callable[[], None]] = []
         self.mcp_manager.add_listener(self._on_mcp_status)
@@ -541,6 +548,8 @@ class FirikService(CodingBridge):
         self.config["voice"] = config["voice"]
         for test in list(getattr(self, "_voice_input_tests", ())):
             test.cancel()
+        for test in list(getattr(self, "_voice_output_tests", ())):
+            test.cancel()
         for controller in list(self._voice_controllers):
             controller.settings = validated
             controller.cancel()
@@ -662,20 +671,11 @@ class FirikService(CodingBridge):
         return EngineSpeaker(output_device=settings.output_device, volume=settings.output_volume, synthesizer=synthesizer)
 
     async def _transcribe_microphone(self, audio: bytes, model: str, language: str) -> str:
-        from firik_agent.voice.transcription import TranscriptionAdapter, TranscriptionPolicy
-        adapter = TranscriptionAdapter(self._transcribe_microphone_segment,
-            TranscriptionPolicy(max_request_seconds=self.voice_settings.asr_request_seconds))
-        return await adapter.transcribe(audio, model, language)
-
-    async def _transcribe_microphone_segment(self, audio: bytes, model: str, language: str) -> str:
-        result = await self._voice_provider("asr").transcribe(audio, model=model, language=language)
-        text = result.text
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError("Konuşma algılanamadı. Lütfen yeniden deneyin.")
-        if len(text) > 32000:
-            raise ValueError("Transkript çok uzun. Daha kısa bir kayıt yapın.")
-        from firik_agent.voice.transcription import FinalTranscript
-        return FinalTranscript(text.strip(), getattr(result, "language", None))
+        from firik_agent.voice.transcription import TranscriptionPolicy
+        settings = self.voice_settings
+        return await self._voice_provider("asr", settings).transcribe_utterance(
+            audio, model=model, language=language,
+            policy=TranscriptionPolicy(max_request_seconds=settings.asr_request_seconds))
 
     def create_voice_controller(self, *, on_state, on_transcript, on_error, session_id=None, on_level=None):
         from firik_agent.voice.controller import CaptureCoordinator, VoiceController
@@ -688,12 +688,15 @@ class FirikService(CodingBridge):
             coordinator=self._voice_capture, session_id=session_id,
             on_level=on_level,
             speaker_factory=self._create_voice_speaker,
+            speaker_revision=lambda: getattr(self, "_voice_revision", 0),
         )
         self._voice_controllers.add(controller)
         return controller
 
     def stop_voice(self) -> None:
         for test in list(getattr(self, "_voice_input_tests", ())):
+            test.cancel()
+        for test in list(getattr(self, "_voice_output_tests", ())):
             test.cancel()
         for controller in list(getattr(self, "_voice_controllers", ())):
             controller.cancel()
@@ -713,6 +716,23 @@ class FirikService(CodingBridge):
         self._voice_input_tests.add(test)
         if getattr(self, "_voice_input_tests_closing", False):
             return test.reject("Uygulama kapanıyor; mikrofon testi başlatılamaz.")
+        return test.start()
+
+    def start_voice_output_test(self, on_done, on_error, settings=None):
+        """Explicit local tone through the selected output, without synthesis."""
+        from firik_agent.voice.config import VoiceSettings
+        from firik_agent.voice.diagnostics import OutputToneTest
+        from firik_agent.voice.session import CaptureCoordinator
+        settings = self.voice_settings if settings is None else VoiceSettings.from_mapping(settings.to_dict())
+        if not hasattr(self, "_voice_capture"):
+            self._voice_capture = CaptureCoordinator()
+        if not hasattr(self, "_voice_output_tests"):
+            self._voice_output_tests = weakref.WeakSet()
+        test = OutputToneTest(coordinator=self._voice_capture, dispatch=self._dispatch,
+            settings=settings, on_done=on_done, on_error=on_error)
+        self._voice_output_tests.add(test)
+        if getattr(self, "_voice_output_tests_closing", False):
+            return test.reject("Uygulama kapanıyor; hoparlör testi başlatılamaz.")
         return test.start()
 
     def voice_diagnostics(self):
@@ -893,9 +913,11 @@ class FirikService(CodingBridge):
                 config["mcp_servers"] = {}
                 self._session_agents[session_id] = Agent(
                     config=config, config_path=str(self.config_path) if self.config_path else None)
+                self._session_agents[session_id]._learning_database = self.projects.db
             return self._session_agents[session_id]
         if self.agent is None:
             self.agent = Agent(config=self.config, config_path=str(self.config_path) if self.config_path else None)
+            self.agent._learning_database = self.projects.db
             self.agent.tools = self.mcp_manager.tool_registry
             self.session_tool_filter.tool_registry = self.mcp_manager.tool_registry
         return self.agent
@@ -1258,12 +1280,22 @@ class FirikService(CodingBridge):
             if session_id in self._streams and not self._streams[session_id].is_set():
                 raise ValueError("Bu sohbette bir yanıt zaten hazırlanıyor.")
             self._streams[session_id] = cancel_event
+        voice_timing = VoiceAgentTiming() if voice_request is not None else None
 
         def release_stream(_=None):
             with self._stream_lock:
                 if self._streams.get(session_id) is cancel_event:
                     self._streams.pop(session_id, None)
                     self._stream_futures.pop(session_id, None)
+
+        def finish_stream(future):
+            release_stream()
+            if voice_timing is not None:
+                if future.cancelled() or cancel_event.is_set():
+                    status = "cancelled"
+                else:
+                    status = "failed" if future.exception() is not None else "ok"
+                voice_timing.finish(status)
 
         async def run():
             session = self.get_or_create_session(session_id)
@@ -1330,6 +1362,7 @@ class FirikService(CodingBridge):
                     cancel_event=cancel_event,
                 ):
                     if voice_request is not None:
+                        voice_timing.observe(evt)
                         metadata = voice_request.to_metadata()
                         evt.metadata = {**evt.metadata, **metadata}
                         if not voice_marked:
@@ -1373,21 +1406,23 @@ class FirikService(CodingBridge):
             if self._streams.get(session_id) is cancel_event:
                 self._stream_futures[session_id] = future
 
-        future.add_done_callback(release_stream)
+        future.add_done_callback(finish_stream)
         return future
 
     def shutdown(self) -> None:
         """Cleanly shutdown runtime and all MCP child processes."""
+        self._close_improvement_bridge()
         self._voice_input_tests_closing = True
-        input_tests = list(getattr(self, "_voice_input_tests", ()))
-        for test in input_tests:
+        self._voice_output_tests_closing = True
+        audio_tests = [*getattr(self, "_voice_input_tests", ()), *getattr(self, "_voice_output_tests", ())]
+        for test in audio_tests:
             test.cancel()
         for controller in list(self._voice_controllers):
             controller.close()
         for controller in list(self._voice_controllers):
             if hasattr(controller, "shutdown"):
                 controller.shutdown(timeout=3.0)
-        for test in input_tests:
+        for test in audio_tests:
             test.shutdown(timeout=3.0)
         self.cancel_active_stream()
         try:

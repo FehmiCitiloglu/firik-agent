@@ -1,0 +1,44 @@
+{
+  "observed_on": "2026-11-04",
+  "observation_timezone": "Europe/Istanbul",
+  "recorded_at": "2026-11-04T18:06:49+03:00",
+  "timestamp_note": "Exact GET timestamps were not captured during verification. recorded_at identifies when this sanitized evidence was saved.",
+  "requests": [
+    {
+      "method": "GET",
+      "url": "https://evren-llmapi.ssyz.org.tr/openapi.json",
+      "http_status": 200,
+      "authentication": "none"
+    },
+    {
+      "method": "GET",
+      "url": "https://evren-llmapi.ssyz.org.tr/v1/models",
+      "http_status": 200,
+      "authentication": "existing endpoint-scoped application credential"
+    }
+  ],
+  "full_schema_sha256": "5ba9b1b79f0f4ff7cf288ee0e9e7d7ce10eb860bfaf0fbbef9b33680cf6ac8d5",
+  "audio_schema_matches_vendored": true,
+  "compared_paths": [
+    "/v1/audio/transcriptions",
+    "/v1/audio/speech"
+  ],
+  "compared_request_schemas": [
+    "Body_audio_transcriptions_v1_audio_transcriptions_post",
+    "SpeechBody"
+  ],
+  "speech_models": [
+    {
+      "id": "qwen3-asr-1.7b",
+      "task": "audio_transcription"
+    },
+    {
+      "id": "voxcpm2",
+      "task": "tts"
+    }
+  ],
+  "inference_posts": 0,
+  "inference_validation": "disabled at user direction",
+  "credentials_retained": false,
+  "full_catalogue_retained": false
+}

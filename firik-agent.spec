@@ -8,6 +8,7 @@ from importlib.metadata import version
 from importlib.util import find_spec
 import os
 import sys
+import sysconfig
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
@@ -87,13 +88,30 @@ a = Analysis(
     optimize=0,
 )
 
-# Windows speech capture uses the normal host APIs. Do not redistribute the
-# separately licensed ASIO SDK variant shipped alongside some upstream wheels.
-# Some collection hooks classify DLLs as data, so filter both Analysis tables.
-a.binaries = [entry for entry in a.binaries
-              if not Path(entry[0]).name.lower().endswith("-asio.dll")]
-a.datas = [entry for entry in a.datas
-           if not Path(entry[0]).name.lower().endswith("-asio.dll")]
+# Some sounddevice wheels ship libraries for several OSes and architectures.
+# Keep the wheel binary used by this interpreter. On Linux the hook collects
+# system PortAudio separately, at the root of the frozen library directory.
+wheel_portaudio = None
+if is_mac:
+    wheel_portaudio = "libportaudio.dylib"
+elif is_win:
+    suffix = {"win32": "32bit", "win-arm64": "arm64"}.get(sysconfig.get_platform(), "64bit")
+    wheel_portaudio = f"libportaudio{suffix}.dll"
+
+
+def keep_portaudio_entry(entry):
+    path = entry[0].replace("\\", "/").lower()
+    name = path.rsplit("/", 1)[-1]
+    if name.endswith("-asio.dll"):
+        # The separately licensed ASIO variant is outside this distribution.
+        return False
+    if path.startswith("_sounddevice_data/portaudio-binaries/libportaudio"):
+        return name == wheel_portaudio
+    return True
+
+
+a.binaries = [entry for entry in a.binaries if keep_portaudio_entry(entry)]
+a.datas = [entry for entry in a.datas if keep_portaudio_entry(entry)]
 
 pyz = PYZ(a.pure)
 

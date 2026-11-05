@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from pathlib import Path
 
 from firik_agent.api.client import FirikAPIError
 from firik_agent.ui.app import FirikApp
@@ -11,21 +12,26 @@ from firik_agent.ui.service import FirikService, turkce_hata_mesaji
 from firik_agent.ui.theme import APP_NAME, THEME_COLORS
 
 
-def test_app_title_is_firik_agent():
+def test_app_title_is_firik_agent(tmp_path, monkeypatch):
     """Uygulama adı ve pencere başlığının sadece 'firik-agent' olduğunu doğrular."""
     assert APP_NAME == "firik-agent"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     app = FirikApp()
     try:
         assert app.title() == "firik-agent"
     finally:
         app.destroy()
+        app._shutdown_thread.join(timeout=5)
 
 
-def test_app_views_initialized():
+def test_app_views_initialized(tmp_path, monkeypatch):
     """Tüm sekmelerin ve görünümlerin başarıyla yüklendiğini test eder."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     app = FirikApp()
     try:
-        expected_views = {"projects", "chat", "mcp", "ocr", "transcribe", "rerank", "quota", "settings", "about"}
+        expected_views = {"projects", "chat", "mcp", "ocr", "transcribe", "rerank", "quota", "improvement", "settings", "about"}
         assert set(app.views.keys()) == expected_views
 
 
@@ -35,6 +41,7 @@ def test_app_views_initialized():
             assert app.active_tab == view_id
     finally:
         app.destroy()
+        app._shutdown_thread.join(timeout=5)
 
 
 def test_theme_colors():
@@ -87,6 +94,7 @@ def test_service_settings_update(tmp_path, monkeypatch):
     """Ayarların güncellenip kaydedildiğini test eder."""
     config_file = tmp_path / "config.yaml"
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     service = FirikService()
     service.update_settings("https://custom.firik-agent.local/v1", "custom-model-1", 99.0)
     assert service.base_url == "https://custom.firik-agent.local/v1"

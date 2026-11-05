@@ -719,7 +719,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                      changes=[], activities=[], pending_approvals={}, inspection_warning="", run_error="", agent_paths={}, record=None,
                      usage={}, harness_metrics={}, usage_requests={}, model_iteration=0)
         if panel is not None and panel.winfo_exists():
-            panel.response_started("thinking")
+            panel.response_started("thinking", from_voice=voice_request is not None)
         state["run_id"] += 1
         generation = state["run_id"]
         state["messages"].append({"role": "user", "content": prompt,
@@ -914,7 +914,8 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             options["execution_config"] = dict(state["preferences"].get("execution_config", {}))
             options["dirty_start"] = state["preferences"].get("dirty_start", "reject")
             try:
-                state["future"] = self.service.chat_agent_stream_async(session_id=session.session_id, prompt=state.get("prepared_prompt", prompt),
+                request_prompt = prompt if voice_request is not None else state.get("prepared_prompt", prompt)
+                state["future"] = self.service.chat_agent_stream_async(session_id=session.session_id, prompt=request_prompt,
                     cwd=project.local_path, on_event=on_event, on_done=finish, on_error=lambda e: finish(error=e), coding_options=options)
             except Exception as error:
                 finish(error=str(error))

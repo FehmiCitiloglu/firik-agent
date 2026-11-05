@@ -19,6 +19,7 @@ import httpx
 from firik_agent.api.client import AudioRequestError, FirikAPIError, api_schema
 from firik_agent.api.audio import SpeechResult, TranscriptionResult
 from firik_agent.voice.errors import VoiceAudioError, VoiceSynthesisError
+from firik_agent.voice.transcription import FinalTranscript, TranscriptionAdapter, TranscriptionPolicy
 
 
 def conversational_models(models: list[str], metadata: dict[str, dict]) -> list[str]:
@@ -123,7 +124,7 @@ def voice_error_message(error: Exception) -> str:
         if status == 403:
             return "Evren ses hizmetine erişim izni yok. Anahtar yetkilerini ve kullanım şartlarını kontrol edin."
         if status == 429:
-            return "Evren ses hizmetinin hız sınırı aşıldı. Bekleme süresinden sonra elle yeniden deneyin."
+            return "Evren ses hizmetinin kotası veya hız sınırı aşıldı. Kullanım kotanızı kontrol edin; bekleme süresinden sonra elle yeniden deneyin."
         if status >= 500:
             return "Evren ses hizmeti şu anda yanıt veremiyor. Metinle devam edebilir, daha sonra yeniden deneyebilirsiniz."
         return "Evren ses isteği reddedildi. Ses biçimini ve model ayarlarını kontrol edin."
@@ -189,6 +190,34 @@ class VoiceRequestGate:
                 self._active.discard(ticket)
 
 
+async def _measure_request(operation, request, *args, **kwargs):
+    from firik_agent.voice.telemetry import log_voice_timing
+
+    started = time.monotonic()
+    status = "failed"
+    try:
+        result = await request(*args, **kwargs)
+        status = "ok"
+        return result
+    except asyncio.CancelledError:
+        status = "cancelled"
+        raise
+    except FirikAPIError as error:
+        status = f"http_{error.status_code}"
+        raise
+    except AudioRequestError as error:
+        status = "timeout" if error.reason == "timeout" else "connection"
+        raise
+    except httpx.TimeoutException:
+        status = "timeout"
+        raise
+    except ValueError:
+        status = "invalid"
+        raise
+    finally:
+        log_voice_timing(f"{operation}_request", status, started)
+
+
 class EvrenSpeechToTextProvider:
     def __init__(self, client_factory, *, endpoint: str, gate=None, capabilities=None):
         self._client_factory = client_factory
@@ -199,15 +228,38 @@ class EvrenSpeechToTextProvider:
     def capabilities(self):
         return self._capabilities
 
-    async def transcribe(self, audio, *, model="qwen3-asr-1.7b", language="auto"):
-        self.capabilities().require_model(model)
-        if language not in self.capabilities().language_options:
+    async def _with_client(self, model, language, operation):
+        capabilities = self.capabilities()
+        capabilities.require_model(model)
+        if language not in capabilities.language_options:
             raise VoiceAudioError("Ses dili auto, tr veya en olmalıdır.")
+
         async def request():
             async with self._client_factory() as client:
-                return await client.transcribe_bytes_normalized(audio, model, response_format="json",
-                    **({"language": language} if language != "auto" else {}))
+                return await operation(client)
         return await self.gate.run(self.endpoint, "asr", request)
+
+    @staticmethod
+    async def _transcribe(client, audio, model, language):
+        options = {"language": language} if language != "auto" else {}
+        return await _measure_request("asr", client.transcribe_bytes_normalized,
+                                      audio, model, response_format="json", **options)
+
+    async def transcribe(self, audio, *, model="qwen3-asr-1.7b", language="auto"):
+        return await self._with_client(model, language,
+            lambda client: self._transcribe(client, audio, model, language))
+
+    async def transcribe_utterance(self, audio, *, model, language, policy: TranscriptionPolicy) -> FinalTranscript:
+        """Use one credential snapshot, HTTP client and ASR slot per utterance."""
+        async def utterance(client):
+            async def segment(data, model, language):
+                result = await self._transcribe(client, data, model, language)
+                if not isinstance(result.text, str):
+                    raise ValueError("Geçersiz transkript yanıtı.")
+                return FinalTranscript(result.text, result.language)
+
+            return await TranscriptionAdapter(segment, policy).transcribe(audio, model, language)
+        return await self._with_client(model, language, utterance)
 
 
 class EvrenTextToSpeechProvider:
@@ -225,8 +277,7 @@ class EvrenTextToSpeechProvider:
         capabilities.require_model(model)
         if language not in capabilities.language_options or voice not in capabilities.voices or response_format not in capabilities.formats:
             raise VoiceSynthesisError("Desteklenen ses dili, ses ve çıktı biçimini seçin.")
-        if (isinstance(speed, bool) or not isinstance(speed, (float, int)) or not math.isfinite(speed)
-                or not .25 <= speed <= 4):
+        if isinstance(speed, bool) or not isinstance(speed, (float, int)) or not .25 <= speed <= 4:
             raise VoiceSynthesisError("Konuşma hızı 0,25 ile 4 arasında olmalıdır.")
         if not isinstance(text, str) or not text.strip() or len(text) > 1600:
             raise VoiceSynthesisError("Seslendirilecek cümle boş veya çok uzun.")
@@ -234,28 +285,28 @@ class EvrenTextToSpeechProvider:
             async with self._client_factory() as client:
                 # The verified endpoint has no language parameter. Preserve the
                 # original UTF-8 text; do not fabricate a language/style prompt.
-                return await client.synthesize(text, model, voice=voice, response_format=response_format, speed=speed)
+                return await _measure_request("tts", client.synthesize, text, model,
+                                              voice=voice, response_format=response_format, speed=speed)
         return await self.gate.run(self.endpoint, "tts", request)
 
 
 class SystemTextToSpeechProvider:
     """Explicit local choice, using installed voices; never a remote fallback."""
     def __init__(self, synthesizer=None):
-        self._synthesizer = synthesizer
+        from firik_agent.voice.synthesis import NativeSynthesizer
+        self._synthesizer = synthesizer if synthesizer is not None else NativeSynthesizer()
 
     def capabilities(self):
         return SpeechCapabilities("system", "tts", ("system",), None, True,
             voices=(), formats=("wav",), speed_range=(.25, 4.0))
 
     def synthesize_blocking(self, text, cancel, language="auto", rate=175, *, speed=1.0):
-        from firik_agent.voice.synthesis import NativeSynthesizer
-        synthesizer = self._synthesizer or NativeSynthesizer()
-        return synthesizer.synthesize(text, cancel, language, max(80, min(350, round(rate * speed))))
+        return self._synthesizer.synthesize(text, cancel, language, max(80, min(350, round(rate * speed))))
 
     async def synthesize(self, text, *, model="system", language="auto", voice="default", response_format="wav", speed=1.0):
         if model != "system" or voice != "default" or response_format != "wav" or language not in ("auto", "tr", "en"):
             raise VoiceSynthesisError("Sistem seslendirmesi için kurulu bir ses ve WAV biçimi gerekir.")
-        if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not math.isfinite(speed) or not .25 <= speed <= 4:
+        if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not .25 <= speed <= 4:
             raise VoiceSynthesisError("Geçersiz konuşma hızı.")
         cancel = threading.Event()
         task = asyncio.create_task(asyncio.to_thread(self.synthesize_blocking, text, cancel, language, speed=speed))
@@ -264,7 +315,7 @@ class SystemTextToSpeechProvider:
         except asyncio.CancelledError:
             cancel.set()
             # Do not abandon native subprocess cleanup on cancellation.
-            await asyncio.shield(task)
+            await asyncio.shield(asyncio.gather(task, return_exceptions=True))
             raise
         if audio is None:
             raise VoiceSynthesisError("Sistem seslendirmesi durduruldu.")
@@ -307,6 +358,8 @@ class ProviderSynthesizer:
             while not cancel.is_set():
                 try:
                     result = future.result(timeout=.05)
+                    if cancel.is_set():
+                        return None
                     raw = AudioFormat(result.sample_rate, result.channels, 2) if result.response_format == "pcm" else None
                     return EncodedAudio(result.audio, result.content_type, raw)
                 except TimeoutError:

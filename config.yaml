@@ -111,13 +111,22 @@ voice:
   language: auto
   input_device: null
   output_device: null
+  input_gain: 1.0
+  output_volume: 1.0
+  sample_rate: 16000
+  asr_request_seconds: 30
   push_to_talk_shortcut: <Control-Shift-v>
   vad_enabled: false
+  vad_engine: energy
   vad_threshold: 350
+  vad_min_speech_ms: 200
+  vad_pre_roll_ms: 200
   silence_timeout: 0.7
   max_utterance_duration: 60
   auto_send: false
+  review_before_send: true
   speak_responses: false
+  stream_replies: false
   completion_chime: false
   barge_in: false
   wake_word_enabled: false

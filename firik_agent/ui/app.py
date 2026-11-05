@@ -36,6 +36,7 @@ from firik_agent.ui.views.about_view import AboutView
 from firik_agent.ui.views.chat_view import ChatView
 from firik_agent.ui.views.chat_workspace import ChatWorkspace
 from firik_agent.ui.views.mcp_view import MCPView
+from firik_agent.ui.views.improvement_view import ImprovementView
 from firik_agent.ui.views.ocr_view import OCRView
 from firik_agent.ui.views.projects_view import ProjectsView
 from firik_agent.ui.views.quota_view import QuotaView
@@ -210,6 +211,7 @@ class FirikApp(ctk.CTk):
             ("transcribe", "🎙️  Ses Çözümleme"),
             ("rerank", "🔍  Sıralama (Rerank)"),
             ("quota", "📊  Kota ve Durum"),
+            ("improvement", "🧠  Kendini Geliştirme"),
             ("settings", "⚙️  Ayarlar"),
             ("about", "ℹ️  Hakkında"),
         ]
@@ -306,6 +308,7 @@ class FirikApp(ctk.CTk):
         self.views["transcribe"] = TranscribeView(self.content_container, service=self.service)
         self.views["rerank"] = RerankView(self.content_container, service=self.service)
         self.views["quota"] = QuotaView(self.content_container, service=self.service)
+        self.views["improvement"] = ImprovementView(self.content_container, service=self.service)
         self.views["settings"] = SettingsView(self.content_container, service=self.service)
         self.views["about"] = AboutView(self.content_container)
 
@@ -466,6 +469,8 @@ class FirikApp(ctk.CTk):
         if hasattr(self.views[tab_id], "set_voice_active"):
             self.views[tab_id].set_voice_active(True)
         self.active_tab = tab_id
+        if tab_id == "improvement":
+            self.views[tab_id].refresh()
 
     def _setup_keybindings(self) -> None:
         """Klavye kısayollarını ayarlar."""
@@ -513,6 +518,20 @@ class FirikApp(ctk.CTk):
 def main() -> int:
     """firik-agent masaüstü uygulamasını başlatır."""
     if "--smoke-test" in sys.argv:
+        if "--check-voice-backend" in sys.argv:
+            from firik_agent.voice.audio_devices import AudioDeviceCatalog
+            from firik_agent.voice.errors import VoiceAudioError
+
+            try:
+                # Verify frozen PortAudio discovery even on headless audio
+                # runners. Enumeration never opens an input/output stream.
+                devices = AudioDeviceCatalog()
+                devices.list_devices("input")
+                devices.list_devices("output")
+            except VoiceAudioError:
+                print("Packaged PortAudio device discovery failed.", file=sys.stderr)
+                return 1
+
         # Frozen smoke checks must never open the user's config, history,
         # projects or configured MCP processes. Use a disposable local profile.
         import tempfile

@@ -7,9 +7,11 @@ the endpoint returns plain text without reliable timestamp alignment.
 """
 from __future__ import annotations
 
+from array import array
 from dataclasses import dataclass
 import io
 import math
+from sys import byteorder
 import wave
 
 MAX_AUDIO_BYTES = 25 * 1024 * 1024
@@ -63,19 +65,28 @@ def wav_segments(audio: bytes, policy: TranscriptionPolicy):
         raise ValueError("Ses parçası sınırı aşıldı; daha kısa kayıt yapın.")
     # Prefer a low-energy 100 ms boundary near the request cap, without overlap.
     # Every frame is sent once, in order; the request cap is never exceeded.
+    boundaries = []
     offset = 0
     while offset < frames:
         end = min(frames, offset + size)
         if end < frames and size >= rate:
             width = max(1, rate // 10)
             search = max(offset + size // 2, end - rate)
-            from array import array
             candidates = []
             for point in range(search, end - width + 1, width):
                 values = array("h", pcm[point * 2:(point + width) * 2])
+                if byteorder != "little":
+                    values.byteswap()
                 candidates.append((sum(v * v for v in values), point + width))
             if candidates:
                 end = min(candidates)[1]
+        boundaries.append((offset, end))
+        if len(boundaries) > policy.max_segments:
+            raise ValueError("Ses parçası sınırı aşıldı; daha kısa kayıt yapın.")
+        offset = end
+    # Plan and check every boundary before upload. Build only the one WAV
+    # awaiting inference instead of retaining all encoded segments at once.
+    for offset, end in boundaries:
         output = io.BytesIO()
         with wave.open(output, "wb") as target:
             target.setnchannels(1)
@@ -83,7 +94,6 @@ def wav_segments(audio: bytes, policy: TranscriptionPolicy):
             target.setframerate(rate)
             target.writeframes(pcm[offset * 2:end * 2])
         yield output.getvalue()
-        offset = end
 
 
 class TranscriptionAdapter:
@@ -91,15 +101,11 @@ class TranscriptionAdapter:
         self.request = request
         self.policy = policy or TranscriptionPolicy()
 
-    async def transcribe(self, audio: bytes, model: str, language: str) -> str:
-        # Materialize only bounded WAV pieces so all validation precedes HTTP.
-        segments = list(wav_segments(audio, self.policy))
-        if len(segments) > self.policy.max_segments:
-            raise ValueError("Ses parçası sınırı aşıldı.")
+    async def transcribe(self, audio: bytes, model: str, language: str) -> FinalTranscript:
         results = []
         languages = []
         count = 0
-        for segment in segments:
+        for segment in wav_segments(audio, self.policy):
             result = await self.request(segment, model, language)
             if not isinstance(result, str) or not result.strip():
                 raise ValueError("Konuşma algılanamadı. Lütfen yeniden deneyin.")

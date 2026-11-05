@@ -1,0 +1,200 @@
+{
+  "measurement": "Local macOS desktop application pipeline with synthetic capture, fake PortAudio, mock HTTP and scripted LLM",
+  "live_inference": false,
+  "physical_audio": false,
+  "review": "The reviewed scenario includes automated UI review time. Capture time is a synthetic hold, not speech duration.",
+  "rows": [
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[False]",
+      "stage": "capture",
+      "status": "ok",
+      "duration_ms": 36.7
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[False]",
+      "stage": "asr_request",
+      "status": "ok",
+      "duration_ms": 1.4
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[False]",
+      "stage": "asr",
+      "status": "ok",
+      "duration_ms": 3.2
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[False]",
+      "stage": "agent_first_token",
+      "status": "ok",
+      "duration_ms": 26.5
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[False]",
+      "stage": "agent",
+      "status": "ok",
+      "duration_ms": 29.8
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[False]",
+      "stage": "tts_request",
+      "status": "ok",
+      "duration_ms": 0.9
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[False]",
+      "stage": "tts_first_audio",
+      "status": "ok",
+      "duration_ms": 1.5
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[False]",
+      "stage": "voice_end_to_end",
+      "status": "ok",
+      "duration_ms": 151.2
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[False]",
+      "stage": "speech",
+      "status": "ok",
+      "duration_ms": 45.4
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[True]",
+      "stage": "capture",
+      "status": "ok",
+      "duration_ms": 24.7
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[True]",
+      "stage": "asr_request",
+      "status": "ok",
+      "duration_ms": 1.2
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[True]",
+      "stage": "asr",
+      "status": "ok",
+      "duration_ms": 2.7
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[True]",
+      "stage": "agent_first_token",
+      "status": "ok",
+      "duration_ms": 10.0
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[True]",
+      "stage": "agent",
+      "status": "ok",
+      "duration_ms": 12.5
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[True]",
+      "stage": "tts_request",
+      "status": "ok",
+      "duration_ms": 0.8
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[True]",
+      "stage": "tts_first_audio",
+      "status": "ok",
+      "duration_ms": 1.1
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[True]",
+      "stage": "voice_end_to_end",
+      "status": "ok",
+      "duration_ms": 100.5
+    },
+    {
+      "scenario": "test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[True]",
+      "stage": "speech",
+      "status": "ok",
+      "duration_ms": 43.0
+    },
+    {
+      "scenario": "test_disconnected_asr_recovers_through_same_text_chat",
+      "stage": "capture",
+      "status": "ok",
+      "duration_ms": 36.2
+    },
+    {
+      "scenario": "test_disconnected_asr_recovers_through_same_text_chat",
+      "stage": "asr_request",
+      "status": "connection",
+      "duration_ms": 0.6
+    },
+    {
+      "scenario": "test_disconnected_asr_recovers_through_same_text_chat",
+      "stage": "asr",
+      "status": "failed",
+      "duration_ms": 1.8
+    },
+    {
+      "scenario": "test_spoken_project_test_summary_uses_existing_coding_run",
+      "stage": "capture",
+      "status": "ok",
+      "duration_ms": 35.8
+    },
+    {
+      "scenario": "test_spoken_project_test_summary_uses_existing_coding_run",
+      "stage": "asr_request",
+      "status": "ok",
+      "duration_ms": 2.0
+    },
+    {
+      "scenario": "test_spoken_project_test_summary_uses_existing_coding_run",
+      "stage": "asr",
+      "status": "ok",
+      "duration_ms": 5.0
+    },
+    {
+      "scenario": "test_spoken_project_test_summary_uses_existing_coding_run",
+      "stage": "agent_first_token",
+      "status": "ok",
+      "duration_ms": 212.9
+    },
+    {
+      "scenario": "test_spoken_project_test_summary_uses_existing_coding_run",
+      "stage": "agent",
+      "status": "ok",
+      "duration_ms": 342.0
+    },
+    {
+      "scenario": "test_spoken_project_test_summary_uses_existing_coding_run",
+      "stage": "tts_request",
+      "status": "ok",
+      "duration_ms": 0.8
+    },
+    {
+      "scenario": "test_spoken_project_test_summary_uses_existing_coding_run",
+      "stage": "tts_first_audio",
+      "status": "ok",
+      "duration_ms": 1.3
+    },
+    {
+      "scenario": "test_spoken_project_test_summary_uses_existing_coding_run",
+      "stage": "voice_end_to_end",
+      "status": "ok",
+      "duration_ms": 494.0
+    },
+    {
+      "scenario": "test_spoken_project_test_summary_uses_existing_coding_run",
+      "stage": "tts_request",
+      "status": "ok",
+      "duration_ms": 0.8
+    },
+    {
+      "scenario": "test_spoken_project_test_summary_uses_existing_coding_run",
+      "stage": "tts_request",
+      "status": "ok",
+      "duration_ms": 1.3
+    },
+    {
+      "scenario": "test_spoken_project_test_summary_uses_existing_coding_run",
+      "stage": "speech",
+      "status": "ok",
+      "duration_ms": 81.4
+    }
+  ]
+}

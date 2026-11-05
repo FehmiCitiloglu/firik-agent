@@ -1,21 +1,26 @@
-"""Offline voice setup information and an explicit, bounded local input test.
+"""Offline voice setup information and explicit, bounded local device tests.
 
 Viewing diagnostics never imports native audio backends, queries devices,
-requests permission, or makes a network request. The input test only acquires
-the microphone after the caller explicitly starts it; no PCM leaves its worker.
+requests permission, or makes a network request. Device tests only acquire
+native streams after the caller explicitly starts them; no PCM leaves workers.
 """
 from __future__ import annotations
 
 import importlib.metadata
 import importlib.util
+import math
 import platform
+import sys
 import threading
+from array import array
 
 from firik_agent.voice.config import VoiceSettings
 from firik_agent.voice.errors import VoiceAudioError
 from firik_agent.voice.events import LatestEvent
 
 INPUT_TEST_SECONDS = 3.0
+OUTPUT_TEST_SECONDS = .4
+OUTPUT_TEST_TIMEOUT_SECONDS = 3.0
 
 
 def _package(module, distribution):
@@ -68,11 +73,13 @@ def voice_diagnostics(settings: VoiceSettings | None = None):
                          "simultaneous_barge_in": False, "sentence_playback": True,
                          "true_streaming_tts": False},
         "client_limits": {"input_test_seconds": INPUT_TEST_SECONDS,
+                          "output_test_seconds": OUTPUT_TEST_SECONDS,
                           "max_utterance_seconds": settings.max_record_seconds,
                           "asr_request_seconds": settings.asr_request_seconds,
                           "asr_total_seconds": 120, "asr_segments": 8,
                           "audio_bytes": 25 * 1024 * 1024},
         "privacy": {"input_test_remote_requests": False, "retained_input_audio": False,
+                    "output_test_remote_requests": False,
                     "device_enumeration": "explicit_refresh_only"},
         "notes": ["Bu görünüm mikrofonu açmaz ve izin durumunu doğrulamaz.",
                   "Yerel girdi testi yalnızca ses düzeyini gösterir; ses çözümlemeye gönderilmez.",
@@ -202,6 +209,132 @@ class InputLevelTest:
         self._cancel.set()
         self._stop.set()
         self._levels.close()
+
+    def shutdown(self, timeout=3.0):
+        self.cancel()
+        worker = self._worker
+        if worker is not None and worker is not threading.current_thread() and worker.ident is not None:
+            worker.join(max(0, timeout))
+        return worker is None or not worker.is_alive()
+
+
+class OutputToneTest:
+    """One explicit local tone, serialized with native capture and playback."""
+
+    def __init__(self, *, coordinator, dispatch, settings, on_done, on_error,
+                 player_factory=None, seconds=OUTPUT_TEST_SECONDS, timeout=OUTPUT_TEST_TIMEOUT_SECONDS):
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not 0 < seconds <= 1:
+            raise ValueError("Hoparlör testi en fazla bir saniye olabilir.")
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 5:
+            raise ValueError("Hoparlör testi bekleme süresi en fazla beş saniye olabilir.")
+        self.coordinator, self.settings = coordinator, settings
+        self._dispatch, self._on_done, self._on_error = dispatch, on_done, on_error
+        self._player_factory = player_factory
+        self._seconds, self._timeout = float(seconds), float(timeout)
+        self._cancel = threading.Event()
+        self._user_cancel = threading.Event()
+        self.done = threading.Event()
+        self._worker = None
+        self._start_lock = threading.Lock()
+        self._started = False
+
+    def _post_error(self, message):
+        def deliver():
+            if not self._user_cancel.is_set():
+                self._on_error(message)
+        self._dispatch(deliver)
+
+    def reject(self, message):
+        with self._start_lock:
+            if self._started:
+                return self
+            self._started = True
+        self.done.set()
+        self._post_error(message)
+        self._dispatch(self._on_done)
+        return self
+
+    def start(self):
+        with self._start_lock:
+            if self._started:
+                return self
+            self._started = True
+        if not self.coordinator.claim(self):
+            self.done.set()
+            self._post_error("Başka bir ses testi veya mikrofon kaydı çalışıyor. Önce onu durdurup yeniden deneyin.")
+            self._dispatch(self._on_done)
+            return self
+        self._worker = threading.Thread(target=self._run, name="FirikVoiceOutputTest", daemon=True)
+        try:
+            self._worker.start()
+        except RuntimeError:
+            self.coordinator.release(self)
+            self.done.set()
+            self._post_error("Hoparlör testi başlatılamadı. Yeniden deneyin.")
+            self._dispatch(self._on_done)
+        return self
+
+    def _run(self):
+        native = False
+        player = None
+        timer = threading.Timer(self._timeout, self._cancel.set)
+        timer.daemon = True
+        try:
+            timer.start()
+            with self.coordinator.native_lock(self.coordinator.speech_lock, self._cancel) as acquired:
+                if not acquired:
+                    if not self._user_cancel.is_set():
+                        self._post_error("Ses aygıtı meşgul. Konuşma bitince hoparlör testini yeniden başlatın.")
+                    return
+                try:
+                    if not self.coordinator.begin_speech(self._cancel, duplex=False):
+                        if not self._user_cancel.is_set():
+                            self._post_error("Mikrofon kaydı çalışıyor. Kayıt bitince hoparlör testini yeniden başlatın.")
+                        return
+                    native = True
+                    if self._cancel.is_set():
+                        return
+                    from firik_agent.voice.models import AudioFormat, PCMBuffer
+                    from firik_agent.voice.playback import SoundDevicePlayer
+                    factory = self._player_factory or SoundDevicePlayer
+                    player = factory(device=self.settings.output_device, volume=self.settings.output_volume,
+                                     cache_replay=False)
+                    rate = 24000
+                    frames = max(1, round(rate * self._seconds))
+                    ramp = max(1, min(rate // 100, frames // 2))
+                    samples = array("h", (
+                        round(4000 * min(1., frame / ramp, (frames - 1 - frame) / ramp)
+                              * math.sin(2 * math.pi * 660 * frame / rate))
+                        for frame in range(frames)))
+                    if sys.byteorder != "little":
+                        samples.byteswap()
+                    player.play(PCMBuffer(samples.tobytes(), AudioFormat(rate)), self._cancel)
+                    if self._cancel.is_set() and not self._user_cancel.is_set():
+                        self._post_error("Hoparlör testi zaman aşımına uğradı. Çıkış aygıtını kontrol edin.")
+                finally:
+                    try:
+                        if player is not None:
+                            player.shutdown()
+                    finally:
+                        if native:
+                            self.coordinator.end_speech()
+        except VoiceAudioError as error:
+            if not self._cancel.is_set():
+                self._post_error(str(error))
+        except Exception:
+            if not self._cancel.is_set():
+                self._post_error("Hoparlör testi yapılamadı. Çıkış aygıtını ve ses paketlerini kontrol edin.")
+        finally:
+            timer.cancel()
+            if timer.ident is not None:
+                timer.join(timeout=.1)
+            self.coordinator.release(self)
+            self.done.set()
+            self._dispatch(self._on_done)
+
+    def cancel(self):
+        self._user_cancel.set()
+        self._cancel.set()
 
     def shutdown(self, timeout=3.0):
         self.cancel()

@@ -11,6 +11,7 @@ from firik_agent.voice.audio_devices import AudioDeviceCatalog
 from firik_agent.voice.errors import (VoiceAudioError, VoiceDeviceError, VoiceFormatError,
                                       VoiceOverflowError, VoicePermissionError)
 from firik_agent.voice.models import AudioFormat, MAX_AUDIO_BYTES, PCMBuffer
+from firik_agent.voice.telemetry import log_voice_timing
 from firik_agent.voice.vad import VADConfig, UtteranceSegmenter, pcm_rms, pcm_samples
 
 
@@ -49,10 +50,12 @@ class PCMResampler:
     def feed(self, pcm, *, final=False):
         if self._closed:
             raise VoiceFormatError('Örnekleme dönüştürücüsü zaten kapatıldı.')
-        values = pcm_samples(pcm)
         if self.source_rate == self.target_rate:
+            if len(pcm) % 2:
+                raise VoiceFormatError('PCM ses verisi eksik.')
             self._closed = final
             return pcm
+        values = pcm_samples(pcm)
         if self._filters:
             filtered = []
             for value in values:
@@ -136,6 +139,8 @@ class SoundDeviceRecorder:
             raise VoiceAudioError('Kayıt süresi 0 ile 120 saniye arasında olmalıdır.')
 
     def _blocks(self, backend, device, rate, block, budget, stop, cancel, queue_blocks):
+        if not budget or stop.is_set() or cancel.is_set():
+            return
         pending = queue.Queue(maxsize=queue_blocks)
         overflow = threading.Event()
         finished = threading.Event()
@@ -167,36 +172,56 @@ class SoundDeviceRecorder:
                     budget -= count
                     yield bytes(data)
             return
+        aborted = False
         try:
+            if stop.is_set() or cancel.is_set():
+                return
             stream.start()
             last_block = time.monotonic()
-            while budget and not stop.is_set() and not cancel.is_set():
+            while budget and not cancel.is_set():
                 if overflow.is_set():
                     raise VoiceOverflowError('Mikrofon verisi kesildi. Diğer ses uygulamalarını kapatıp yeniden deneyin.')
+                if not aborted and finished.is_set():
+                    raise VoiceDeviceError('Mikrofon bağlantısı kesildi. Aygıtı yeniden bağlayıp tekrar deneyin.')
+                stopping = stop.is_set()
+                if stopping and not aborted:
+                    # Quiesce the callback before draining samples already
+                    # accepted while the push-to-talk key was held.
+                    stream.abort()
+                    aborted = True
                 try:
-                    data = pending.get(timeout=.05)
+                    data = pending.get_nowait() if stopping else pending.get(timeout=.05)
                 except queue.Empty:
+                    if stopping:
+                        return
+                    if stop.is_set() or cancel.is_set():
+                        continue
                     if finished.is_set() or not stream.active or time.monotonic()-last_block > 2:
                         raise VoiceDeviceError('Mikrofon bağlantısı kesildi. Aygıtı yeniden bağlayıp tekrar deneyin.')
                     continue
+                if cancel.is_set():
+                    return
+                if not aborted and finished.is_set():
+                    raise VoiceDeviceError('Mikrofon bağlantısı kesildi. Aygıtı yeniden bağlayıp tekrar deneyin.')
                 last_block = time.monotonic()
                 data = data[:budget*2]
                 budget -= len(data)//2
                 yield data
         finally:
             try:
-                stream.abort()
+                if not aborted:
+                    stream.abort()
             finally:
                 stream.close()
 
     def _capture(self, stop, cancel, max_seconds, device, vad_config=None, on_speech_start=None):
         self._validate_duration(max_seconds)
-        if cancel.is_set() or (stop.is_set() and vad_config):
+        if cancel.is_set() or stop.is_set():
             return b''
         with self._options_lock:
             options = self._options.copy()
-        backend = self._load_backend()
         try:
+            backend = self._load_backend()
             if device is not None and hasattr(backend, 'query_hostapis'):
                 device = AudioDeviceCatalog(backend).resolve(device, 'input')
             info = backend.query_devices(device, 'input')
@@ -218,11 +243,27 @@ class SoundDeviceRecorder:
             pcm = bytearray()
             vad_pending = bytearray()
             announced = False
+            last_voiced = endpoint = None
             last_level = -math.inf
             blocks = self._blocks(backend, device, source_rate, block, budget, stop, cancel, options['queue_blocks'])
 
+            def feed_vad(frame):
+                nonlocal announced, last_voiced, endpoint
+                ended = segmenter.feed(frame)
+                if segmenter.started:
+                    # Both timestamps use the worker's classification clock.
+                    if not segmenter.silence_frames:
+                        last_voiced = time.monotonic()
+                    if segmenter.ended_by_silence:
+                        endpoint = time.monotonic()
+                    if not announced:
+                        announced = True
+                        if on_speech_start and not (stop.is_set() or cancel.is_set()):
+                            on_speech_start()
+                return ended
+
             def consume(data):
-                nonlocal announced, last_level
+                nonlocal last_level
                 if options['on_level'] is not None and time.monotonic()-last_level >= .1:
                     last_level = time.monotonic()
                     options['on_level'](min(1., pcm_rms(data)/32768))
@@ -234,17 +275,14 @@ class SoundDeviceRecorder:
                 while len(vad_pending) >= frame_bytes:
                     frame = bytes(vad_pending[:frame_bytes])
                     del vad_pending[:frame_bytes]
-                    ended = segmenter.feed(frame)
-                    if segmenter.started and not announced:
-                        announced = True
-                        if on_speech_start:
-                            on_speech_start()
-                    if ended:
+                    if feed_vad(frame):
                         return True
                 return False
 
             try:
                 for data in blocks:
+                    if cancel.is_set() or (stop.is_set() and segmenter):
+                        return b''
                     if sys.byteorder != 'little':
                         values = array('h')
                         values.frombytes(data)
@@ -254,10 +292,12 @@ class SoundDeviceRecorder:
                         data = _encode_samples(max(-32768, min(32767, round(v*options['input_gain']))) for v in pcm_samples(data))
                     if consume(converter.feed(data)):
                         break
-                if not cancel.is_set():
+                if cancel.is_set() or (stop.is_set() and segmenter):
+                    return b''
+                if segmenter is None or not segmenter.finished:
                     consume(converter.feed(b'', final=True))
                     if segmenter and vad_pending and not segmenter.finished:
-                        segmenter.feed(bytes(vad_pending))
+                        feed_vad(bytes(vad_pending))
             finally:
                 blocks.close()
             if cancel.is_set() or (stop.is_set() and segmenter):
@@ -271,7 +311,14 @@ class SoundDeviceRecorder:
                     raise VoiceAudioError('Kayıt çok kısa. Mikrofonu açıp konuşun, ardından kaydı bitirin.')
                 if pcm_rms(pcm) < 40:
                     raise VoiceAudioError('Konuşma duyulamadı. Mikrofon ses düzeyini kontrol edip yeniden deneyin.')
-            return b'' if cancel.is_set() else PCMBuffer(bytes(pcm), AudioFormat(rate)).to_wav()
+            if cancel.is_set():
+                return b''
+            wav = PCMBuffer(bytes(pcm), AudioFormat(rate)).to_wav()
+            if cancel.is_set() or (stop.is_set() and segmenter):
+                return b''
+            if endpoint is not None and last_voiced is not None:
+                log_voice_timing('vad_endpoint', 'ok', last_voiced, finished_at=endpoint)
+            return wav
         except VoiceAudioError:
             if cancel.is_set():
                 return b''
@@ -286,6 +333,8 @@ class SoundDeviceRecorder:
             detail = str(error).casefold()
             if any(marker in detail for marker in ('permission denied', 'access denied', 'not permitted', 'permission required')):
                 raise VoicePermissionError('Mikrofon izni gerekli. Sistem gizlilik ayarlarından Firik Agent için mikrofon erişimini açın.') from error
+            if any(marker in detail for marker in ('error querying device', 'invalid device', 'device unavailable', 'no default input device')):
+                raise VoiceDeviceError('Mikrofon bulunamadı. Bir giriş aygıtı bağlayıp ses ayarlarından seçin.') from error
             raise VoiceAudioError('Mikrofon açılamadı veya kayıt kesildi. Sistem mikrofon iznini, seçili giriş aygıtını ve başka uygulamaların kullanımını kontrol edin.') from error
 
     def record(self, stop, cancel, max_seconds, device=None):

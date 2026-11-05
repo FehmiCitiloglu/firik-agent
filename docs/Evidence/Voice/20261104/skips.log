@@ -1,0 +1,7 @@
+ssss                                                                     [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_docker_integration.py:16: Real Docker integration requires explicit opt-in
+SKIPPED [1] tests/test_evren_audio_live.py:15: Requires --run-live-evren-audio and an explicit smoke-test API key.
+SKIPPED [1] tests/test_isolated_workspaces.py:445: Windows integration guard
+SKIPPED [1] tests/test_shell.py:176: Windows cmd quoting regression
+4 skipped in 0.42s

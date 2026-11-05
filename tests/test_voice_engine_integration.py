@@ -439,7 +439,7 @@ def test_failed_streamed_playback_cancels_later_audio_until_a_new_response(runti
         c.shutdown(timeout=2)
 
 
-def test_failed_transcription_retains_audio_for_explicit_retry_without_reopening_input(runtime):
+def test_failed_transcription_requires_new_capture_for_retry(runtime):
     class Recorder:
         def __init__(self):
             self.calls = 0
@@ -464,12 +464,12 @@ def test_failed_transcription_retains_audio_for_explicit_retry_without_reopening
         eventually(lambda: c.state_id.value == "error")
         dispatch.drain()
         assert len(errors) == 1 and not transcripts and len(requests) == recorder.calls == 1
-        assert c.retry_transcription()
+        assert c.start_recording()
         eventually(lambda: c.state_id.value == "awaiting_confirmation")
         dispatch.drain()
         assert transcripts == ["A retried transcript"]
         assert len(requests) == 2 and requests[0] == requests[1]
-        assert recorder.calls == 1
+        assert recorder.calls == 2
     finally:
         c.shutdown(timeout=2)
 

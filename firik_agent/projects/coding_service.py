@@ -28,10 +28,15 @@ logger = logging.getLogger(__name__)
 class ProjectCodingService:
     """Orchestrates coding sessions, task planning, project Q&A, and universal search."""
 
-    def __init__(self, db: ProjectDatabase):
+    def __init__(self, db: ProjectDatabase, *, improvement_config: Optional[Dict[str, Any]] = None):
         self.db = db
+        self._improvement_config = improvement_config
         self._context_indexes: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
         self._lsp_adapters: Dict[str, Any] = {}
+
+    def _learning_coordinator(self):
+        from firik_agent.self_improvement.coordinator import coordinator_for
+        return coordinator_for(self.db, config=self._improvement_config)
 
     def register_lsp_adapter(self, project_id: str, adapter: Any) -> None:
         """Attach an already explicitly approved adapter; never start/install here."""
@@ -289,6 +294,16 @@ class ProjectCodingService:
                 except OSError:
                     report_unavailable(relative, "Dosya okunamadı veya erişilemiyor.")
         definitions = list(available_skills or [])
+        # Approved project skills use the same Skill format/selection pipeline;
+        # discovering metadata does not load or execute generated plugin code.
+        if allow_read and not excluded_file(".firik/skills"):
+            try:
+                from firik_agent.self_improvement.candidates import list_project_skills
+                from firik_agent.self_improvement.coordinator import coordinator_for
+                approved = coordinator_for(self.db, config=getattr(self, "_improvement_config", None)).project_skill_approvals(project_id)
+                definitions += list_project_skills(project.local_path, project_id, excluded=excluded_file, approved_records=approved)
+            except (ImportError, OSError, ValueError, AttributeError):
+                logger.debug("Approved project skill metadata unavailable.")
         selected_values = list(selected_skills or [])
         selected_names = [value for value in selected_values if isinstance(value, str)]
         selected_names += [item["value"] for item in parsed["references"] if item["kind"] == "skill"]
@@ -348,6 +363,18 @@ class ProjectCodingService:
             {"id": item.id, "source": "accepted_adr", "relevance_matches": relevance_score(item.title + " " + item.context + " " + item.decision),
              "reason": "Kabul edilmiş karar; görev sorgusuyla eşleşme önceliği"}
             for item in adrs if item.project_id == project_id and item.status == "accepted"][:6]
+        learned_memories = []
+        # A project opt-out applies to both collection and retrieval. Existing
+        # project memory and explicit settings keep their established behavior.
+        try:
+            learning = self._learning_coordinator()
+            if learning.project_enabled(project_id) and settings.token_budget.get("memory", 12) > 0:
+                learned_memories = learning.retrieve(query, project_id=project_id,
+                    token_budget=min(512, max(0, budget["token_budget"] // 4)))
+        except Exception:
+            # Learning cannot make an otherwise valid coding task unavailable.
+            # Avoid arbitrary exception text: providers may embed private data.
+            logger.warning("Learned context unavailable; using existing project context.")
         builder = ProjectContextBuilder(
             project=project, settings=settings, instructions=self.db.list_instructions(project_id),
             memories=memories, current_feature=feature, current_task=task,
@@ -355,6 +382,7 @@ class ProjectCodingService:
             git_diff=diff,
             last_session=last_session, total_token_budget=budget["token_budget"],
             documents=prepared_documents, selected_skills=loaded_skills, session_carry=carry, file_metadata=file_metadata,
+            learned_memories=learned_memories,
         )
         base_role = (
             "Sen Firik Kodlama Ajanısın. Kullanıcının seçtiği çalışma modu ve araç izinlerine uy. "

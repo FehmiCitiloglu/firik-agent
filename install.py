@@ -52,7 +52,7 @@ def install_desktop(root_dir: Path, venv_python: Path, uv_bin: str | None, platf
     tk = subprocess.run([str(venv_python), "-c", "import tkinter"], capture_output=True, text=True)
     if tk.returncode:
         raise RuntimeError("Tkinter is required for the desktop app. Install the Tk package for your Python and retry.")
-    packages = ["pyinstaller>=6.16,<7", "-e", f"{root_dir}[voice]"]
+    packages = ["-e", f"{root_dir}[desktop-build]"]
     if uv_bin:
         subprocess.run([uv_bin, "pip", "install", "--python", str(venv_python), *packages], check=True)
     else:

@@ -1147,6 +1147,9 @@ async def run_repl(agent: Agent) -> None:
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "improve":
+        from firik_agent.self_improvement.cli import main as improvement_main
+        raise SystemExit(improvement_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "doctor":
         from firik_agent.diagnostics import main as doctor_main
         raise SystemExit(doctor_main(sys.argv[2:]))

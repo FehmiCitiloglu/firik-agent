@@ -1,0 +1,49 @@
+{
+  "date": "2026-11-05",
+  "python": "3.13.2",
+  "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "runs": {
+    "headless": {
+      "tests": 2214.0,
+      "failures": 0.0,
+      "errors": 0.0,
+      "skipped": 4.0,
+      "time": 187.31,
+      "skips": [
+        "tests.test_docker_integration.test_real_docker_boundaries",
+        "tests.test_evren_audio_live.test_live_evren_synthesis_and_transcription_round_trip",
+        "tests.test_isolated_workspaces.test_windows_integration_refuses_unsafe_writes",
+        "tests.test_shell.test_cmd_quoted_executable_and_shell_operators"
+      ]
+    },
+    "native_ui": {
+      "tests": 70.0,
+      "failures": 0.0,
+      "errors": 0.0,
+      "skipped": 0.0,
+      "time": 25.475,
+      "skips": []
+    },
+    "isolated_native_voice": {
+      "tests": 1.0,
+      "failures": 0.0,
+      "errors": 0.0,
+      "skipped": 0.0,
+      "time": 1.084,
+      "skips": []
+    }
+  },
+  "native_aggregate": {
+    "exit_code": 138,
+    "result": "aborted",
+    "location": "tests/test_ui_voice.py::test_running_agent_events_do_not_discard_new_spoken_interruption / Tk.update",
+    "isolated_same_test_passed": true
+  },
+  "docker": {
+    "available": false,
+    "host_fallback": false,
+    "image_pulled": false,
+    "attempted_existing_desktop_start": true
+  },
+  "paid_model_requests": 0
+}

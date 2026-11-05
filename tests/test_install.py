@@ -169,7 +169,7 @@ def test_desktop_install_creates_linux_launcher_and_uses_isolated_build(home, mo
     launcher = installer.install_desktop(tmp_path, tmp_path / "python", None, "linux")
     assert (home / "data space/firik-agent/desktop/firik-agent").read_bytes() == b"desktop"
     assert 'Exec="' in launcher.read_text()
-    assert "pyinstaller>=6.16,<7" in calls[1]
+    assert f"{tmp_path}[desktop-build]" in calls[1]
     assert "--distpath" in calls[2]
 
 

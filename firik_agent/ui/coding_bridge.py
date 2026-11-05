@@ -20,6 +20,7 @@ from firik_agent.core.session import ChatSession
 from firik_agent.core.types import Message
 from firik_agent.mcp.models import redact_secrets
 from firik_agent.ui.coding_actions import CodingActions
+from firik_agent.voice.telemetry import VoiceAgentTiming
 
 logger = logging.getLogger(__name__)
 
@@ -159,17 +160,22 @@ class CodingBridge(CodingActions):
             self.validate_voice_request(voice_request)
             if not cwd or voice_request.workspace_id != str(Path(cwd).resolve()):
                 raise ValueError("Ses isteği başka bir çalışma alanında yürütülemez.")
+            if prompt != voice_request.request_text:
+                raise ValueError("Ses isteğinin incelenen içeriği değiştirilemez.")
+            from firik_agent.projects.composer import parse_composer
             from firik_agent.voice.execution import voice_metadata
             voice_origin = voice_metadata(voice_request, session_id=session_id,
                                           project_id=project_id, target="coding")
+            prompt = parse_composer(prompt)["user_prompt"]
         task_id = options.get("task_id")
-        cancel_event = threading.Event()
+        cancel_event = voice_request.cancellation_token if voice_request is not None else threading.Event()
         with self._stream_lock:
             if session_id in self._streams:
                 raise ValueError("Bu oturumda bir çalışma zaten yürütülüyor.")
             self._streams[session_id] = cancel_event
         run_id = options.get("resume_prepared_run_id") or "run_" + uuid4().hex
         started = time.monotonic()
+        voice_timing = VoiceAgentTiming() if voice_request is not None else None
         entered, notified = threading.Event(), threading.Event()
         control = session = record = None
         subagents = None
@@ -199,6 +205,8 @@ class CodingBridge(CodingActions):
             if notified.is_set():
                 return
             notified.set()
+            if voice_timing is not None:
+                voice_timing.finish("ok" if status == "completed" else status)
             # No terminal event can enable Send before persistence and cleanup.
             for event in terminal_events:
                 if on_event:
@@ -572,6 +580,8 @@ class CodingBridge(CodingActions):
                                                      session_tool_filter=stream_filter,
                                                      cancel_event=cancel_event, run_control=control, cwd=cwd):
                     receive(event)
+                    if voice_timing is not None:
+                        voice_timing.observe(event)
                     if event.type == AgentEventType.ERROR:
                         status = "blocked" if control.state == "blocked" else "failed"
                         final = event.content or "Model isteği başarısız."

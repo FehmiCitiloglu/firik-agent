@@ -68,7 +68,8 @@ class ProjectContextBuilder:
                  documents: Optional[List[Document | Dict[str, Any]]] = None,
                  selected_skills: Optional[List[Dict[str, str]]] = None,
                  session_carry: Optional[Dict[str, Any]] = None,
-                 file_metadata: Optional[Dict[str, Dict[str, Any]]] = None):
+                 file_metadata: Optional[Dict[str, Dict[str, Any]]] = None,
+                 learned_memories: Optional[List[Dict[str, Any]]] = None):
         self.project, self.settings = project, settings
         self.instructions = [i for i in instructions if i.is_active and i.project_id == project.id]
         self.memories = [m for m in memories if m.status in ("approved", "pinned") and m.project_id == project.id]
@@ -88,6 +89,29 @@ class ProjectContextBuilder:
         self.documents = [doc for doc in (documents or [])
                           if (doc.get("project_id", project.id) if isinstance(doc, dict) else doc.project_id) == project.id]
         self.selected_skills = selected_skills or []
+        # Learning records share the existing bounded memory slice. They remain
+        # data: explicit project instructions/settings take precedence, and a
+        # procedural lesson references a skill rather than copying its body.
+        existing = {sanitize_secrets(memory.content).strip() for memory in self.memories}
+        self.learned_memories = []
+        for memory in (learned_memories or [])[:100]:
+            if not isinstance(memory, dict) or not isinstance(memory.get("content"), str):
+                continue
+            if memory.get("scope") == "project" and memory.get("project_id") != project.id:
+                continue
+            if memory.get("scope") == "global" and memory.get("project_id"):
+                continue
+            if memory.get("scope") not in {"project", "global"}:
+                continue
+            if memory.get("user_approved") is not True:
+                continue
+            if memory.get("status", "active") not in {"active", "pinned", "approved"}:
+                continue
+            content = sanitize_secrets(memory["content"]).strip()
+            if not content or content in existing or memory.get("kind") == "procedural":
+                continue
+            existing.add(content)
+            self.learned_memories.append({**memory, "content": content})
         self.file_metadata = file_metadata or {}
         self.session_carry = dict(session_carry or {})
         if self.session_carry.get("project_id", project.id) != project.id:
@@ -106,6 +130,11 @@ class ProjectContextBuilder:
                         for i in sorted(self.instructions, key=lambda i: i.priority)]
         memory = [{"tür": m.memory_type, "durum": m.status, "içerik": m.content} for m in self.memories]
         memory += [{"mimari_karar": a.adr_number, "başlık": a.title, "karar": a.decision} for a in self.adrs[:6]]
+        memory += [{"öğrenilmiş_kayıt": item.get("id", item.get("memory_id", "")),
+                    "tür": item.get("kind", "semantic"), "kapsam": item["scope"],
+                    "kaynak": item.get("source_reference", ""),
+                    "gerekçe": item.get("reason", "Onaylı, görevle ilişkili öğrenilmiş bilgi"),
+                    "içerik": item["content"]} for item in self.learned_memories]
         task: Dict[str, Any] = {}
         if self.current_feature:
             task["özellik"] = {"başlık": self.current_feature.title, "açıklama": self.current_feature.description,
@@ -192,6 +221,18 @@ class ProjectContextBuilder:
                           "scope": "project", "reason": "Kabul edilmiş mimari karar", "estimate_only": True,
                           "tokens_used": approx_tokens(content),
                           "included": self._json(content)[1:-1] in self.build_slices()["memory"].get_truncated_text()})
+        for memory in self.learned_memories:
+            content = memory["content"]
+            included = self._json(content)[1:-1] in self.build_slices()["memory"].get_truncated_text()
+            items.append({"id": "learned_memory:" + str(memory.get("id", memory.get("memory_id", ""))),
+                          "category": "memory", "label": content[:100], "source": "learned_memory",
+                          "scope": memory["scope"], "project_id": memory.get("project_id"),
+                          "reason": sanitize_secrets(str(memory.get("reason", "Onaylı, görevle ilişkili öğrenilmiş bilgi"))),
+                          "confidence": memory.get("confidence"), "verification_status": memory.get("verification_status"),
+                          "evidence_ids": list(memory.get("evidence_ids", []))[:20],
+                          "revision": memory.get("revision"), "estimate_only": True,
+                          "tokens_used": approx_tokens(content) if included else 0,
+                          "included": included, "pinned": bool(memory.get("pinned") or memory.get("status") == "pinned")})
         return items
 
     def _build_slices(self, available: int) -> Dict[str, ContextSlice]:

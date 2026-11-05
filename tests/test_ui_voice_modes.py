@@ -61,9 +61,6 @@ class Controller:
     def transcript_resolved(self, submitted=False):
         self.events.append(("resolved", submitted))
 
-    def retry_transcription(self):
-        return self._event("retry", "transcribing")
-
     def mark_agent_state(self, state):
         self._event("agent", state)
 
@@ -130,6 +127,15 @@ def test_press_hold_records_once_and_release_finalizes(panel):
     assert controller.session == "session-one"
 
 
+def test_hiding_last_visible_voice_surface_cancels_recording(panel):
+    panel.panel.toggle_recording()
+    controller = panel.controllers[-1]
+    assert controller.events == ["capture"]
+    panel.root.withdraw()
+    pump(panel.root, .08)
+    assert controller.events == ["capture", "stop_listening"]
+
+
 def test_transcript_edit_copy_retry_discard_and_single_submission(panel):
     widget = panel.panel
     controller = recognize(panel, "Firik, explain this project")
@@ -137,7 +143,7 @@ def test_transcript_edit_copy_retry_discard_and_single_submission(panel):
     widget.copy_transcript()
     assert widget.clipboard_get() == "Firik, explain this project"
     widget.retry_transcript()
-    assert "retry" in controller.events and not widget._pending
+    assert controller.events.count("capture") == 2 and not widget._pending
     controller.callbacks["on_transcript"]("Firik, explain this project again")
     widget.command_text.delete(0, "end")
     widget.command_text.insert(0, "Firik, explain that again in Turkish")

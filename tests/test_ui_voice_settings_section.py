@@ -1,8 +1,10 @@
 """Native reusable voice settings, explicit tests and ordinary settings section."""
 from dataclasses import replace
+import gc
 import os
 from pathlib import Path
 import threading
+import weakref
 from types import SimpleNamespace
 
 import customtkinter as ctk
@@ -34,6 +36,7 @@ class Service:
         self.voice_settings = VoiceSettings()
         self.saved = []
         self.tests = []
+        self.output_tests = []
         self.devices = []
         self.discoveries = []
         self.listeners = []
@@ -64,6 +67,11 @@ class Service:
     def start_voice_input_test(self, on_level, on_done, on_error, settings=None):
         handle = InputTest()
         self.tests.append((handle, on_level, on_done, on_error, settings))
+        return handle
+
+    def start_voice_output_test(self, on_done, on_error, settings=None):
+        handle = InputTest()
+        self.output_tests.append((handle, on_done, on_error, settings))
         return handle
 
     def discover_voice_capabilities_async(self, success, error):
@@ -185,6 +193,83 @@ def test_level_test_completion_preserves_actionable_error_in_service_callback_or
     assert form.test_status.cget("text") == message
     assert form.test_button.cget("text") == "Mikrofon düzeyini sına"
     assert form._input_test is None
+
+
+def test_explicit_speaker_test_uses_unsaved_output_and_volume_without_saving_or_input_capture(voice_form):
+    root, service, form = voice_form
+    assert not service.tests and not service.output_tests
+    speaker = SimpleNamespace(id="pa:chosen-output", name="Test output", host_api="Synthetic", index=2)
+    service.devices[-1][0]({"input": [], "output": [speaker]})
+    label = next(label for label in form.menus["output_device"].cget("values") if "Test output" in label)
+    form.menus["output_device"]._dropdown_callback(label)
+    form.tabs.set("Yanıt")
+    pump(root, .13)
+    form.entries["output_volume"].delete(0, "end")
+    form.entries["output_volume"].insert(0, ".35")
+    form.output_test_button.invoke()
+    handle, done, failed, settings = service.output_tests[-1]
+    assert settings.output_device == "pa:chosen-output" and settings.output_volume == .35
+    assert not settings.enabled and not service.saved and not service.tests
+    assert form.output_test_button.cget("text") == "Hoparlör testini durdur"
+    failed("Çıkış aygıtı açılamadı. Yeniden seçin.")
+    done()
+    assert form._output_test is None
+    assert form.output_test_button.cget("text") == "Hoparlörü sına"
+    assert form.output_test_status.cget("text") == "Çıkış aygıtı açılamadı. Yeniden seçin."
+    assert not handle.cancelled
+
+
+@pytest.mark.parametrize("action", ["button", "volume", "device", "save", "external", "tab", "unmap", "destroy"])
+def test_speaker_test_cancels_on_changes_or_departure_and_ignores_late_callbacks(voice_form, action):
+    root, service, form = voice_form
+    form.tabs.set("Yanıt")
+    pump(root, .13)
+    form.output_test_button.invoke()
+    handle, done, failed, _ = service.output_tests[-1]
+    if action == "button":
+        form.output_test_button.invoke()
+    elif action == "volume":
+        form.entries["output_volume"].delete(0, "end")
+        form.entries["output_volume"].insert(0, ".2")
+    elif action == "device":
+        form._select_device("output", "Sistem varsayılanı")
+    elif action == "save":
+        assert form.save()
+    elif action == "external":
+        service.update_voice_settings(replace(VoiceSettings(), output_volume=.7))
+    elif action == "tab":
+        form.tabs.set("Giriş")
+        form._form_tab_changed()
+    elif action == "unmap":
+        form.pack_forget()
+        pump(root, .03)
+    else:
+        form.destroy()
+    assert handle.cancelled and form._output_test is None
+    if action != "destroy":
+        status = form.output_test_status.cget("text")
+    failed("late error")
+    done()
+    pump(root, .02)
+    if action != "destroy":
+        assert form.output_test_status.cget("text") == status
+
+
+def test_speaker_test_callbacks_do_not_retain_closed_settings_window():
+    _ensure_tk_environment()
+    root = ctk.CTk()
+    service = Service()
+    form = VoiceSettingsFrame(root, service)
+    form.toggle_output_test()
+    handle, done, failed, _ = service.output_tests[-1]
+    reference = weakref.ref(form)
+    root.destroy()
+    del form
+    del root
+    gc.collect()
+    assert reference() is None and handle.cancelled
+    done()
+    failed("late device result")
 
 
 def test_provider_capability_controls_explain_unsupported_features_without_fake_voices(voice_form):

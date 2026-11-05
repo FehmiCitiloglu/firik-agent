@@ -1,0 +1,172 @@
+
+tests/test_ui_voice_acceptance.py::test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[False] 
+-------------------------------- live log setup --------------------------------
+INFO     firik_agent.core.runtime:runtime.py:64 AsyncRuntime thread started.
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Connecting to MCP server 'computer-use'...
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Initialized: firik-computer-use v0.2.4
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Connected to MCP server 'computer-use' in 13.5ms
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Discovered 16 tools: ['computer_environment', 'computer_get_displays', 'computer_screenshot', 'computer_list_windows', 'computer_focus_window', 'computer_move_pointer', 'computer_click', 'computer_drag', 'computer_scroll', 'computer_type_text', 'computer_key', 'computer_hotkey', 'computer_get_clipboard', 'computer_set_clipboard', 'computer_wait', 'computer_accessibility_snapshot']
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Connecting to MCP server 'web'...
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Initialized: firik-web v1.0.0
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Connected to MCP server 'web' in 2.7ms
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Discovered 2 tools: ['web_search', 'web_open']
+INFO     httpx:_client.py:1740 HTTP Request: GET https://evren-llmapi.ssyz.org.tr/healthz "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: GET https://evren-llmapi.ssyz.org.tr/readyz "HTTP/1.1 200 OK"
+-------------------------------- live log call ---------------------------------
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=capture status=ok duration_ms=36.7
+INFO     httpx:_client.py:1740 HTTP Request: POST https://evren-llmapi.ssyz.org.tr/v1/audio/transcriptions "HTTP/1.1 200 OK"
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=asr_request status=ok duration_ms=1.4
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=asr status=ok duration_ms=3.2
+INFO     firik_agent.providers.registry:registry.py:23 Registered provider 'firik' (active=True)
+INFO     firik_agent.skills.manager:manager.py:115 Discovered skill 'research_analyst' at /Users/alien/Development/evren/firik_agent/builtin_skills/research_analyst
+INFO     firik_agent.skills.manager:manager.py:115 Discovered skill 'code_assistant' at /Users/alien/Development/evren/firik_agent/builtin_skills/code_assistant
+INFO     firik_agent.skills.manager:manager.py:115 Discovered skill 'computer-use' at /Users/alien/Development/evren/firik_agent/builtin_skills/computer-use
+INFO     firik_agent.skills.manager:manager.py:144 Activated skill 'code_assistant'
+INFO     firik_agent.skills.manager:manager.py:144 Activated skill 'computer-use'
+INFO     firik_agent.plugins.manager:manager.py:69 Registered plugin 'logger' (v1.0.0)
+INFO     firik_agent.plugins.manager:manager.py:67 Registered tool 'calculate' from plugin 'calculator'
+INFO     firik_agent.plugins.manager:manager.py:69 Registered plugin 'calculator' (v1.0.0)
+INFO     firik_agent.plugins.manager:manager.py:67 Registered tool 'fetch_web_page' from plugin 'web_search'
+INFO     firik_agent.plugins.manager:manager.py:69 Registered plugin 'web_search' (v1.0.0)
+INFO     firik_agent.core.agent:agent.py:278 FirikAgent 'FirikAgent' initialized with provider 'firik'
+INFO     firik.plugins.logger:logger.py:19 [Plugin:Logger] User prompt received (characters=34)
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=agent_first_token status=ok duration_ms=26.5
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=agent status=ok duration_ms=29.8
+INFO     httpx:_client.py:1740 HTTP Request: POST https://evren-llmapi.ssyz.org.tr/v1/audio/speech "HTTP/1.1 200 OK"
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=tts_request status=ok duration_ms=0.9
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=tts_first_audio status=ok duration_ms=1.5
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=voice_end_to_end status=ok duration_ms=151.2
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=speech status=ok duration_ms=45.4
+PASSED                                                                   [ 25%]
+------------------------------ live log teardown -------------------------------
+WARNING  firik_agent.computer_use.security:security.py:67 Emergency stop requested for Computer Use.
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Disconnected MCP server 'computer-use'
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Disconnected MCP server 'web'
+INFO     firik_agent.core.runtime:runtime.py:76 AsyncRuntime thread stopped.
+INFO     firik_agent.core.runtime:runtime.py:127 AsyncRuntime shutdown complete.
+
+tests/test_ui_voice_acceptance.py::test_turkish_capture_reaches_existing_agent_and_voxcpm_playback[True] 
+-------------------------------- live log setup --------------------------------
+INFO     firik_agent.core.runtime:runtime.py:64 AsyncRuntime thread started.
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Connecting to MCP server 'computer-use'...
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Initialized: firik-computer-use v0.2.4
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Connected to MCP server 'computer-use' in 0.8ms
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Discovered 16 tools: ['computer_environment', 'computer_get_displays', 'computer_screenshot', 'computer_list_windows', 'computer_focus_window', 'computer_move_pointer', 'computer_click', 'computer_drag', 'computer_scroll', 'computer_type_text', 'computer_key', 'computer_hotkey', 'computer_get_clipboard', 'computer_set_clipboard', 'computer_wait', 'computer_accessibility_snapshot']
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Connecting to MCP server 'web'...
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Initialized: firik-web v1.0.0
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Connected to MCP server 'web' in 0.1ms
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Discovered 2 tools: ['web_search', 'web_open']
+INFO     httpx:_client.py:1740 HTTP Request: GET https://evren-llmapi.ssyz.org.tr/healthz "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: GET https://evren-llmapi.ssyz.org.tr/readyz "HTTP/1.1 200 OK"
+-------------------------------- live log call ---------------------------------
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=capture status=ok duration_ms=24.7
+INFO     httpx:_client.py:1740 HTTP Request: POST https://evren-llmapi.ssyz.org.tr/v1/audio/transcriptions "HTTP/1.1 200 OK"
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=asr_request status=ok duration_ms=1.2
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=asr status=ok duration_ms=2.7
+INFO     firik_agent.providers.registry:registry.py:23 Registered provider 'firik' (active=True)
+INFO     firik_agent.skills.manager:manager.py:115 Discovered skill 'research_analyst' at /Users/alien/Development/evren/firik_agent/builtin_skills/research_analyst
+INFO     firik_agent.skills.manager:manager.py:115 Discovered skill 'code_assistant' at /Users/alien/Development/evren/firik_agent/builtin_skills/code_assistant
+INFO     firik_agent.skills.manager:manager.py:115 Discovered skill 'computer-use' at /Users/alien/Development/evren/firik_agent/builtin_skills/computer-use
+INFO     firik_agent.skills.manager:manager.py:144 Activated skill 'code_assistant'
+INFO     firik_agent.skills.manager:manager.py:144 Activated skill 'computer-use'
+INFO     firik_agent.plugins.manager:manager.py:69 Registered plugin 'logger' (v1.0.0)
+INFO     firik_agent.plugins.manager:manager.py:67 Registered tool 'calculate' from plugin 'calculator'
+INFO     firik_agent.plugins.manager:manager.py:69 Registered plugin 'calculator' (v1.0.0)
+INFO     firik_agent.plugins.manager:manager.py:67 Registered tool 'fetch_web_page' from plugin 'web_search'
+INFO     firik_agent.plugins.manager:manager.py:69 Registered plugin 'web_search' (v1.0.0)
+INFO     firik_agent.core.agent:agent.py:278 FirikAgent 'FirikAgent' initialized with provider 'firik'
+INFO     firik.plugins.logger:logger.py:19 [Plugin:Logger] User prompt received (characters=34)
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=agent_first_token status=ok duration_ms=10.0
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=agent status=ok duration_ms=12.5
+INFO     httpx:_client.py:1740 HTTP Request: POST https://evren-llmapi.ssyz.org.tr/v1/audio/speech "HTTP/1.1 200 OK"
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=tts_request status=ok duration_ms=0.8
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=tts_first_audio status=ok duration_ms=1.1
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=voice_end_to_end status=ok duration_ms=100.5
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=speech status=ok duration_ms=43.0
+PASSED                                                                   [ 50%]
+------------------------------ live log teardown -------------------------------
+WARNING  firik_agent.computer_use.security:security.py:67 Emergency stop requested for Computer Use.
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Disconnected MCP server 'computer-use'
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Disconnected MCP server 'web'
+INFO     firik_agent.core.runtime:runtime.py:76 AsyncRuntime thread stopped.
+INFO     firik_agent.core.runtime:runtime.py:127 AsyncRuntime shutdown complete.
+
+tests/test_ui_voice_acceptance.py::test_disconnected_asr_recovers_through_same_text_chat 
+-------------------------------- live log setup --------------------------------
+INFO     firik_agent.core.runtime:runtime.py:64 AsyncRuntime thread started.
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Connecting to MCP server 'computer-use'...
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Initialized: firik-computer-use v0.2.4
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Connected to MCP server 'computer-use' in 0.6ms
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Discovered 16 tools: ['computer_environment', 'computer_get_displays', 'computer_screenshot', 'computer_list_windows', 'computer_focus_window', 'computer_move_pointer', 'computer_click', 'computer_drag', 'computer_scroll', 'computer_type_text', 'computer_key', 'computer_hotkey', 'computer_get_clipboard', 'computer_set_clipboard', 'computer_wait', 'computer_accessibility_snapshot']
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Connecting to MCP server 'web'...
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Initialized: firik-web v1.0.0
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Connected to MCP server 'web' in 0.2ms
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Discovered 2 tools: ['web_search', 'web_open']
+INFO     httpx:_client.py:1740 HTTP Request: GET https://evren-llmapi.ssyz.org.tr/healthz "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: GET https://evren-llmapi.ssyz.org.tr/readyz "HTTP/1.1 200 OK"
+-------------------------------- live log call ---------------------------------
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=capture status=ok duration_ms=36.2
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=asr_request status=connection duration_ms=0.6
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=asr status=failed duration_ms=1.8
+INFO     firik_agent.providers.registry:registry.py:23 Registered provider 'firik' (active=True)
+INFO     firik_agent.skills.manager:manager.py:115 Discovered skill 'research_analyst' at /Users/alien/Development/evren/firik_agent/builtin_skills/research_analyst
+INFO     firik_agent.skills.manager:manager.py:115 Discovered skill 'code_assistant' at /Users/alien/Development/evren/firik_agent/builtin_skills/code_assistant
+INFO     firik_agent.skills.manager:manager.py:115 Discovered skill 'computer-use' at /Users/alien/Development/evren/firik_agent/builtin_skills/computer-use
+INFO     firik_agent.skills.manager:manager.py:144 Activated skill 'code_assistant'
+INFO     firik_agent.skills.manager:manager.py:144 Activated skill 'computer-use'
+INFO     firik_agent.plugins.manager:manager.py:69 Registered plugin 'logger' (v1.0.0)
+INFO     firik_agent.plugins.manager:manager.py:67 Registered tool 'calculate' from plugin 'calculator'
+INFO     firik_agent.plugins.manager:manager.py:69 Registered plugin 'calculator' (v1.0.0)
+INFO     firik_agent.plugins.manager:manager.py:67 Registered tool 'fetch_web_page' from plugin 'web_search'
+INFO     firik_agent.plugins.manager:manager.py:69 Registered plugin 'web_search' (v1.0.0)
+INFO     firik_agent.core.agent:agent.py:278 FirikAgent 'FirikAgent' initialized with provider 'firik'
+INFO     firik.plugins.logger:logger.py:19 [Plugin:Logger] User prompt received (characters=17)
+PASSED                                                                   [ 75%]
+------------------------------ live log teardown -------------------------------
+WARNING  firik_agent.computer_use.security:security.py:67 Emergency stop requested for Computer Use.
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Disconnected MCP server 'computer-use'
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Disconnected MCP server 'web'
+INFO     firik_agent.core.runtime:runtime.py:76 AsyncRuntime thread stopped.
+INFO     firik_agent.core.runtime:runtime.py:127 AsyncRuntime shutdown complete.
+
+tests/test_ui_voice_acceptance.py::test_spoken_project_test_summary_uses_existing_coding_run 
+-------------------------------- live log setup --------------------------------
+INFO     firik_agent.core.runtime:runtime.py:64 AsyncRuntime thread started.
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Connecting to MCP server 'computer-use'...
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Initialized: firik-computer-use v0.2.4
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Connected to MCP server 'computer-use' in 0.7ms
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Discovered 16 tools: ['computer_environment', 'computer_get_displays', 'computer_screenshot', 'computer_list_windows', 'computer_focus_window', 'computer_move_pointer', 'computer_click', 'computer_drag', 'computer_scroll', 'computer_type_text', 'computer_key', 'computer_hotkey', 'computer_get_clipboard', 'computer_set_clipboard', 'computer_wait', 'computer_accessibility_snapshot']
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Connecting to MCP server 'web'...
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Initialized: firik-web v1.0.0
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Connected to MCP server 'web' in 1.2ms
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Discovered 2 tools: ['web_search', 'web_open']
+INFO     httpx:_client.py:1740 HTTP Request: GET https://evren-llmapi.ssyz.org.tr/healthz "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1740 HTTP Request: GET https://evren-llmapi.ssyz.org.tr/readyz "HTTP/1.1 200 OK"
+-------------------------------- live log call ---------------------------------
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=capture status=ok duration_ms=35.8
+INFO     httpx:_client.py:1740 HTTP Request: POST https://evren-llmapi.ssyz.org.tr/v1/audio/transcriptions "HTTP/1.1 200 OK"
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=asr_request status=ok duration_ms=2.0
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=asr status=ok duration_ms=5.0
+INFO     firik_agent.providers.registry:registry.py:23 Registered provider 'firik' (active=True)
+INFO     firik_agent.providers.registry:registry.py:38 Active provider switched to 'firik'
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=agent_first_token status=ok duration_ms=212.9
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=agent status=ok duration_ms=342.0
+INFO     httpx:_client.py:1740 HTTP Request: POST https://evren-llmapi.ssyz.org.tr/v1/audio/speech "HTTP/1.1 200 OK"
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=tts_request status=ok duration_ms=0.8
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=tts_first_audio status=ok duration_ms=1.3
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=voice_end_to_end status=ok duration_ms=494.0
+INFO     httpx:_client.py:1740 HTTP Request: POST https://evren-llmapi.ssyz.org.tr/v1/audio/speech "HTTP/1.1 200 OK"
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=tts_request status=ok duration_ms=0.8
+INFO     httpx:_client.py:1740 HTTP Request: POST https://evren-llmapi.ssyz.org.tr/v1/audio/speech "HTTP/1.1 200 OK"
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=tts_request status=ok duration_ms=1.3
+INFO     firik_agent.voice.telemetry:telemetry.py:15 voice stage=speech status=ok duration_ms=81.4
+PASSED                                                                   [100%]
+------------------------------ live log teardown -------------------------------
+WARNING  firik_agent.computer_use.security:security.py:67 Emergency stop requested for Computer Use.
+INFO     firik_agent.mcp.client:client.py:109 MCP [computer-use]: Disconnected MCP server 'computer-use'
+INFO     firik_agent.mcp.client:client.py:109 MCP [web]: Disconnected MCP server 'web'
+INFO     firik_agent.core.runtime:runtime.py:76 AsyncRuntime thread stopped.
+INFO     firik_agent.core.runtime:runtime.py:127 AsyncRuntime shutdown complete.
+
+
+============================== 4 passed in 5.87s ===============================

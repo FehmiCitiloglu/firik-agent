@@ -1,14 +1,17 @@
 """Generation-bound voice sessions; native audio and network work never run on Tk."""
 from __future__ import annotations
 
+import asyncio
 from concurrent.futures import Future
 from collections import deque
 from dataclasses import replace
 import threading
 import time
+import traceback
 from typing import Any, Awaitable, Callable
 
 from firik_agent.voice.config import VoiceSettings
+from firik_agent.voice.telemetry import log_voice_timing
 
 MAX_AUDIO_BYTES = 25 * 1024 * 1024
 MAX_TRANSCRIPT_CHARS = 32_000
@@ -43,12 +46,15 @@ class VoiceController:
                  on_transcript: Callable[[str], None], on_error: Callable[[str], None],
                  recorder: Any = None, speaker: Any = None,
                  coordinator: CaptureCoordinator | None = None,
-                 session_id: str | None = None, on_level=None, speaker_factory=None) -> None:
+                 session_id: str | None = None, on_level=None, speaker_factory=None,
+                 speaker_revision=None) -> None:
         self.runtime, self.settings = runtime, settings
         self._dispatch, self._transcribe = dispatch, transcribe
         self._on_state, self._on_transcript, self._on_error = on_state, on_transcript, on_error
         self._recorder, self._speaker = recorder, speaker
         self._speaker_factory = speaker_factory
+        self._speaker_revision = speaker_revision
+        self._speaker_key = None
         self._lock = threading.RLock()
         self.coordinator = coordinator or _DEFAULT_COORDINATOR
         self._device_lock = self.coordinator.capture_lock  # compatibility
@@ -62,7 +68,8 @@ class VoiceController:
         self._completed_transcription = -1
         self._transcript_pending = False
         self._review_pending = False
-        self._last_audio: bytes | None = None
+        self._utterance_ended_at = None
+        self._response_audio_started_at = None
         self._conversation = False
         self._paused = False
         self._capture_mode = "ptt"
@@ -99,7 +106,11 @@ class VoiceController:
                 return False
             worker = threading.Thread(target=work, name=name, daemon=True)
             self._workers.add(worker)
-            worker.start()
+            try:
+                worker.start()
+            except RuntimeError:
+                self._workers.discard(worker)
+                return False
         return True
 
     @property
@@ -162,6 +173,7 @@ class VoiceController:
             self._future.cancel()
         self._future = None
         self._transcript_pending = self._review_pending = False
+        self._utterance_ended_at = None
         self._record_stop = self._record_cancel = None
         if release_capture:
             self.coordinator.release(self)
@@ -186,9 +198,30 @@ class VoiceController:
             if session_id == self.session_id:
                 return
             self.cancel()
-            self._last_audio = None
+            self._agent_busy = False
             self._last_speech = None
             self.session_id = session_id
+
+    def sync_agent_state(self, busy: bool) -> None:
+        """Refresh the selected session's status without starting audio work."""
+        with self._lock:
+            if self._closed:
+                return
+            self._agent_busy = busy
+            if self._state in (VoiceState.LISTENING, VoiceState.SPEECH_DETECTED,
+                               VoiceState.TRANSCRIBING, VoiceState.AWAITING_CONFIRMATION,
+                               VoiceState.SPEAKING):
+                return
+            generation = self._generation
+            if not self.settings.enabled:
+                state = VoiceState.DISABLED
+            elif busy:
+                state = VoiceState.THINKING
+            elif self._conversation and self._paused:
+                state = VoiceState.INTERRUPTED
+            else:
+                state = VoiceState.IDLE
+        self._set_state(generation, state)
 
     @property
     def can_replay_speech(self) -> bool:
@@ -199,9 +232,23 @@ class VoiceController:
         self.settings = replace(self.settings, interaction_mode="push_to_talk")
         return self._begin_capture("ptt")
 
-    def _begin_capture(self, mode: str, *, preserve_speech=False) -> bool:
+    def retry_transcription(self) -> bool:
+        """Compatibility entry point for an explicit fresh push-to-talk capture.
+
+        A retry replaces transcript review or recovers from an input error.
+        Microphone bytes from previous attempts are released after ASR and are
+        never reused by this method.
+        """
         with self._lock:
-            if (self._closed or not self.settings.enabled or self._transcript_pending
+            if self._closed or self._state not in (
+                    VoiceState.AWAITING_CONFIRMATION, VoiceState.ERROR, VoiceState.PERMISSION_REQUIRED):
+                return False
+            self.settings = replace(self.settings, interaction_mode="push_to_talk")
+            return self._begin_capture("ptt", replace_review=True)
+
+    def _begin_capture(self, mode: str, *, preserve_speech=False, replace_review=False) -> bool:
+        with self._lock:
+            if (self._closed or not self.settings.enabled or (self._transcript_pending and not replace_review)
                     or self._state in (VoiceState.LISTENING, VoiceState.SPEECH_DETECTED, VoiceState.TRANSCRIBING)
                     or (self._agent_busy and mode == "conversation")):
                 return False
@@ -211,7 +258,6 @@ class VoiceController:
             self._capture_mode = mode
             if mode == "ptt":
                 self._stream_cancelled = True
-            self._last_audio = None
             settings = self.settings
             stop, cancel = threading.Event(), threading.Event()
             self._record_stop, self._record_cancel = stop, cancel
@@ -248,7 +294,6 @@ class VoiceController:
                 return
             self._paused = True
             generation = self._invalidate_locked(speech=False)
-            self._last_audio = None
         self._set_state(generation, VoiceState.INTERRUPTED)
 
     def resume_conversation(self) -> bool:
@@ -260,7 +305,11 @@ class VoiceController:
         if busy:
             self._set_state(self._generation, VoiceState.THINKING)
             return True
-        return self._begin_capture("conversation")
+        if self._begin_capture("conversation"):
+            return True
+        with self._lock:
+            self._paused = self._conversation
+        return False
 
     def exit_conversation(self) -> None:
         self.cancel()
@@ -274,7 +323,6 @@ class VoiceController:
             if self._state == VoiceState.SPEAKING:
                 return
             generation = self._invalidate_locked(speech=False)
-            self._last_audio = None
         self._set_state(generation, VoiceState.IDLE if self.settings.enabled else VoiceState.DISABLED)
 
     def _speech_started(self, generation: int) -> None:
@@ -290,14 +338,17 @@ class VoiceController:
         self._set_state(generation, VoiceState.SPEECH_DETECTED)
 
     def _capture(self, generation, settings, stop, cancel, mode) -> None:
+        started = time.monotonic()
         try:
-            with self.coordinator.capture_lock:
-                if not self._active(generation) or cancel.is_set():
+            with self.coordinator.native_lock(self.coordinator.capture_lock, cancel) as acquired:
+                if not acquired or not self._active(generation):
+                    log_voice_timing("capture", "cancelled", started)
                     return
                 if self._recorder is None:
                     from firik_agent.voice.audio import SoundDeviceRecorder
                     self._recorder = SoundDeviceRecorder()
                 if not self.coordinator.begin_capture(cancel, duplex=self.supports_barge_in and settings.barge_in):
+                    log_voice_timing("capture", "cancelled", started)
                     return
                 try:
                     if hasattr(self._recorder, "configure"):
@@ -315,26 +366,33 @@ class VoiceController:
                 finally:
                     self.coordinator.end_capture()
             if not self._active(generation) or cancel.is_set():
+                log_voice_timing("capture", "cancelled", started)
                 return
             # Empty VAD windows are local silence. Keep listening without an
             # HTTP call; bounded native windows still release resources.
             if mode == "conversation" and audio == b"":
+                log_voice_timing("capture", "silence", started)
                 self._set_state(generation, VoiceState.READY)
                 self._post(generation, self._resume_if_needed)
                 return
             if not isinstance(audio, bytes) or not audio or len(audio) > MAX_AUDIO_BYTES:
+                log_voice_timing("capture", "empty_or_invalid", started)
                 self._fail(generation, "Kayıt boş veya izin verilen ses boyutunu aşıyor. Lütfen yeniden konuşun.")
                 return
+            ended = time.monotonic()
             with self._lock:
                 if not self._active(generation):
                     return
-                self._last_audio = audio
+                self._utterance_ended_at = ended
+            log_voice_timing("capture", "ok", started, finished_at=ended)
             self._submit_transcription(generation, audio, settings)
         except Exception as error:
             from firik_agent.voice.audio import VoiceAudioError, VoicePermissionError
             message = (str(error) if isinstance(error, VoiceAudioError) else
                        "Mikrofon kaydı veya ses çözümleme başlatılamadı. Mikrofon iznini ve ses kurulumunu kontrol edin.")
-            self._fail(generation, message, permission=isinstance(error, VoicePermissionError))
+            permission = isinstance(error, VoicePermissionError)
+            log_voice_timing("capture", "permission" if permission else "failed", started)
+            self._fail(generation, message, permission=permission)
         finally:
             # A newer generation can be queued behind our native close. Only
             # release its lease if it is still this generation's capture.
@@ -345,35 +403,59 @@ class VoiceController:
     def _submit_transcription(self, generation, audio, settings) -> bool:
         if not self._set_state(generation, VoiceState.TRANSCRIBING):
             return False
-        coroutine = self._transcribe(audio, settings.model, settings.language)
+
+        async def transcribe():
+            nonlocal audio
+            from firik_agent.voice.providers import voice_error_message
+
+            started = time.monotonic()
+            status = "failed"
+            try:
+                result = await self._transcribe(audio, settings.model, settings.language)
+                if isinstance(result, str) and result.strip() and len(result) <= MAX_TRANSCRIPT_CHARS:
+                    status = "ok"
+                return result, None
+            except asyncio.CancelledError as error:
+                status = "cancelled"
+                # A retained cancelled Future can retain its asyncio Task's
+                # exception. Clear unwound provider frames before propagation.
+                traceback.clear_frames(error.__traceback__)
+                raise
+            except Exception as error:
+                # The Future retains its result during delivery. An exception
+                # traceback can retain this coroutine and the microphone bytes.
+                return None, voice_error_message(error)
+            finally:
+                audio = b""
+                log_voice_timing("asr", status, started)
+
+        def deliver(outcome):
+            result, error = outcome
+            if error is not None:
+                self._fail(generation, error)
+            else:
+                self._transcription_done(generation, result)
+
+        coroutine = transcribe()
         with self._lock:
             if not self._active(generation):
                 coroutine.close()
                 return False
             try:
-                future = self.runtime.submit(coroutine,
-                    on_done=lambda result: self._transcription_done(generation, result),
+                future = self.runtime.submit(coroutine, on_done=deliver,
                     on_error=lambda error: self._transcription_error(generation, error))
             except Exception:
                 coroutine.close()
                 raise
-            if self._active(generation):
+            if self._active(generation) and not future.done():
                 self._future = future
-            else:
+            elif not self._active(generation):
                 future.cancel()
         return True
 
     def _transcription_error(self, generation, error):
         from firik_agent.voice.providers import voice_error_message
         self._fail(generation, voice_error_message(error))
-
-    def retry_transcription(self) -> bool:
-        with self._lock:
-            if self._closed or self._last_audio is None or self._state not in (VoiceState.AWAITING_CONFIRMATION, VoiceState.ERROR):
-                return False
-            audio = self._last_audio
-            generation = self._invalidate_locked()
-        return self._submit_transcription(generation, audio, self.settings)
 
     def _transcription_done(self, generation, result) -> None:
         with self._lock:
@@ -401,7 +483,7 @@ class VoiceController:
             if self._closed or not self._review_pending:
                 return False
             self._review_pending = self._transcript_pending = False
-            self._last_audio = None
+            self._utterance_ended_at = None
             generation = self._generation
             if submitted:
                 self._agent_busy = True
@@ -410,9 +492,10 @@ class VoiceController:
             self._resume_if_needed()
         return True
 
-    def response_started(self, state="thinking") -> None:
+    def response_started(self, state="thinking", *, from_voice=False) -> None:
         self.stop_speaking()
         with self._lock:
+            self._response_audio_started_at = self._utterance_ended_at if from_voice else None
             self._stream_buffer = None
             self._stream_chars = 0
             self._stream_cancelled = False
@@ -435,7 +518,7 @@ class VoiceController:
             try:
                 sentences = self._stream_buffer.feed(text)
                 for sentence in sentences:
-                    if not self.speak(sentence):
+                    if not self.speak(sentence, response_audio=True):
                         self.stop_speaking()
                         break
             except Exception:
@@ -453,7 +536,7 @@ class VoiceController:
             else:
                 generation = self._generation
             self._review_pending = False
-            self._last_audio = None
+            self._utterance_ended_at = None
         self._set_state(generation, state)
 
     def response_completed(self, text: str | None = None) -> None:
@@ -464,7 +547,7 @@ class VoiceController:
             if self._stream_buffer is not None and not self._stream_cancelled and text:
                 try:
                     for sentence in self._stream_buffer.feed("", final=True):
-                        if not self.speak(sentence):
+                        if not self.speak(sentence, response_audio=True):
                             break
                 except Exception:
                     self.stop_speaking()
@@ -485,7 +568,7 @@ class VoiceController:
             if self._state in (VoiceState.LISTENING, VoiceState.SPEECH_DETECTED, VoiceState.TRANSCRIBING, VoiceState.AWAITING_CONFIRMATION):
                 return
         self._set_state(generation, VoiceState.READY)
-        if text and self.settings.read_replies and self.speak(text):
+        if text and self.settings.read_replies and self.speak(text, response_audio=True):
             return
         self._resume_if_needed()
 
@@ -505,14 +588,13 @@ class VoiceController:
         with self._lock:
             if not self._active(generation):
                 return
-            # A failed device/playback can coexist with barge-in capture. End
-            # all native work so ERROR never leaves a hidden open microphone.
-            # Retain finalized audio only for an explicit transcription retry.
-            generation = self._invalidate_locked()
+            generation = self._invalidate_locked(speech=False)
             self._paused = self._conversation
-            self._stream_cancelled = True
-            self._stream_buffer = None
-        if self._set_state(generation, VoiceState.PERMISSION_REQUIRED if permission else VoiceState.ERROR):
+            if self._speech_cancel is None:
+                self._stream_cancelled = True
+                self._stream_buffer = None
+            state = VoiceState.PERMISSION_REQUIRED if permission else VoiceState.ERROR
+        if self._set_state(generation, state):
             self._post(generation, self._on_error, message)
 
     def cancel(self) -> None:
@@ -521,22 +603,27 @@ class VoiceController:
                 return
             generation = self._invalidate_locked()
             self._conversation = self._paused = False
-            self._last_audio = None
+            self._response_audio_started_at = None
             self._stream_buffer = None
             self._stream_cancelled = True
         self._set_state(generation, VoiceState.IDLE if self.settings.enabled else VoiceState.DISABLED)
 
-    def speak(self, text: str) -> bool:
+    def speak(self, text: str, *, response_audio=False) -> bool:
         with self._lock:
             if (self._closed or self._muted or not self.settings.enabled or self._transcript_pending
                     or self._state in (VoiceState.LISTENING, VoiceState.SPEECH_DETECTED, VoiceState.TRANSCRIBING)
                     or not isinstance(text, str) or not text.strip()):
                 return False
+            started = self._response_audio_started_at if response_audio else None
             if self._speech_cancel is not None and not self._speech_cancel.is_set():
                 if len(self._speech_queue) >= 8:
                     return False
-                self._speech_queue.append((text[:MAX_SPEECH_CHARS], self.settings))
+                if response_audio:
+                    self._response_audio_started_at = None
+                self._speech_queue.append((text[:MAX_SPEECH_CHARS], self.settings, started))
                 return True
+            if response_audio:
+                self._response_audio_started_at = None
             generation = self._invalidate_locked()
             settings = self.settings
             cancel = threading.Event()
@@ -545,7 +632,8 @@ class VoiceController:
             self._last_speech = text[:MAX_SPEECH_CHARS]
         if not self._set_state(generation, VoiceState.SPEAKING):
             return False
-        if not self._start_worker(self._speak, (generation, ticket, text[:MAX_SPEECH_CHARS], settings, cancel), "FirikVoiceSpeech"):
+        if not self._start_worker(self._speak, (ticket, text[:MAX_SPEECH_CHARS], settings, cancel, started), "FirikVoiceSpeech"):
+            self.stop_speaking()
             self._fail(generation, "Ses aygıtı kapanıyor; kısa süre sonra yeniden deneyin.")
             return False
         if self._conversation and not self._paused and settings.barge_in and self.supports_barge_in:
@@ -554,37 +642,49 @@ class VoiceController:
             self._begin_capture("conversation", preserve_speech=True)
         return True
 
-    def _speak(self, generation, ticket, text, settings, cancel) -> None:
+    def _speak(self, ticket, text, settings, cancel, started) -> None:
+        from firik_agent.voice.synthesis import EngineSpeaker
+
+        speech_started = time.monotonic()
+        status = "cancelled"
         try:
-            with self.coordinator.speech_lock:
-                if self._closed or ticket != self._speech_generation or cancel.is_set():
+            with self.coordinator.native_lock(self.coordinator.speech_lock, cancel) as acquired:
+                if not acquired or self._closed or ticket != self._speech_generation:
                     return
-                if self._speaker_factory is not None:
+                revision = self._speaker_revision() if self._speaker_revision is not None else None
+                key = (revision, settings.tts_provider, settings.tts_model, settings.tts_voice,
+                       settings.tts_format, settings.playback_speed)
+                if self._speaker_factory is not None and (self._speaker is None or key != self._speaker_key):
                     if self._speaker is not None and hasattr(self._speaker, "shutdown"):
                         self._speaker.shutdown()
                     self._speaker = self._speaker_factory(settings)
+                    self._speaker_key = key
                 elif self._speaker is None:
-                    from firik_agent.voice.synthesis import EngineSpeaker
                     self._speaker = EngineSpeaker(output_device=settings.output_device, volume=settings.output_volume)
                 if not self.coordinator.begin_speech(cancel, duplex=self.supports_barge_in and settings.barge_in):
                     return
                 try:
+                    audio_timing = getattr(self._speaker, "supports_audio_timing", False)
+                    if audio_timing:
+                        self._speaker.resume()
                     while not cancel.is_set():
                         if hasattr(self._speaker, "configure"):
                             self._speaker.configure(output_device=settings.output_device, volume=settings.output_volume)
-                        self._speaker.speak(text, cancel, language=settings.language, rate=settings.speech_rate)
+                        timing = {"utterance_ended_at": started} if audio_timing else {}
+                        self._speaker.speak(text, cancel, language=settings.language, rate=settings.speech_rate, **timing)
                         with self._lock:
                             if cancel.is_set() or ticket != self._speech_generation or not self._speech_queue:
                                 if ticket == self._speech_generation:
                                     self._speech_cancel = None
                                 break
-                            text, settings = self._speech_queue.popleft()
+                            text, settings, started = self._speech_queue.popleft()
                             self._last_speech = text
                 finally:
                     self.coordinator.end_speech()
             with self._lock:
                 if self._closed or ticket != self._speech_generation or cancel.is_set():
                     return
+                status = "ok"
                 self._speech_cancel = None
                 # Barge-in capture may already own current state/generation.
                 if self._state in (VoiceState.LISTENING, VoiceState.SPEECH_DETECTED, VoiceState.TRANSCRIBING, VoiceState.AWAITING_CONFIRMATION):
@@ -602,11 +702,23 @@ class VoiceController:
                 # must still surface authentication, credit and network errors.
                 if ticket != self._speech_generation:
                     return
+                status = "failed"
                 current = self._generation
-            self._fail(current, message)
+                self._speech_cancel = None
+                self._speech_queue.clear()
+                self._response_audio_started_at = None
+                self._stream_cancelled = True
+                self._stream_buffer = None
+                if self._state == VoiceState.SPEAKING:
+                    self._paused = self._conversation
+                    self._set_state(current, VoiceState.ERROR)
+            self._post(current, self._on_error, message)
+        finally:
+            log_voice_timing("speech", status, speech_started)
 
     def stop_speaking(self) -> None:
         with self._lock:
+            self._response_audio_started_at = None
             self._stream_cancelled = True
             self._stream_buffer = None
             if self._speech_cancel is None:
@@ -671,7 +783,7 @@ class VoiceController:
             if self._closed:
                 return
             self._invalidate_locked()
-            self._last_audio = None
+            self._response_audio_started_at = None
             self._last_speech = None
             self._stream_buffer = None
             self._conversation = self._paused = False

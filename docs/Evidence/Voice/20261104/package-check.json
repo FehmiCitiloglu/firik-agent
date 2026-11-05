@@ -1,0 +1,29 @@
+{
+  "checked_at_utc": "2026-11-04T15:13:39.135156+00:00",
+  "platform": "Darwin",
+  "architecture": "arm64",
+  "python": "3.13.2",
+  "app_version": "0.2.34",
+  "pyinstaller": "6.22.3",
+  "sounddevice": "0.5.6",
+  "bundle": "/tmp/firik-secure-voice-device.keIWjb/dist/firik-agent.app",
+  "signing": "ad-hoc development bundle",
+  "strict_signature_verification": "passed",
+  "entitlements": {
+    "com.apple.security.device.audio-input": true
+  },
+  "microphone_purpose": "Bas-konuş düğmesini basılı tuttuğunuzda veya sesli sohbeti açıkça başlattığınızda konuşmanızı yazıya dönüştürmek için mikrofon kullanılır. Dinlemeyi duraklatabilir veya kapatabilirsiniz.",
+  "bundled_native_architectures": {
+    "executable": "arm64",
+    "portaudio": "arm64"
+  },
+  "foreign_or_asio_portaudio_dlls": 0,
+  "audio_notices_included": true,
+  "frozen_gui_and_portaudio_discovery": "passed",
+  "input_and_output_streams_opened": false,
+  "remote_requests": false,
+  "physical_capture_and_audible_playback": "not performed",
+  "os_permission_prompt": "not exercised",
+  "native_windows_linux": "not available on this host",
+  "source": "current uncommitted working tree including the local output tone test"
+}

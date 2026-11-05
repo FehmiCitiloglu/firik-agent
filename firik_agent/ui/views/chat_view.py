@@ -976,7 +976,7 @@ class ChatView(ctk.CTkFrame):
 
         # Akışı Başlat
         self.is_streaming = True
-        self.voice_panel.response_started("thinking")
+        self.voice_panel.response_started("thinking", from_voice=voice_request is not None)
         self._refresh_effort()
         self._show_activity_stage("Hazırlanıyor", "Model ve araç bağlantıları hazırlanıyor…")
         self.send_btn.configure(text="Durdur", fg_color="#ef4444", hover_color="#dc2626")

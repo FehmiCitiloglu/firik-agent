@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional, Union
+from firik_agent.core.failures import format_failure
 from firik_agent.core.tools import ToolRegistry
 from firik_agent.core.types import Message, ToolCall, ToolResult
 from firik_agent.plugins.base import BasePlugin
@@ -162,7 +163,7 @@ class PluginManager:
                 try:
                     await p.on_agent_init(agent)
                 except Exception as e:
-                    logger.error("Error in on_agent_init for %s: %s", p.name, e)
+                    logger.error("Error in on_agent_init for %s: %s", p.name, format_failure(e))
 
     async def dispatch_user_message(self, text: str) -> str:
         current_text = text
@@ -173,7 +174,7 @@ class PluginManager:
                     if new_text is not None:
                         current_text = new_text
                 except Exception as e:
-                    logger.error("Error in on_user_message for %s: %s", p.name, e)
+                    logger.error("Error in on_user_message for %s: %s", p.name, format_failure(e))
         return current_text
 
     async def dispatch_model_request(
@@ -186,7 +187,7 @@ class PluginManager:
                 try:
                     await p.on_model_request(messages, tools)
                 except Exception as e:
-                    logger.error("Error in on_model_request for %s: %s", p.name, e)
+                    logger.error("Error in on_model_request for %s: %s", p.name, format_failure(e))
 
     async def dispatch_model_response(self, message: Message) -> None:
         for p in self.plugins.values():
@@ -194,7 +195,7 @@ class PluginManager:
                 try:
                     await p.on_model_response(message)
                 except Exception as e:
-                    logger.error("Error in on_model_response for %s: %s", p.name, e)
+                    logger.error("Error in on_model_response for %s: %s", p.name, format_failure(e))
 
     async def dispatch_tool_call(self, tool_call: ToolCall) -> None:
         for p in self.plugins.values():
@@ -202,7 +203,7 @@ class PluginManager:
                 try:
                     await p.on_tool_call(tool_call)
                 except Exception as e:
-                    logger.error("Error in on_tool_call for %s: %s", p.name, e)
+                    logger.error("Error in on_tool_call for %s: %s", p.name, format_failure(e))
 
     async def dispatch_tool_result(self, result: ToolResult) -> None:
         for p in self.plugins.values():
@@ -210,7 +211,7 @@ class PluginManager:
                 try:
                     await p.on_tool_result(result)
                 except Exception as e:
-                    logger.error("Error in on_tool_result for %s: %s", p.name, e)
+                    logger.error("Error in on_tool_result for %s: %s", p.name, format_failure(e))
 
     async def dispatch_error(self, error: Exception) -> None:
         for p in self.plugins.values():
@@ -218,4 +219,4 @@ class PluginManager:
                 try:
                     await p.on_error(error)
                 except Exception as e:
-                    logger.error("Error in on_error for %s: %s", p.name, e)
+                    logger.error("Error in on_error for %s: %s", p.name, format_failure(e))

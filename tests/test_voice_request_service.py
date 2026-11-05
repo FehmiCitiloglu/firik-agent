@@ -1,6 +1,7 @@
 """Voice uses the real service/runtime/history and session tool gate."""
 from concurrent.futures import CancelledError
 import json
+import logging
 import queue
 import threading
 import time
@@ -78,6 +79,7 @@ class ExistingAgent:
             yield AgentEvent(AgentEventType.TOOL_CALL_RESULT, session.session_id,
                              tool_name=tool_call.function.name, content=result.content)
         session.messages.append(Message(role="assistant", content="Existing agent response"))
+        yield AgentEvent(AgentEventType.TEXT_DELTA, session.session_id, content="Existing agent response")
         yield AgentEvent(AgentEventType.DONE, session.session_id, content="Existing agent response")
 
 
@@ -166,6 +168,30 @@ def test_service_cancel_while_exact_approval_pending_never_dispatches(service, m
     proposed[0][1](True)
     ui.drain()
     assert not agent.calls and request.cancellation_token.is_set()
+
+
+def test_voice_agent_timing_does_not_log_request_response_or_session(service, monkeypatch, caplog):
+    caplog.set_level("INFO", logger="firik_agent.voice.telemetry")
+    logged = threading.Event()
+    logger = logging.getLogger("firik_agent.voice.telemetry")
+    original_info = logger.info
+
+    def info(message, *args):
+        original_info(message, *args)
+        if args[0] == "agent":
+            logged.set()
+
+    monkeypatch.setattr(logger, "info", info)
+    ui, session, _ = wire(service, monkeypatch, [])
+    request = voice(session.session_id, "Explain my private transcript")
+    future = service.chat_agent_stream_async(session.session_id, request.request_text, voice_request=request)
+    ui.until(future.done)
+    future.result(timeout=1)
+    assert logged.wait(1)
+    assert caplog.text.count("stage=agent_first_token status=ok") == 1
+    assert caplog.text.count("stage=agent status=ok") == 1
+    for private in (request.request_text, "Existing agent response", request.session_id, request.utterance_id):
+        assert private not in caplog.text
 
 
 def test_no_ui_callback_fails_closed_and_typed_execution_remains_same(service, monkeypatch):

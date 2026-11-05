@@ -6,6 +6,7 @@ import json
 import re
 import sys
 import tkinter as tk
+import weakref
 
 import customtkinter as ctk
 
@@ -131,6 +132,8 @@ class VoiceSettingsFrame(ctk.CTkFrame):
         self._closed = False
         self._input_test = None
         self._test_generation = 0
+        self._output_test = None
+        self._output_test_generation = 0
         self._device_generation = 0
         self._devices_requested = False
         self._capabilities = {}
@@ -300,7 +303,17 @@ class VoiceSettingsFrame(ctk.CTkFrame):
             self._menu(page, key, label, options, current, self._provider_changed if key == "tts_provider" else None)
         self.tts_hint = self._note(page, "")
         self._entry(page, "output_volume", "Yanıt ses düzeyi · 0–1", settings.output_volume)
+        self._output_volume_value = tk.StringVar(master=self, value=str(settings.output_volume))
+        self.entries["output_volume"].configure(textvariable=self._output_volume_value)
+        self._output_volume_trace = self._output_volume_value.trace_add(
+            "write", lambda *args: self.stop_output_test() if self._output_test is not None else None)
         self._note(page, "Bu uygulamanın ses düzeyidir; sistemin genel sesini değiştirmez.")
+        self.output_test_button = ctk.CTkButton(self._row(page), text="Hoparlörü sına",
+                                                command=self.toggle_output_test, height=32)
+        self.output_test_button.grid(row=0, column=0, sticky="ew")
+        if not callable(getattr(self.service, "start_voice_output_test", None)):
+            self.output_test_button.configure(state="disabled")
+        self.output_test_status = self._note(page, "Açık isteğinizle seçili hoparlörde kısa yerel deneme sesi çalar. Mikrofonu açmaz ve hizmete istek göndermez.")
         self._entry(page, "playback_speed", "Seslendirme hız çarpanı · 0.25–4", settings.playback_speed)
         self._entry(page, "speech_rate", "Sistem seslendirmesi temel hızı · 80–350 kelime/dakika", settings.speech_rate)
 
@@ -314,7 +327,7 @@ class VoiceSettingsFrame(ctk.CTkFrame):
         self._check(page, "wake_word_enabled", "Uyandırma sözcüğü", disabled=True)
         self._note(page, "Yerel uyandırma doğruluğu doğrulanmadığı için kullanılamaz. Arka planda otomatik dinleme başlamaz.")
         self._check(page, "retain_audio", "Ham sesi kalıcı olarak sakla", disabled=True)
-        self._note(page, "Ham mikrofon sesi diske veya sohbet geçmişine yazılmaz. Yeniden denemek için inceleme süresince sınırlı bellekte tutulur. Sistem TTS geçici ses dosyalarını işlem bitiminde siler.")
+        self._note(page, "Ham mikrofon sesi yalnızca kayıt ve çözümleme sırasında bellekte tutulur. Yeniden deneme yeni kayıt açar. Sistem TTS geçici ses dosyalarını işlem bitiminde siler.")
         self._note(page, "Evren ASR tamamlanan sesinizi, Evren TTS yanıt metnini yapılandırılmış Evren hizmetine gönderir. Sistem TTS yerel çalışır. Hizmet hatası başka bir sağlayıcıya otomatik aktarım yapmaz.")
         guidance = ("macOS: Sistem Ayarları → Gizlilik ve Güvenlik → Mikrofon. Kaynak çalıştırmada Python/Terminal, paketli uygulamada Firik için izin verin."
                     if sys.platform == "darwin" else "Windows: Ayarlar → Gizlilik ve güvenlik → Mikrofon; masaüstü uygulamalarının erişimini açın."
@@ -349,18 +362,25 @@ class VoiceSettingsFrame(ctk.CTkFrame):
         refresh_voice_focus_colors(getattr(self, "_keyboard_controls", ()), self._apply_appearance_mode)
 
     def _unmapped(self, event):
-        if event.widget in (self, self._canvas) and self._input_test is not None:
-            self.stop_input_test()
+        if event.widget in (self, self._canvas):
+            if self._input_test is not None:
+                self.stop_input_test()
+            if self._output_test is not None:
+                self.stop_output_test()
 
     def _form_tab_changed(self):
         if self.tabs.get() != "Giriş" and self._input_test is not None:
             self.stop_input_test()
+        if self.tabs.get() != "Yanıt" and self._output_test is not None:
+            self.stop_output_test()
 
     def _alive(self, generation=None):
         return not self._closed and self.winfo_exists() and (generation is None or generation == self._test_generation)
 
     def _select_device(self, kind, label):
         if label in self._device_choices[kind]:
+            if kind == "output" and self._output_test is not None:
+                self.stop_output_test()
             self._device_selection[kind] = self._device_choices[kind][label]
 
     def refresh_devices(self):
@@ -509,6 +529,8 @@ class VoiceSettingsFrame(ctk.CTkFrame):
         if self._alive():
             if self._input_test is not None:
                 self.stop_input_test()
+            if self._output_test is not None:
+                self.stop_output_test()
             self.reload_settings()
 
     def reload_settings(self, *, force=False):
@@ -522,6 +544,7 @@ class VoiceSettingsFrame(ctk.CTkFrame):
             self.reload_button.grid()
             return False
         self.stop_input_test()
+        self.stop_output_test()
         self._apply_settings(latest)
         self.status.configure(text="Güncel ses ayarları yüklendi. Kayıt başlamadı.", text_color=_MUTED)
         return True
@@ -559,6 +582,7 @@ class VoiceSettingsFrame(ctk.CTkFrame):
         if self._closed:
             return False
         self.stop_input_test()
+        self.stop_output_test()
         try:
             validated = self.collect_settings()
             latest = getattr(self.service, "voice_settings", self._settings)
@@ -633,6 +657,67 @@ class VoiceSettingsFrame(ctk.CTkFrame):
             self.test_button.configure(text="Mikrofon düzeyini sına")
             self.test_status.configure(text="Düzey testi durduruldu.")
 
+    def toggle_output_test(self):
+        if self._output_test is not None:
+            self.stop_output_test()
+            return
+        if self._closed:
+            return
+        try:
+            settings = self.collect_settings()
+        except (ValueError, KeyError, tk.TclError):
+            self.output_test_status.configure(text="Önce hoparlör ve sayısal ses ayarlarını düzeltin.")
+            return
+        self._output_test_generation += 1
+        generation = self._output_test_generation
+        self.output_test_button.configure(text="Hoparlör testini durdur")
+        self.output_test_status.configure(text="Kısa yerel deneme sesi çalıyor…")
+        completed = False
+        reference = weakref.ref(self)
+
+        def current():
+            form = reference()
+            if form is not None and form._alive() and generation == form._output_test_generation:
+                return form
+            return None
+
+        def done():
+            nonlocal completed
+            if completed:
+                return
+            completed = True
+            form = current()
+            if form is not None:
+                form._output_test = None
+                form.output_test_button.configure(text="Hoparlörü sına")
+                form.output_test_status.configure(text="Hoparlör testi bitti. Ses duymadıysanız aygıtı ve ses düzeyini kontrol edin.")
+
+        def failed(message):
+            if completed:
+                return
+            form = current()
+            if form is not None:
+                done()
+                form.output_test_status.configure(text=_safe_message(message))
+
+        try:
+            handle = self.service.start_voice_output_test(done, failed, settings=settings)
+            self._output_test = None if completed else handle
+        except Exception:
+            failed("Hoparlör testi başlatılamadı. Çıkış aygıtını kontrol edin.")
+
+    def stop_output_test(self):
+        self._output_test_generation += 1
+        handle, self._output_test = self._output_test, None
+        if handle is not None:
+            try:
+                handle.cancel()
+            except Exception:
+                pass
+        if not self._closed:
+            self.output_test_button.configure(text="Hoparlörü sına")
+            self.output_test_status.configure(text="Hoparlör testi durduruldu.")
+
     def show_diagnostics(self):
         diagnose = getattr(self.service, "voice_diagnostics", None)
         try:
@@ -653,6 +738,8 @@ class VoiceSettingsFrame(ctk.CTkFrame):
         self._closed = True
         self._device_generation += 1
         self.stop_input_test()
+        self.stop_output_test()
+        self._output_volume_value.trace_remove("write", self._output_volume_trace)
         remove = getattr(self.service, "remove_voice_settings_listener", None)
         if callable(remove):
             remove(self._service_settings_changed)

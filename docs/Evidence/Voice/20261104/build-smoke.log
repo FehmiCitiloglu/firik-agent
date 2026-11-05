@@ -1,0 +1,9 @@
+21490 INFO: Signing the BUNDLE...
+21605 INFO: Building BUNDLE BUNDLE-00.toc completed successfully.
+21613 INFO: Build complete! The results are available in: /tmp/firik-secure-voice-device.keIWjb/dist
+codesign --verify --deep --strict passed
+Signed microphone entitlement and purpose string verified
+Executable and bundled PortAudio are arm64
+Foreign/ASIO PortAudio DLL count is zero
+Frozen desktop smoke passed with PortAudio device discovery.
+No audio streams opened and no provider requests sent

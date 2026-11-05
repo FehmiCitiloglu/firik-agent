@@ -50,7 +50,10 @@ def validate_wav(audio: bytes) -> float:
                     or width not in (1, 2, 3, 4) or not 8000 <= rate <= 48000
                     or not 0 < frames <= rate * MAX_AUDIO_SECONDS):
                 raise ValueError("Ses PCM WAV olmalı ve 120 saniyelik istemci sınırını aşmamalıdır.")
-            if len(source.readframes(frames)) != frames * channels * width:
+            # A PCM data chunk is contiguous. Verify its last declared frame
+            # without allocating a second copy of the recording or response.
+            source.setpos(frames - 1)
+            if len(source.readframes(1)) != channels * width:
                 raise ValueError("WAV ses verisi eksik.")
             return frames / rate
     except (wave.Error, EOFError, OSError) as error:
@@ -73,7 +76,7 @@ def transcription_parameters(model: str, options: dict[str, Any]) -> dict[str, s
         raise ValueError("Ses çözümleme ipucu 2000 karakteri aşmamalıdır.")
     temperature = options.get("temperature", 0.0)
     if (isinstance(temperature, bool) or not isinstance(temperature, (int, float))
-            or not math.isfinite(temperature) or not 0 <= temperature <= 1):
+            or not 0 <= temperature <= 1):
         raise ValueError("Ses temperature değeri 0 ile 1 arasında olmalıdır.")
     # 'auto' is a client preference; the wire contract uses an absent hint.
     result = {key: str(value) for key, value in options.items() if value is not None and key != "language"}
@@ -96,9 +99,14 @@ def normalize_transcription(value: Any, response_format: str = "json", metadata:
         if isinstance(supplied_language, str) and supplied_language.strip():
             language = supplied_language.strip()
         supplied_duration = value.get("duration")
-        if (not isinstance(supplied_duration, bool) and isinstance(supplied_duration, (int, float))
-                and math.isfinite(supplied_duration) and supplied_duration >= 0):
-            duration = float(supplied_duration)
+        if not isinstance(supplied_duration, bool) and isinstance(supplied_duration, (int, float)):
+            try:
+                numeric_duration = float(supplied_duration)
+            except OverflowError:
+                pass
+            else:
+                if math.isfinite(numeric_duration) and numeric_duration >= 0:
+                    duration = numeric_duration
         # Timing/confidence/segments stay metadata; they are never recognized text.
         extras = {key: item for key, item in value.items() if key not in ("text", "language", "duration")}
     elif isinstance(value, str):
@@ -133,7 +141,7 @@ def speech_parameters(text: str, model: str, voice: str, response_format: str, s
     if response_format not in SPEECH_FORMATS:
         raise ValueError("Desteklenmeyen ses çıktısı biçimi.")
     if (isinstance(speed, bool) or not isinstance(speed, (int, float))
-            or not math.isfinite(speed) or not 0.25 <= speed <= 4):
+            or not 0.25 <= speed <= 4):
         raise ValueError("Konuşma hızı 0.25 ile 4 arasında olmalıdır.")
     if instructions is not None and (not isinstance(instructions, str) or len(instructions) > 1000):
         raise ValueError("Ses stili yönergesi 1000 karakteri aşmamalıdır.")

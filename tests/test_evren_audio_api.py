@@ -1,4 +1,5 @@
 """Public-contract audio tests; never perform billable inference or use secrets."""
+import asyncio
 import io
 import json
 import wave
@@ -143,6 +144,7 @@ async def test_unverified_or_invalid_speech_options_do_not_transmit(options):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("response", [httpx.Response(200, json={"text": "not audio"}),
                                       httpx.Response(200, content=b"not wav", headers={"content-type": "audio/wav"}),
+                                      httpx.Response(200, content=wav_audio()[:-1], headers={"content-type": "audio/wav"}),
                                       httpx.Response(200, content=b"", headers={"content-type": "audio/wav"})])
 async def test_invalid_binary_or_media_type_rejected(response):
     async with FirikAPI("secret", transport=httpx.MockTransport(lambda _: response)) as api:
@@ -175,6 +177,76 @@ async def test_speech_timeout_is_safe_and_once():
         with pytest.raises(RuntimeError, match="otomatik tekrar") as error:
             await api.synthesize("hello")
     assert "private-key" not in str(error.value) and len(calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["asr", "tts"])
+async def test_audio_http_failure_preserves_cooldown_without_reading_private_body(operation):
+    class UnreadableErrorBody(httpx.AsyncByteStream):
+        closed = False
+
+        async def __aiter__(self):
+            pytest.fail("Audio HTTP failures must not read upstream error bodies")
+            yield b"private prompt"
+
+        async def aclose(self):
+            self.closed = True
+
+    stream = UnreadableErrorBody()
+    def handle(request):
+        assert request.headers["accept-encoding"] == "identity"
+        return httpx.Response(429, headers={"retry-after": "5", "x-request-id": "private prompt"}, stream=stream)
+
+    async with FirikAPI("secret", transport=httpx.MockTransport(handle)) as api:
+        with pytest.raises(FirikAPIError) as error:
+            if operation == "asr":
+                await api.transcribe_bytes_normalized(wav_audio())
+            else:
+                await api.synthesize("private prompt")
+        assert error.value.status_code == 429
+        assert error.value.metadata == api.last_metadata == {"retry-after": "5"}
+        assert "private prompt" not in str(error.value)
+        assert stream.closed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["asr", "tts"])
+async def test_cancelling_audio_body_read_closes_stream(operation):
+    started, closed = asyncio.Event(), asyncio.Event()
+
+    class BlockingBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            started.set()
+            await asyncio.Event().wait()
+            yield b""
+
+        async def aclose(self):
+            closed.set()
+
+    def handle(request):
+        return httpx.Response(200, stream=BlockingBody())
+
+    async with FirikAPI("secret", transport=httpx.MockTransport(handle)) as api:
+        call = api.transcribe_bytes_normalized(wav_audio()) if operation == "asr" else api.synthesize("hello")
+        pending = asyncio.create_task(call)
+        await asyncio.wait_for(started.wait(), 1)
+        pending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+        assert closed.is_set()
+
+
+@pytest.mark.asyncio
+async def test_audio_http_compression_is_rejected_before_decoding():
+    class UnexpectedEncoding(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            pytest.fail("Compressed HTTP content must not reach the decoder")
+            yield b""
+
+    response = httpx.Response(200, headers={"content-encoding": "gzip"}, stream=UnexpectedEncoding())
+    async with FirikAPI("secret", transport=httpx.MockTransport(lambda _: response)) as api:
+        with pytest.raises(ValueError, match="sıkıştırılmamış"):
+            await api.synthesize("hello")
 
 
 @pytest.mark.asyncio

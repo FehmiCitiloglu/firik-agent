@@ -1,3 +1,11 @@
+## v0.2.35 değişiklikleri
+
+- Sesli giriş/çıkış, Evren ASR/TTS yönlendirmesi, cihaz ayarları ve tanılama geliştirildi.
+- Masaüstü paketlerinde ses bağımlılıkları ve paketlenmiş uygulama kontrolleri güncellendi.
+- Kanıta dayalı deneyim kaydı, bellek/öneri inceleme, sürüm bazlı onay ve geri alma içeren öz iyileştirme altyapısı eklendi.
+- Öz iyileştirme için CLI komutları ve masaüstü inceleme görünümü eklendi; aday deneyleri mevcut yalıtım ve izin sınırlarını kullanır.
+- Kodlama oturumları, bağlam toplama, eklentiler ve ilgili regresyon testleri güncellendi.
+
 ## v0.2.34 değişiklikleri
 
 - Yavaş CI ortamlarında kodlama geçmişi ve kısmi yanıt testlerinin bekleme sınırları artırıldı.

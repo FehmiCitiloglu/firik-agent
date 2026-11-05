@@ -382,6 +382,98 @@ def test_disabled_voice_never_opens_device(runtime):
     c.close()
 
 
+def test_saved_conversation_preferences_do_not_open_audio_on_startup_or_session_sync(runtime):
+    recorder, speaker = UtteranceRecorder(), Speaker()
+    c, d, states, transcripts, errors, _, requests = controller(runtime,
+        recorder=recorder, speaker=speaker,
+        settings=VoiceSettings(enabled=True, interaction_mode="conversation", vad_enabled=True))
+    try:
+        c.bind_session("restored-session")
+        c.sync_agent_state(True)
+        c.sync_agent_state(False)
+        c.response_started()
+        c.response_completed("An ordinary typed conversation remains usable.")
+        d.drain()
+        assert not c._workers and not c.conversation_active
+        assert not recorder.calls and not speaker.calls and not requests
+        assert not transcripts and not errors
+    finally:
+        c.shutdown(2)
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "cancel"])
+def test_completed_asr_futures_release_microphone_bytes(runtime, outcome):
+    released, entered = threading.Event(), threading.Event()
+    proceed = asyncio.Event()
+
+    class MicrophoneBytes(bytes):
+        def __del__(self):
+            released.set()
+
+    class EphemeralRecorder:
+        def record(self, *args, **kwargs):
+            return MicrophoneBytes(b"RIFF-synthetic-private-audio")
+
+    async def transcribe(audio, model, language):
+        entered.set()
+        await proceed.wait()
+        if outcome == "failure":
+            raise RuntimeError("A failed provider traceback must release its audio argument.")
+        return "Final user transcript"
+
+    c, d, _, transcripts, errors, *_ = controller(runtime, recorder=EphemeralRecorder(), transcribe=transcribe)
+    try:
+        assert c.start_recording() and entered.wait(1)
+        eventually(lambda: c._future is not None)
+        future = c._future
+        assert future is not None
+        if outcome == "cancel":
+            c.stop_listening()
+        else:
+            runtime.loop.call_soon_threadsafe(proceed.set)
+        eventually(future.done)
+        eventually(lambda: not c._workers)
+        gc.collect()
+        assert released.wait(1)
+        d.drain()
+        assert transcripts == (["Final user transcript"] if outcome == "success" else [])
+        assert len(errors) == (1 if outcome == "failure" else 0)
+    finally:
+        c.shutdown(2)
+
+
+def test_stop_listening_cancels_asr_without_terminating_unrelated_runtime_work(runtime):
+    entered, cancelled, unrelated_entered = threading.Event(), threading.Event(), threading.Event()
+    release_unrelated = asyncio.Event()
+
+    async def transcribe(*args):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    async def unrelated_agent_work():
+        unrelated_entered.set()
+        await release_unrelated.wait()
+        return "Typed agent completed"
+
+    unrelated = runtime.submit(unrelated_agent_work())
+    c, d, _, transcripts, errors, *_ = controller(runtime, recorder=Recorder(wait=False), transcribe=transcribe)
+    try:
+        assert unrelated_entered.wait(1)
+        assert c.start_recording() and entered.wait(1)
+        c.stop_listening()
+        assert cancelled.wait(1) and not unrelated.done()
+        runtime.loop.call_soon_threadsafe(release_unrelated.set)
+        assert unrelated.result(1) == "Typed agent completed"
+        d.drain()
+        assert not transcripts and not errors
+    finally:
+        runtime.loop.call_soon_threadsafe(release_unrelated.set)
+        c.shutdown(2)
+
+
 @pytest.mark.parametrize("stage,message", [
     ("capture", "Konuşma duyulamadı. Mikrofon ses düzeyini kontrol edip yeniden deneyin."),
     ("speech", "Sesli yanıt için espeak-ng kurun ve ses çıkış aygıtını kontrol edin."),
@@ -529,7 +621,7 @@ def test_pause_resume_and_exit_only_cancel_voice_not_agent(runtime):
         c.close()
 
 
-def test_conversation_session_switch_discards_queued_transcript_and_retained_audio(runtime):
+def test_conversation_session_switch_discards_queued_transcript(runtime):
     recorder = UtteranceRecorder(wait=False)
     c, d, _, transcripts, _, _, requests = controller(runtime, recorder=recorder)
     try:
@@ -539,7 +631,7 @@ def test_conversation_session_switch_discards_queued_transcript_and_retained_aud
         c.bind_session("new")
         d.drain()
         assert c.session_id == "new" and not transcripts
-        assert not c.conversation_active and not c.retry_transcription()
+        assert not c.conversation_active
     finally:
         c.close()
 
@@ -562,21 +654,102 @@ def test_application_coordinator_rejects_second_live_capture_controller(runtime)
         b.close()
 
 
-def test_review_retry_transcribes_retained_audio_once_without_new_microphone(runtime):
+def test_review_can_be_replaced_by_explicit_new_capture(runtime):
     recorder = Recorder(wait=False)
     c, d, _, transcripts, errors, _, requests = controller(runtime, recorder=recorder)
     try:
         assert c.start_recording()
         eventually(lambda: requests and c.state == "idle")
         d.drain()
-        assert c.retry_transcription()
+        assert c.start_recording()
         eventually(lambda: len(requests) == 2 and c.state == "idle")
         d.drain()
-        assert len(recorder.calls) == 1 and len(transcripts) == 2 and not errors
+        assert len(recorder.calls) == 2 and len(transcripts) == 2 and not errors
         assert c.transcript_resolved(False)
-        assert not c.retry_transcription()
     finally:
         c.close()
+
+
+@pytest.mark.parametrize("initial", ["review", "error", "queued_review"])
+def test_legacy_retry_transcription_captures_fresh_audio_for_each_asr_attempt(runtime, initial):
+    class FreshRecorder:
+        def __init__(self):
+            self.calls = 0
+
+        def record(self, *args, **kwargs):
+            self.calls += 1
+            return f"RIFF-synthetic-attempt-{self.calls}".encode()
+
+    requests = []
+
+    async def transcribe(audio, model, language):
+        requests.append(audio)
+        if initial == "error" and len(requests) == 1:
+            raise RuntimeError("First ASR attempt failed")
+        return f"Transcript {len(requests)}"
+
+    recorder = FreshRecorder()
+    c, d, _, transcripts, errors, *_ = controller(runtime, recorder=recorder, transcribe=transcribe)
+    try:
+        assert c.start_recording()
+        eventually(lambda: c.state_id.value in {"awaiting_confirmation", "error"})
+        if initial != "queued_review":
+            d.drain()
+        assert callable(c.retry_transcription) and c.retry_transcription()
+        eventually(lambda: len(requests) == 2 and c.state_id.value == "awaiting_confirmation")
+        d.drain()
+        assert recorder.calls == 2 and requests[0] != requests[1]
+        assert transcripts == (["Transcript 1", "Transcript 2"] if initial == "review" else ["Transcript 2"])
+        assert len(errors) == (1 if initial == "error" else 0)
+    finally:
+        c.shutdown(2)
+
+
+def test_legacy_retry_transcription_can_recover_after_microphone_permission_changes(runtime):
+    from firik_agent.voice.errors import VoicePermissionError
+
+    class PermissionRecorder:
+        def __init__(self):
+            self.calls = 0
+
+        def record(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise VoicePermissionError("Mikrofon izni gerekli.")
+            return b"RIFF-new-permitted-capture"
+
+    recorder = PermissionRecorder()
+    c, d, _, transcripts, errors, _, requests = controller(runtime, recorder=recorder)
+    try:
+        assert c.start_recording()
+        eventually(lambda: c.state_id.value == "permission_required")
+        d.drain()
+        assert c.retry_transcription()
+        eventually(lambda: requests and c.state_id.value == "awaiting_confirmation")
+        d.drain()
+        assert recorder.calls == 2 and len(requests) == 1
+        assert transcripts == ["Merhaba dünya"] and errors == ["Mikrofon izni gerekli."]
+    finally:
+        c.shutdown(2)
+
+
+@pytest.mark.parametrize("state", ["disabled", "idle", "ready", "listening", "speech_detected",
+                                  "transcribing", "thinking", "executing", "speaking", "interrupted"])
+def test_legacy_retry_transcription_rejects_unrelated_states_without_invalidating_work(runtime, state):
+    from firik_agent.voice.session import VoiceState
+
+    recorder, speaker = Recorder(), Speaker()
+    c, d, _, transcripts, errors, _, requests = controller(runtime, recorder=recorder, speaker=speaker)
+    try:
+        c._state = VoiceState(state)
+        generation = c.generation
+        assert c.retry_transcription() is False
+        assert c.generation == generation and c.state_id.value == state
+        assert not recorder.calls and not speaker.calls and not requests
+        assert not transcripts and not errors
+    finally:
+        c.shutdown(2)
+    assert c.retry_transcription() is False
 
 
 def test_stop_listening_preserves_playback_and_stop_speaking_preserves_input(runtime):
@@ -595,6 +768,18 @@ def test_stop_listening_preserves_playback_and_stop_speaking_preserves_input(run
         assert not recorder.calls[0][1].is_set() and not errors
     finally:
         c.close()
+
+
+def test_cancelled_speech_waiter_exits_while_other_output_owns_native_lock(runtime):
+    c, _, _, _, _, _, _ = controller(runtime, speaker=Speaker())
+    with c.coordinator.speech_lock:
+        try:
+            assert c.speak("Queued response")
+            c.stop_speaking()
+            eventually(lambda: not c._workers)
+            assert not c._speaker.calls
+        finally:
+            c.close()
 
 
 def test_barge_in_uses_local_vad_and_interrupts_only_playback(runtime):
@@ -650,6 +835,103 @@ def test_permission_failure_exposes_explicit_permission_required_state(runtime):
         assert states[-1] == "permission_required" and errors == ["Mikrofon izni gerekli."]
     finally:
         c.close()
+
+
+@pytest.mark.parametrize("recover_with", ["playback", "typed_response"])
+def test_microphone_refusal_preserves_playback_and_typed_agent_lifecycle(runtime, recover_with):
+    from firik_agent.voice.errors import VoicePermissionError
+
+    class DeniedRecorder:
+        def __init__(self):
+            self.calls = 0
+
+        def record(self, *args, **kwargs):
+            self.calls += 1
+            raise VoicePermissionError("Mikrofon izni gerekli.")
+
+    recorder, speaker = DeniedRecorder(), Speaker()
+    c, d, states, transcripts, errors, *_ = controller(runtime, recorder=recorder, speaker=speaker)
+    try:
+        assert c.start_recording()
+        eventually(lambda: c.state == "permission_required")
+        d.drain()
+        if recover_with == "typed_response":
+            c.response_started("executing")
+            assert c.state == "executing" and c._agent_busy
+            c.response_completed()
+            assert c.state == "ready" and not c._agent_busy
+        assert c.speak("A response remains audible after microphone refusal.")
+        assert speaker.started.wait(1)
+        assert c.state == "speaking"
+        c.stop_speaking()
+        assert speaker.finished.wait(1)
+        assert c.shutdown(2)
+        d.drain()
+        assert recorder.calls == 1
+        assert errors == ["Mikrofon izni gerekli."] and not transcripts
+    finally:
+        c.shutdown(2)
+
+
+def test_new_idle_session_can_start_conversation_while_previous_session_agent_is_busy(runtime):
+    recorder = UtteranceRecorder()
+    c, d, _, transcripts, errors, _, requests = controller(runtime, recorder=recorder)
+    try:
+        c.bind_session("busy-session")
+        c.response_started()
+        assert c._agent_busy
+        c.bind_session("idle-session")
+        assert not c._agent_busy
+        assert c.start_conversation()
+        assert recorder.started.wait(1)
+        assert c.session_id == "idle-session" and c.conversation_active
+        assert not transcripts and not requests and not errors
+    finally:
+        c.shutdown(2)
+
+
+def test_session_status_sync_preserves_pending_dictation_and_never_starts_audio(runtime):
+    recorder = Recorder(wait=False)
+    c, d, states, transcripts, errors, _, requests = controller(runtime, recorder=recorder)
+    try:
+        c.sync_agent_state(True)
+        assert c.state == "thinking" and c._agent_busy
+        c.sync_agent_state(False)
+        assert c.state == "idle" and not c._agent_busy
+        assert not recorder.calls
+        assert c.start_recording()
+        eventually(lambda: requests and c.state == "idle")
+        c.sync_agent_state(True)
+        c.sync_agent_state(False)
+        d.drain()
+        assert transcripts == ["Merhaba dünya"]
+        assert c.transcript_resolved(False)
+        assert len(recorder.calls) == 1 and not errors
+    finally:
+        c.shutdown(2)
+
+
+@pytest.mark.parametrize("stage", ["capture", "speech"])
+def test_worker_start_failure_releases_ownership_and_allows_new_work(runtime, monkeypatch, stage):
+    recorder, speaker = Recorder(), Speaker()
+    c, d, _, transcripts, errors, _, requests = controller(runtime, recorder=recorder, speaker=speaker)
+    action = c.start_recording if stage == "capture" else lambda: c.speak("Response")
+    try:
+        with monkeypatch.context() as patch:
+            def rejected_start(thread):
+                raise RuntimeError("Native thread limit")
+            patch.setattr(threading.Thread, "start", rejected_start)
+            assert action() is False
+        assert c.state_id.value == "error"
+        assert not c._workers
+        assert c.coordinator._owner is None
+        assert c._speech_cancel is None
+        d.drain()
+        assert len(errors) == 1 and not transcripts and not requests
+        assert action()
+        assert (recorder.started if stage == "capture" else speaker.started).wait(1)
+    finally:
+        c.shutdown(2)
 
 
 def test_generation_is_public_and_illegal_transition_is_rejected(runtime):
@@ -742,7 +1024,7 @@ def test_late_created_controller_accepts_existing_executing_phase(runtime, initi
         c.close()
 
 
-def test_playback_failure_closes_simultaneous_barge_in_microphone(runtime):
+def test_playback_failure_preserves_visible_simultaneous_barge_in_microphone(runtime):
     class FailingSpeaker:
         supports_barge_in = True
         def speak(self, text, cancel, language, rate):
@@ -757,10 +1039,9 @@ def test_playback_failure_closes_simultaneous_barge_in_microphone(runtime):
         # Delay VAD onset so the playback failure owns this interruption.
         recorder.record_utterance = lambda stop, cancel, duration, **options: recorder.record(stop, cancel, duration)
         assert c.speak("Response")
-        assert recorder.finished.wait(1)
-        eventually(lambda: c.state == "error")
-        d.drain()
-        assert c.paused and recorder.calls[0][1].is_set()
+        eventually(lambda: (d.drain() or bool(errors)))
+        assert c.state == "listening"
+        assert not c.paused and not recorder.calls[0][1].is_set()
         assert len(errors) == 1 and not requests
     finally:
         c.close()

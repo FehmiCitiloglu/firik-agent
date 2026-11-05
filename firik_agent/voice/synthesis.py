@@ -22,6 +22,7 @@ from firik_agent.voice.errors import VoiceAudioError, VoiceSynthesisError
 from firik_agent.voice.models import MAX_AUDIO_BYTES
 from firik_agent.voice.playback import EncodedAudio, SoundDevicePlayer
 from firik_agent.voice.speech import LocalSpeaker, MAX_SPEECH_CHARS, _WINDOWS_SCRIPT, _stop_process, speech_text
+from firik_agent.voice.telemetry import log_voice_timing
 
 MAX_SENTENCE_CHARS = 1600
 _WINDOWS_WAV_SCRIPT = _WINDOWS_SCRIPT.replace(
@@ -366,10 +367,11 @@ class SentenceSpeechQueue:
 class EngineSpeaker:
     """LocalSpeaker-compatible synthesis/output facade with stream controls."""
     supports_barge_in = False
+    supports_audio_timing = True
 
     def __init__(self, *, output_device=None, volume=1.0, backend=None, synthesizer=None, player=None):
         self.synthesizer = synthesizer or NativeSynthesizer()
-        self.player = player or SoundDevicePlayer(device=output_device, volume=volume, backend=backend)
+        self.player = player or SoundDevicePlayer(device=output_device, volume=volume, backend=backend, cache_replay=False)
         self._queue = None
         self._last_text = None
         self._closed = False
@@ -383,7 +385,8 @@ class EngineSpeaker:
         self.player.volume = volume
 
     def resume(self):
-        self.player.resume()
+        if hasattr(self.player, "resume"):
+            self.player.resume()
 
     def stop(self):
         if self._queue is not None:
@@ -403,7 +406,7 @@ class EngineSpeaker:
         self.speak(last[0], cancel, last[1], last[2])
         return not cancel.is_set()
 
-    def speak(self, text, cancel, language="auto", rate=175):
+    def speak(self, text, cancel, language="auto", rate=175, *, utterance_ended_at=None):
         if self._closed or cancel.is_set():
             return
         # Retain raw Markdown until boundaries are stable; stripping first could
@@ -419,9 +422,30 @@ class EngineSpeaker:
             if cancel.is_set() or self._closed:
                 return
             self._last_text = text, language, rate
-            pipeline = SentenceSpeechQueue(
-                lambda sentence, event: self.synthesizer.synthesize(sentence, event, language, rate),
-                self.player.play, cancel)
+            synthesis_started = None
+
+            def synthesize(sentence, event):
+                nonlocal synthesis_started
+                first = synthesis_started is None
+                if first:
+                    synthesis_started = time.monotonic()
+                audio = self.synthesizer.synthesize(sentence, event, language, rate)
+                if first and audio is not None and not event.is_set():
+                    log_voice_timing("tts_first_audio", "ok", synthesis_started)
+                return audio
+
+            def first_audio(played_at):
+                nonlocal utterance_ended_at
+                log_voice_timing("voice_end_to_end", "ok", utterance_ended_at, finished_at=played_at)
+                utterance_ended_at = None
+
+            def play(audio, event):
+                if utterance_ended_at is not None and isinstance(self.player, SoundDevicePlayer):
+                    self.player.play(audio, event, on_first_audio=first_audio)
+                else:
+                    self.player.play(audio, event)
+
+            pipeline = SentenceSpeechQueue(synthesize, play, cancel)
             self._queue = pipeline
             # Small deltas keep a complete reply within queue backpressure even
             # when it contains many short sentences.

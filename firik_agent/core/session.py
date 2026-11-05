@@ -34,6 +34,8 @@ class ChatSession:
         active_mcp_servers: Optional[Set[str]] = None,
         enabled_tool_names: Optional[Set[str]] = None,
         reasoning_effort: Optional[str] = None,
+        private: bool = False,
+        learning_enabled: bool = True,
     ):
         self.session_id: str = session_id or f"session_{uuid4().hex[:12]}"
         self.title: str = title
@@ -47,6 +49,8 @@ class ChatSession:
         self.messages: List[Message] = []
         self.compaction = CompactionState()
         self.created_at: float = time.time()
+        self.private = bool(private)
+        self.learning_enabled = bool(learning_enabled)
 
     def enable_mcp(self, server_name: str) -> None:
         self.active_mcp_servers.add(server_name)

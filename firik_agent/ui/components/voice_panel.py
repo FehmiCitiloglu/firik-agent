@@ -101,7 +101,7 @@ class VoicePanel(ctk.CTkFrame):
         self.review_actions.grid(row=1, column=0, columnspan=4, sticky="w")
         self.apply_button = ctk.CTkButton(self.review_actions, text="Gönder", width=64, command=self.apply_transcript)
         self.copy_button = ctk.CTkButton(self.review_actions, text="Kopyala", width=64, command=self.copy_transcript)
-        self.retry_button = ctk.CTkButton(self.review_actions, text="Tekrar", width=64, command=self.retry_transcript)
+        self.retry_button = ctk.CTkButton(self.review_actions, text="Yeniden kaydet", width=100, command=self.retry_transcript)
         self.discard_button = ctk.CTkButton(self.review_actions, text="Vazgeç", width=64, command=self.dismiss_command)
         for column, button in enumerate((self.apply_button, self.copy_button, self.retry_button, self.discard_button)):
             button.grid(row=0, column=column, padx=(0, 3), pady=(0, 3))
@@ -325,7 +325,7 @@ class VoicePanel(ctk.CTkFrame):
             for top in surfaces:
                 for pattern, callback in ((sequence, self._shortcut_press),
                         ("<KeyRelease>", self._shortcut_release), ("<FocusOut>", self._focus_out),
-                        ("<Unmap>", self._focus_out), ("<ButtonRelease-1>", self._release_mic)):
+                        ("<Unmap>", self._window_unmapped), ("<ButtonRelease-1>", self._release_mic)):
                     self._shortcut_bindings.append((top, pattern, top.bind(pattern, callback, add="+")))
             self._bound_shortcut = shortcut
             self._shortcut_release_keys = {key.casefold()}
@@ -367,6 +367,21 @@ class VoicePanel(ctk.CTkFrame):
             self._finish_hold()
         if self._automatic_speech:
             self._schedule_audio_guard(0)
+
+    def _window_unmapped(self, event):
+        self._focus_out(event)
+        if event.widget in (self.winfo_toplevel(), self._voice_surface):
+            self.after_idle(self._stop_hidden_capture)
+
+    def _stop_hidden_capture(self):
+        if not self._active or self._closed or not self.controller:
+            return
+        surface = self._voice_surface
+        if self.winfo_viewable() or (surface is not None and surface.winfo_viewable()):
+            return
+        state = getattr(self.controller, "state_id", self.controller.state)
+        if state in ("recording", "listening", "speech_detected"):
+            self.stop_listening()
 
     def start_conversation(self):
         if not self._prepare_capture():
@@ -650,11 +665,6 @@ class VoicePanel(ctk.CTkFrame):
         if not self._active or self._closed:
             return
         self.dismiss_command(resolve=False)
-        if self.controller and hasattr(self.controller, "retry_transcription"):
-            if self.controller.retry_transcription() is not False:
-                return
-        if self.controller and hasattr(self.controller, "transcript_resolved"):
-            self.controller.transcript_resolved(False)
         self.toggle_recording()
 
     def dismiss_command(self, resolve=True, *, sent=False):
@@ -673,7 +683,7 @@ class VoicePanel(ctk.CTkFrame):
         if pending and resolve and self.controller and hasattr(self.controller, "transcript_resolved"):
             self.controller.transcript_resolved(submitted=False)
 
-    def response_started(self, state="thinking"):
+    def response_started(self, state="thinking", *, from_voice=False):
         self._stop_audio_guard()
         self._response_preview_text = ""
         if self._voice_surface is not None:
@@ -683,7 +693,10 @@ class VoicePanel(ctk.CTkFrame):
                 settings.enabled and settings.read_replies and settings.stream_replies):
             controller = self._controller()
             if hasattr(controller, "response_started"):
-                controller.response_started(state)
+                if from_voice:
+                    controller.response_started(state, from_voice=True)
+                else:
+                    controller.response_started(state)
             elif hasattr(controller, "mark_agent_state"):
                 controller.mark_agent_state(state)
 

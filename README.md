@@ -173,6 +173,30 @@ Grafik ortamda çift tıklayarak çalıştırmak için:
 - 🔌 **Gelişmiş MCP Yöneticisi:** Yerel (`stdio`) ve uzak (`sse`/`streamable_http`) Model Context Protocol sunucularını görsel olarak ekleme, test etme, araç şemalarını inceleme, canlı logları izleme, işletim sistemi kasasında (`keyring`) güvenli token saklama ve her sohbet oturumuna özel bağımsız araç seçimi (per-chat MCP isolation).
 - ⚙️ **Ayarlar:** API taban adresi yapılandırması, API anahtarını işletim sisteminin şifreli kasasında (macOS Keychain, Windows Credential Manager, Linux Secret Service) saklama, açık/koyu tema ve arayüz ölçeklendirme.
 
+### Sesli kullanım
+
+```sh
+python -m pip install -e ".[voice]"
+python -m firik_agent.ui
+```
+
+**Ayarlar → Ses** bölümünde sesi etkinleştirip mikrofonu ve çıkış aygıtını seçin.
+**Mikrofon düzeyini sına** ve **Hoparlörü sına** düğmeleri açık kullanıcı eylemiyle
+yerel aygıtları test eder. Evren anahtarınızı uygulamanın normal ayarlarından
+kaydedin. Mevcut sohbeti veya projenin **Kodlama Ajanı** sekmesini açın, **🎙 Ses**
+düğmesini basılı tutup konuşun ve bitirmek için bırakın. **Gönder / Uygula**
+ile transkripti inceleyip gönderin. **Sesli sohbet** yerel VAD ile açıkça
+başlatılan ardışık konuşmaları destekler. Yanıt seslendirmesi isteğe bağlıdır.
+
+Mikrofon sesi çözümleme için yapılandırılmış Evren hizmetine gönderilir.
+Uygulama ham kaydı diske veya sohbet geçmişine yazmaz. Yeniden deneme yeni
+kayıt başlatır. Sesli araç istekleri mevcut izin ve ayrı işlem onayından geçer.
+Sohbet/kodlama modeli ile ASR/TTS modeli bağımsız seçilir.
+
+[Başlatma, gizlilik ve test komutları](docs/voice.md),
+[mimari ve doğrulanan sağlayıcı yetenekleri](docs/VOICE_ARCHITECTURE.md),
+[platform kurulum ve elle doğrulama](docs/VOICE_PACKAGING.md).
+
 Sohbet ekranındaki aranabilir **Sohbetler** listesinden eski bir konuşmayı açıp devam edebilirsiniz. Bir yanıt yazılırken başka sohbete geçebilir, **+ Yeni Sohbet** ile farklı sorular sorabilirsiniz; yanıtlar kendi sohbetlerinde devam eder. Taslaklar ve kaydırma konumları korunur. Liste, **Yanıt yazılıyor** ve arka planda tamamlanan **Yeni yanıt** durumlarını gösterir. **Durdur** yalnızca seçili sohbeti durdurur; **Sohbeti sil** yalnızca seçili konuşmayı onay sonrası siler.
 
 Model yanıtları Markdown olarak gösterilir: başlıklar, kalın/italik metin, listeler, alıntılar, bağlantılar, tablolar ve kod blokları biçimlendirilir. Metin seçilebilir; kod bloklarındaki **Kodu kopyala** düğmesi yalnızca kodu kopyalar. Geniş kod ve tablolar yatay kaydırılır. Mesaj kopyalama, dışa aktarma ve sohbet geçmişi orijinal Markdown metnini korur.
@@ -384,6 +408,10 @@ etkiler: modele iletilen sonuçlar değişmez ve ayrıntılarda eski 200 karakte
 düz metin olarak yazdırır; fare desteği terminale bağlıdır.
 
 [Detaylı MCP, skill, plugin, computer-use ve agent kullanım kılavuzu](docs/AGENT.md). Bilgisayar denetimi sistem izinleri ve yetenek teşhisi için `firik-agent computer-use doctor` komutunu çalıştırabilirsiniz. Agent REPL'inde `/api ...` için doğrudan `firik` sağlayıcısını seçin. Birim/kontrat testleri sahte HTTP transport kullanır; gerçek anahtara veya ücretli API çağrılarına ihtiyaç duymaz.
+
+## Kendi kendini geliştirme
+
+`firik-agent improve status` ile öğrenme durumunu, masaüstündeki **Kendi Kendini Geliştirme** alanından kanıtları ve bekleyen önerileri inceleyebilirsiniz. Varsayılan mod pasif gözlemdir; kalıcı bilgi, beceri, araç ve kaynak değişiklikleri sürüme bağlı inceleme/onay akışından geçer. [Kullanım, güvenlik sınırları, deneyler ve geri alma kılavuzu](docs/SELF_IMPROVEMENT.md).
 
 
 ## Masaüstü uygulamasını indirme

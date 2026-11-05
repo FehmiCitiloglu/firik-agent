@@ -11,6 +11,17 @@ Install `python -m pip install -e '.[voice]'`, launch `firik-gui`, then open
 **Ses ayarları** beside a conversation composer and enable voice. Voice starts
 disabled and never opens the microphone at application startup.
 
+```sh
+python -m pip install -e ".[voice]"
+python -m firik_agent.ui
+```
+
+Use the application's ordinary **Ayarlar** page to configure the Evren endpoint
+and credential. Enable voice in **Ayarlar → Ses** and choose the input/output
+devices. The checked-in `config.yaml` shows the default voice block. ASR and
+TTS share the existing endpoint-scoped credential service. The selected
+conversation or project keeps its own LLM.
+
 - **Basılı tut** is the default push-to-talk control. Hold it while speaking;
   release to finalize. The configurable shortcut defaults to **Ctrl+Shift+V**
   while the application is focused. Releasing the key/modifier or losing
@@ -22,8 +33,8 @@ disabled and never opens the microphone at application startup.
   **Duraklat / Devam et** pauses/resumes the same conversation; **Sohbetten çık**
   ends the voice session. Follow-ups retain the conversation's session ID.
 - Final recognition appears in an editable review field. **Gönder / Uygula**,
-  **Kopyala**, **Tekrar**, and **Vazgeç** send/apply, copy, retranscribe the retained
-  utterance, or discard. Transcripts stay outside history until submitted through
+  **Kopyala**, **Yeniden kaydet**, and **Vazgeç** send/apply, copy, start a new
+  recording, or discard. Transcripts stay outside history until submitted through
   the normal composer/service. Existing typed drafts and attachments are never
   overwritten by voice. A busy conversation keeps the transcript for later.
 - Review is the default. To auto-send ordinary explanatory requests, enable
@@ -102,14 +113,17 @@ today reports that the adapter is unavailable. No failure selects another remote
 provider or a local backend automatically. Text input remains available after
 voice errors and stopping listening leaves agent execution running.
 
-On 2 November 2026 the public OpenAPI verified `POST /v1/audio/transcriptions`
-and `POST /v1/audio/speech`. `/v1/models` required authentication and no stored key
-was available. **Authenticated model access, inference, response media types and
-Turkish/English audio quality remain unverified.** See
-[discovery evidence](Evidence/Voice/20261102/API_DISCOVERY.md). A model's inherent
-abilities are never evidence that this API exposes them. Discovery grants speech
-roles only from explicit `task: audio_transcription` / `task: tts` metadata, not
-from a generic audio modality. Ordinary chat lists filter specialized models.
+On 4 November 2026 read-only verification returned HTTP 200 for the public
+OpenAPI and authenticated `GET /v1/models`, using an existing endpoint-scoped
+credential. Both audio request schemas match the checked-in contract. The
+catalogue declares `qwen3-asr-1.7b` with `task: audio_transcription` and `voxcpm2`
+with `task: tts`. **ASR/TTS inference, response media types and Turkish/English
+audio quality remain unverified.** Live inference remains disabled at the user's
+direction. The [architecture and capability matrix](VOICE_ARCHITECTURE.md)
+records the current evidence. The earlier
+[2 November discovery](Evidence/Voice/20261102/API_DISCOVERY.md) retains its
+historical unauthenticated result. Discovery grants speech roles from explicit
+task metadata. Ordinary chat lists filter specialized models.
 
 ASR uses validated multipart PCM WAV, with automatic language or explicit `tr` /
 `en` hints. The normalized result has `text`, optional provider-supplied
@@ -228,11 +242,8 @@ require lowering the recording window to stay within the segment-count limit.
 
 **Provider limit verification remains open.** The checked-in FIRIK OpenAPI defines
 `/v1/audio/transcriptions` but publishes no maximum audio duration. Thirty seconds
-is a conservative client budget, not a verified provider maximum. Existing live
-Turkish/English synthetic-clip evidence establishes endpoint compatibility only.
-A deployment with a verified lower provider limit must lower
-`asr_request_seconds`; the engine does not claim that every provider accepts the
-default duration.
+is a conservative client budget. Set `asr_request_seconds` to a lower value
+when the configured provider publishes a lower limit.
 
 ## Synthesis and playback
 
@@ -271,14 +282,14 @@ missing codecs produce an actionable error.
 
 If the selected output rejects the source sample rate, playback validates its
 native rate and resamples each channel with bounded scratch space and exact
-rounded duration. Unsupported channel layouts fail explicitly. Replay retains
-the source PCM so choosing another output does not compound resampling.
+rounded duration. Unsupported channel layouts fail explicitly. The standalone
+player can replay the source PCM without accumulating resampling error.
 
 The output callback advances a bounded PCM block, applies stream volume and
 writes silence while paused without advancing the cursor. PortAudio's finished
 callback confirms completion after queued samples drain. Stop/cancellation
-aborts and closes the native stream; replay retains only the bounded last audio
-or response. Native output ownership and the application speech lock prevent
+aborts and closes the native stream. Desktop replay keeps the last response
+text and synthesizes it again. Native output ownership and the application speech lock prevent
 overlapping responses. A disconnected output, underflow or stalled callback
 reports failure. A device that cannot accept the decoded output format also
 reports a setup error.
@@ -298,7 +309,7 @@ the canonical `VoiceState`; the legacy `state` property retains `recording` and
 | LISTENING | VAD onset → SPEECH_DETECTED; PTT release → TRANSCRIBING; silent VAD window → READY then local listening. |
 | SPEECH_DETECTED | End silence / duration bound → TRANSCRIBING. |
 | TRANSCRIBING | Final result → AWAITING_CONFIRMATION; failure → ERROR. |
-| AWAITING_CONFIRMATION | Send → THINKING; retry → TRANSCRIBING; discard → READY then resume if active. |
+| AWAITING_CONFIRMATION | Send → THINKING; record again → LISTENING; discard → READY then resume if active. |
 | THINKING / EXECUTING | Existing agent events update the state; completion → SPEAKING or READY then resume. |
 | SPEAKING | Completion / stop-speaking → READY; explicit PTT stops output before capture. Simultaneous VAD requires verified stack capabilities. |
 | INTERRUPTED | Paused session; explicit resume → LISTENING, or wait for current agent completion. |
@@ -315,7 +326,9 @@ until an old stream finishes closing. Per-surface controllers bind to an immutab
 conversation ID for each operation. A generation, session ID and speech ticket
 protect queued UI delivery, transcription and playback independently. Page
 switches, new/cleared sessions, provider/credential changes, settings changes and
-widget destruction invalidate old work. Cancellation also drops retained audio.
+widget destruction invalidate old work. If both voice surfaces are hidden, the
+panel stops active capture. A playback failure leaves separately supported
+duplex input running with its recording indicator visible.
 A late HTTP result cannot resurrect a cancelled session or submit into another.
 Device removal/overflow fails closed, releases the stream and requires recovery.
 Capture and output coordination enforces half-duplex operation for the supplied
@@ -377,10 +390,10 @@ voice:
 Settings reject nonfinite numbers, booleans masquerading as numbers and invalid
 ranges. Recording windows are 5–120 seconds, gain 0.1–4, response volume 0–1,
 ASR request budget 1–30 seconds, VAD silence 250–3,000 ms, minimum speech
-100–1,000 ms and pre-roll 0–1,000 ms. Microphone audio stays in memory until
-review is resolved/cancelled, allowing explicit retry; it is not written to
-history or disk. Generated local TTS audio uses temporary scratch files as
-described above.
+100–1,000 ms and pre-roll 0–1,000 ms. Microphone audio stays in memory during
+capture and ASR. The app releases it after completion, cancellation or failure.
+Transcript review and chat history hold text. Generated local TTS audio uses
+temporary scratch files that the synthesis worker removes on exit.
 
 Legacy `model`, `read_replies`, `shortcut`, `max_record_seconds` and
 `vad_silence_ms` keys still load; canonical aliases are emitted on save and
@@ -388,8 +401,7 @@ conflicting aliases fail validation. `silence_timeout` is seconds; the old field
 is milliseconds. Invalid optional voice configuration disables voice while text
 startup remains usable. The preferred interaction mode affects **Aç / bitir**;
 the hold control and **Sesli sohbet** remain explicit mode selections. No saved
-mode starts recording on launch. `retain_audio: true` is rejected; bounded
-in-memory retry does not constitute persistent retention.
+mode starts recording on launch. `retain_audio: true` is rejected.
 
 | Optional extra | Dependency and purpose |
 | --- | --- |
@@ -415,10 +427,10 @@ current release packaging include `voice`; the other extras remain opt-in.
 Automatic ASR language does not guarantee automatic TTS language matching: local
 speech uses the OS default voice. Select Turkish/English to require that language.
 The PyInstaller spec includes the microphone purpose string, macOS audio-input
-entitlement, sounddevice/PortAudio and notices. Windows ASIO variants are excluded.
-Source-run permission does not establish signed-app permission behavior.
-These are implementation/backend support paths; this engine change does not
-establish hardware validation on any platform.
+entitlement, standard PortAudio runtime and notices. The frozen smoke loads
+PortAudio and enumerates input and output without opening streams.
+See [Voice packaging and device verification](VOICE_PACKAGING.md) for build
+commands, troubleshooting, and the remaining OS permission and device checks.
 
 ## Wake word gate and privacy
 
@@ -435,14 +447,51 @@ using its existing credential; retention/billing follow that endpoint's terms.
 Evren TTS sends response prose to that same endpoint. Explicit system TTS uses
 installed local voices and sends no response text remotely for synthesis.
 
+## Timing diagnostics
+
+Enable INFO for the Python logger `firik_agent.voice.telemetry` to collect
+stage, status and monotonic elapsed milliseconds. The records contain no audio,
+transcripts, prompts, response text, credentials, endpoint URLs or user/device
+identifiers. The voice stages measure:
+
+| Stage | Interval |
+| --- | --- |
+| `capture` | Capture worker start to finalized capture or a terminal capture outcome. |
+| `vad_endpoint` | Last frame classified as speech to the trailing-silence decision. |
+| `asr`, `asr_request`, `tts_request` | Full ASR and individual Evren request durations, with safe failure and cancellation statuses. |
+| `agent_first_token`, `agent` | Accepted voice-origin service submission to first visible text delta and to request termination, respectively. |
+| `tts_first_audio` | First sentence synthesis start to its audio payload becoming available. |
+| `speech` | Speech worker start through synthesis and playback, including failures and cancellation. |
+| `voice_end_to_end` | Finalized microphone utterance to the first reply buffer delivered to PortAudio. This includes transcript review time when enabled. |
+
+The PortAudio callback records the first-buffer timestamp and the worker logs it.
+These are application timings. Acoustic output and provider streaming latency
+require separate measurements.
+
+For a source launch with only voice timing INFO records enabled, run:
+
+```sh
+python -c "import logging; logging.basicConfig(level=logging.WARNING); logging.getLogger('firik_agent.voice.telemetry').setLevel(logging.INFO); from firik_agent.ui.app import main; raise SystemExit(main())"
+```
+
+The default logger plugin records prompt/result sizes and lifecycle information.
+Plugin hook failures use the existing safe failure formatter. Transcript,
+tool-argument and result contents stay out of those logs.
+
 ## Verification
+
+The [4 November implementation checkpoint](Evidence/Voice/20261104/README.md)
+records all phases, acceptance scenarios A–L, exact automated output, safe local
+timings, current packaging checks, compatibility changes and unfinished native
+or inference validation. The [architecture document](VOICE_ARCHITECTURE.md)
+contains the model/provider capability matrix.
 
 The [3 November integration checkpoint](Evidence/Voice/20261103/README.md)
 documents the unified request path, workspace identity checks and validation
 ordering after the earlier audio-engine/provider checkpoints.
 
-Tests inject microphones, speech processes and HTTP responses: no test records a
-real microphone or sends a real user utterance. Unit cases cover VAD silence,
+The default tests inject microphones, speech processes and HTTP responses.
+Unit cases cover VAD silence,
 onset/end segmentation, callback/queue overflow, device reordering and ambiguity,
 resampling length and filtering, actual format decoding, output controls,
 sentence order/backpressure, bounds, cancellation, session generations,
@@ -453,6 +502,21 @@ coalescing, repeated bounded shutdown and imports with optional audio/ML
 packages blocked.
 Native Tk cases exercise actual controls and chat/coding service wiring, busy
 execution protection, repeated follow-ups and navigation with injected audio.
+
+### Optional live Evren smoke
+
+With an explicitly supplied `FIRIK_LIVE_AUDIO_API_KEY` in the environment, run:
+
+```sh
+python -m pytest -q --run-live-evren-audio tests/test_evren_audio_live.py
+```
+
+This can make two billable requests to Evren. It synthesizes a fixed English
+phrase and submits the returned WAV for transcription, then checks for expected
+words. It uses no microphone, speaker, temporary file, or stored credential.
+The default suite skips this test, even when a smoke key is present. This
+checkpoint exercised the opt-in guards and mocked contracts. Live inference
+and audio quality remain unverified.
 
 Run backend checks with `python -m pytest -q --ignore-glob='tests/test_ui*.py'`.
 Run `python -m pytest -q tests/test_voice_engine_input.py tests/test_voice_engine_output.py tests/test_voice_engine_integration.py`
@@ -615,6 +679,12 @@ The meter uses the service's Tk-dispatched, coalesced level callbacks. Stop,
 save, leaving the visible form or closing the window cancels the test; delayed
 callbacks cannot update a cancelled form. Permission/backend failures remain
 visible after the worker's completion callback.
+
+**Yanıt → Hoparlörü sına** explicitly plays a short, faded synthetic tone through
+the selected output at the draft volume. It makes no provider request. Stop,
+output/volume changes, leaving the page, saving and closing settings cancel it.
+The shared audio coordinator serializes it with input and normal playback.
+Application shutdown waits for both test workers to release their native handles.
 
 **Tanı bilgisini göster** produces read-only offline information about optional
 packages, client limits and platform permission guidance. It does not open an

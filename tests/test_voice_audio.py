@@ -147,9 +147,10 @@ def test_failures_close_stream_and_do_not_expose_backend_details(options, messag
     assert backend.closed
 
 
-def test_missing_optional_dependency_has_actionable_error(monkeypatch):
+@pytest.mark.parametrize('error', [ImportError('not installed'), OSError('PortAudio library not found')])
+def test_missing_optional_dependency_has_actionable_error(monkeypatch, error):
     def missing(name):
-        raise ImportError("not installed")
+        raise error
     monkeypatch.setattr("firik_agent.voice.audio.importlib.import_module", missing)
     with pytest.raises(VoiceAudioError, match=r"firik-agent\[voice\]"):
         SoundDeviceRecorder().record(threading.Event(), threading.Event(), 10)
@@ -188,7 +189,7 @@ def utterance(backend, duration=2, **kwargs):
 
 
 def test_vad_idle_silence_and_short_clicks_never_produce_audio():
-    for signals in ([0] * 100, [0] * 10 + [2000] * 2 + [0] * 88):
+    for signals in ([0] * 100, [0] * 10 + [32767] * 2 + [0] * 88):
         backend = SegmentedAudio(signals)
         assert utterance(backend) == b""
         assert backend.closed and sum(backend.reads) == 32000
@@ -204,6 +205,32 @@ def test_vad_detects_sustained_speech_and_finalizes_at_silence():
     with wave.open(io.BytesIO(data)) as wav:
         assert wav.getframerate() == 16000
         assert wav.getnframes() == 16000 * 1.3
+
+
+def test_vad_endpoint_metrics_exclude_silence_windows_maximum_duration_and_cancellation(monkeypatch):
+    from firik_agent.voice import audio_capture
+
+    clock = [10.]
+    records = []
+    monkeypatch.setattr(audio_capture.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(audio_capture, 'log_voice_timing',
+                        lambda *args, **kwargs: records.append((args, kwargs)))
+
+    class ClockedAudio(SegmentedAudio):
+        def read(self, count):
+            clock[0] += count / 16000
+            return super().read(count)
+
+    assert utterance(ClockedAudio([0] * 10 + [1000] * 20 + [0] * 100))
+    [(metric, status, started_at), timing] = records.pop()
+    assert (metric, status) == ('vad_endpoint', 'ok')
+    assert timing['finished_at'] - started_at == pytest.approx(.7)
+    assert utterance(ClockedAudio([1000] * 50), duration=1)
+    assert utterance(ClockedAudio([0] * 50), duration=1) == b''
+    cancel = threading.Event()
+    backend = ClockedAudio([1000] * 20 + [0] * 100, cancel=cancel, stop_after=54)
+    assert SoundDeviceRecorder(backend).record_utterance(threading.Event(), cancel, 2) == b''
+    assert not records
 
 
 def test_vad_rejects_dc_offset_and_uses_selected_device():

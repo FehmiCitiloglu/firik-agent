@@ -83,7 +83,7 @@ class VoiceSessionPanel(ctk.CTkToplevel):
         for column in range(3):
             actions.grid_columnconfigure(column, weight=1)
         self.send_button = ctk.CTkButton(actions, text="Gönder", width=80, command=self.send)
-        self.retry_button = ctk.CTkButton(actions, text="Tekrar çözümle", width=100, command=owner.retry_transcript)
+        self.retry_button = ctk.CTkButton(actions, text="Yeniden kaydet", width=100, command=owner.retry_transcript)
         self.discard_button = ctk.CTkButton(actions, text="Vazgeç", width=80, command=owner.dismiss_command)
         for column, button in enumerate((self.send_button, self.retry_button, self.discard_button)):
             button.grid(row=0, column=column, sticky="ew", padx=(0, 5) if column < 2 else 0)

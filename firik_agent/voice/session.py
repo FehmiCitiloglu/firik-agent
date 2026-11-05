@@ -1,6 +1,7 @@
 """Application-wide native audio ownership and voice session states."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from enum import Enum
 import threading
 
@@ -26,7 +27,7 @@ _TRANSITIONS = {
     VoiceState.DISABLED: {VoiceState.READY, VoiceState.IDLE, VoiceState.LISTENING, VoiceState.SPEAKING},
     VoiceState.IDLE: {VoiceState.READY, VoiceState.LISTENING, VoiceState.SPEAKING, VoiceState.THINKING, VoiceState.EXECUTING},
     VoiceState.READY: {VoiceState.LISTENING, VoiceState.SPEAKING, VoiceState.THINKING, VoiceState.EXECUTING},
-    VoiceState.PERMISSION_REQUIRED: {VoiceState.LISTENING, VoiceState.READY},
+    VoiceState.PERMISSION_REQUIRED: {VoiceState.LISTENING, VoiceState.READY, VoiceState.SPEAKING, VoiceState.THINKING, VoiceState.EXECUTING},
     VoiceState.LISTENING: {VoiceState.SPEECH_DETECTED, VoiceState.TRANSCRIBING, VoiceState.READY},
     VoiceState.SPEECH_DETECTED: {VoiceState.TRANSCRIBING, VoiceState.READY},
     VoiceState.TRANSCRIBING: {VoiceState.AWAITING_CONFIRMATION},
@@ -35,7 +36,7 @@ _TRANSITIONS = {
     VoiceState.EXECUTING: {VoiceState.THINKING, VoiceState.SPEAKING, VoiceState.READY, VoiceState.LISTENING},
     VoiceState.SPEAKING: {VoiceState.READY, VoiceState.LISTENING, VoiceState.TRANSCRIBING, VoiceState.SPEECH_DETECTED},
     VoiceState.INTERRUPTED: {VoiceState.READY, VoiceState.LISTENING, VoiceState.SPEAKING, VoiceState.THINKING, VoiceState.EXECUTING},
-    VoiceState.ERROR: {VoiceState.READY, VoiceState.LISTENING, VoiceState.SPEAKING, VoiceState.TRANSCRIBING, VoiceState.THINKING},
+    VoiceState.ERROR: {VoiceState.READY, VoiceState.LISTENING, VoiceState.SPEAKING, VoiceState.TRANSCRIBING, VoiceState.THINKING, VoiceState.EXECUTING},
 }
 
 
@@ -57,6 +58,19 @@ class CaptureCoordinator:
         self._speech_active = False
         self._capture_duplex = False
         self._speech_duplex = False
+
+    @staticmethod
+    @contextmanager
+    def native_lock(lock, cancel):
+        """Allow a cancelled waiter to exit before another stream closes."""
+        while not cancel.is_set():
+            if lock.acquire(timeout=.02):
+                try:
+                    yield not cancel.is_set()
+                finally:
+                    lock.release()
+                return
+        yield False
 
     def begin_capture(self, cancel, *, duplex=False) -> bool:
         with self._duplex:

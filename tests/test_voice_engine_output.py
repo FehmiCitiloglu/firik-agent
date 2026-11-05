@@ -503,6 +503,24 @@ def test_engine_keeps_native_ownership_until_slow_output_close_really_finishes()
     assert returned.is_set() and backend.streams[0].closed
 
 
+def test_first_audio_timing_is_safe_and_speaker_plays_again_after_stop(caplog):
+    caplog.set_level("INFO", logger="firik_agent.voice.telemetry")
+    backend = Backend()
+    synth = types.SimpleNamespace(synthesize=lambda *args: EncodedAudio(wav_bytes()))
+    speaker = EngineSpeaker(player=SoundDevicePlayer(backend=backend, clock=lambda: 42.0), synthesizer=synth)
+    try:
+        speaker.stop()
+        speaker.speak("Private response text.", threading.Event(), utterance_ended_at=41.25)
+        speaker.speak("Second response.", threading.Event())
+    finally:
+        speaker.shutdown()
+    assert len(backend.streams) == 2
+    assert all(stream.blocks and stream.closed for stream in backend.streams)
+    assert caplog.text.count("stage=tts_first_audio status=ok") == 2
+    assert caplog.text.count("stage=voice_end_to_end status=ok duration_ms=750.0") == 1
+    assert "Private response text" not in caplog.text
+
+
 @pytest.mark.parametrize("platform", ["darwin", "linux", "win32"])
 def test_native_synthesis_uses_data_only_stdin_private_wav_and_cleans_files(platform, monkeypatch):
     calls = []

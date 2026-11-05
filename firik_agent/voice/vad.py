@@ -96,6 +96,7 @@ class UtteranceSegmenter:
                                     if self.config.engine == "webrtc" else EnergyDetector(self.config.threshold))
         self.started = False
         self.finished = False
+        self.ended_by_silence = False
         self._onset = self._silence = self._frames = 0
         self._pre = deque()
         self._pre_frames = 0
@@ -132,9 +133,14 @@ class UtteranceSegmenter:
             self._silence = 0 if voiced else self._silence + count
             if self._silence >= self.sample_rate * self.config.silence_ms / 1000:
                 self.finished = True
+                self.ended_by_silence = True
         if self._frames >= self.max_frames:
             self.finished = True
         return self.finished
+
+    @property
+    def silence_frames(self):
+        return self._silence
 
     @property
     def pcm(self):

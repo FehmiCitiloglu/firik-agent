@@ -16,7 +16,7 @@ class LoggerPlugin(BasePlugin):
     version = "1.0.0"
 
     async def on_user_message(self, text: str) -> Optional[str]:
-        logger.info("[Plugin:Logger] User prompt received: %s", text[:120])
+        logger.info("[Plugin:Logger] User prompt received (characters=%d)", len(text))
         return None
 
     async def on_model_request(
@@ -40,17 +40,16 @@ class LoggerPlugin(BasePlugin):
 
     async def on_tool_call(self, tool_call: ToolCall) -> None:
         logger.info(
-            "[Plugin:Logger] Tool invoking: %s with args: %s",
+            "[Plugin:Logger] Tool invoking: %s",
             tool_call.function.name,
-            tool_call.function.arguments,
         )
 
     async def on_tool_result(self, result: ToolResult) -> None:
         logger.info(
-            "[Plugin:Logger] Tool result for %s (is_error=%s): %s",
+            "[Plugin:Logger] Tool result for %s (is_error=%s, characters=%d)",
             result.name,
             result.is_error,
-            result.content[:150],
+            len(result.content or ""),
         )
 
     async def on_error(self, error: Exception) -> None:

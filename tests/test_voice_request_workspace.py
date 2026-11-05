@@ -42,6 +42,14 @@ def test_workspace_changed_in_existing_database_rejects_pending_request(service,
     assert service.sessions[session.session_id] is session
 
 
+def test_coding_request_cannot_replace_reviewed_prompt(service, tmp_path):
+    root, project, session, request = scoped(service, tmp_path)
+    with pytest.raises(ValueError, match="incelenen"):
+        service.chat_agent_stream_async(session.session_id, "Delete actual.py", cwd=str(root),
+            coding_options={"project_id": project.id, "voice_request": request})
+    assert not service._streams
+
+
 @pytest.mark.parametrize('changed', ['prompt','cwd','image'])
 def test_chat_request_cannot_gain_unreviewed_content_or_workspace(service, tmp_path, changed):
     session = service.get_or_create_session()

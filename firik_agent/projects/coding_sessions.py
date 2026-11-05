@@ -9,6 +9,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from enum import Enum
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -24,6 +25,8 @@ from firik_agent.core.completion import legacy_status
 
 if TYPE_CHECKING:
     from firik_agent.projects.db import ProjectDatabase
+
+logger = logging.getLogger(__name__)
 
 
 REDACTED = "[SECRET_FILTERED]"
@@ -152,9 +155,35 @@ def redact_sensitive(value: Any, known_secrets: tuple[str, ...] = ()) -> Any:
 class CodingSessionStore:
     """Small persistence API; each mutation is one serialized SQLite transaction."""
 
-    def __init__(self, db: ProjectDatabase, *, known_secrets: tuple[str, ...] = ()):
+    def __init__(self, db: ProjectDatabase, *, known_secrets: tuple[str, ...] = (),
+                 improvement_config: Optional[dict[str, Any]] = None):
         self.db = db
         self._known_secrets = known_secrets
+        self._improvement_config = improvement_config
+
+    def _observe_learning(self, session: CodingSession, event: CodingRunEvent) -> None:
+        # Discard conversation/tool argument streams before initializing any
+        # learning storage. The source journal remains the sole full event log.
+        if event.event_type not in {"model_request_started", "model_request_finished", "model_usage",
+                "recovery", "tool_call_started", "tool_call_result", "tool_call_error", "error",
+                "verification", "quality_gate", "context_compaction_started", "context_compacted",
+                "task_state", "skill.activated", "done"}:
+            return
+        try:
+            from firik_agent.self_improvement.coordinator import coordinator_for
+            learning = coordinator_for(self.db, config=self._improvement_config)
+            if not learning.project_enabled(session.project_id):
+                return
+            learning.observe_event(event, session_id=session.session_id,
+                project_id=session.project_id, task_id=session.task_id,
+                provider=session.provider, model=session.model,
+                harness=str(session.context_report.get("harness_backend", "native")))
+            if event.event_type in {"done", "error"} and learning.automatic_reflection:
+                learning.submit_reflection(session.session_id, project_id=session.project_id)
+        except Exception:
+            # Event persistence and execution permissions must not depend on
+            # auxiliary learning availability; never log raw event/error text.
+            logger.warning("Learning observation unavailable; durable execution event retained.")
 
     def create_run(
         self, project_id: str, *, task_id: Optional[str] = None,
@@ -414,9 +443,12 @@ class CodingSessionStore:
                 )
                 conn.execute("UPDATE coding_sessions SET updated_at=? WHERE id=?", (stored.created_at, run_id))
                 conn.commit()
-                return stored
             finally:
                 conn.close()
+        # Run outside the owning transaction/lock. Reflection only enqueues
+        # bounded work and cannot acquire execution authority through this hook.
+        self._observe_learning(session, stored)
+        return stored
 
     def list_events(self, run_id: str, *, project_id: Optional[str] = None,
                     limit: Optional[int] = None, include_deltas: bool = True) -> list[CodingRunEvent]:

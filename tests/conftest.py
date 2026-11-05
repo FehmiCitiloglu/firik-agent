@@ -7,6 +7,11 @@ import pytest
 from firik_agent import credentials
 
 
+def pytest_addoption(parser):
+    parser.addoption("--run-live-evren-audio", action="store_true", default=False,
+                     help="Run the opt-in, potentially billable Evren ASR/TTS smoke test.")
+
+
 @pytest.fixture(autouse=True)
 def collect_gui_objects_on_main_thread(request):
     if not request.node.path.name.startswith("test_ui"):

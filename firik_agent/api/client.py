@@ -5,6 +5,7 @@ import base64
 import json
 import mimetypes
 import re
+from email.utils import format_datetime, parsedate_to_datetime
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -53,6 +54,21 @@ class FirikAPIError(RuntimeError):
 
 class AudioRequestError(RuntimeError):
     """User-safe transport error; never contains a request URL, key or body."""
+
+    def __init__(self, message: str, *, reason: str = "connection"):
+        super().__init__(message)
+        self.reason = reason
+
+
+def _audio_retry_after(value: str) -> str | None:
+    if not value or len(value) > 64:
+        return None
+    if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", value):
+        return value
+    try:
+        return format_datetime(parsedate_to_datetime(value))
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 class FirikAPI:
@@ -235,48 +251,59 @@ class FirikAPI:
         """Transcribe an in-memory microphone WAV without persisting private audio."""
         return await self._transcribe_audio(audio, model, "microphone.wav", options)
 
-    async def _bounded_audio_response(self, path: str, *, limit: int, **kwargs: Any) -> httpx.Response:
+    async def _bounded_audio_response(self, path: str, *, limit: int, **kwargs: Any) -> tuple[bytes, str]:
         # Keep the published path allowlist for both JSON and binary operations.
         # No retry: a timeout/disconnect may have completed billable inference.
         self._check_path("POST", path)
+        self.last_metadata = {}
         try:
+            headers = {**self._headers(path), "Accept-Encoding": "identity"}
             async with self._client.stream("POST", self.base_url + path,
-                                           headers=self._headers(path), **kwargs) as response:
+                                           headers=headers, **kwargs) as response:
+                if not response.is_success:
+                    # Upstream error bodies and arbitrary headers can echo
+                    # request contents. Preserve only the status and a parsed
+                    # cooldown, even when the error body is huge or unreadable.
+                    retry_after = _audio_retry_after(response.headers.get("retry-after", ""))
+                    if retry_after is not None:
+                        self.last_metadata["retry-after"] = retry_after
+                    raise FirikAPIError(response.status_code, "Ses API isteği başarısız.", self.last_metadata.copy())
+                # HTTPX can decompress an entire chunk before yielding it. An
+                # identity-only response keeps the byte budget under our control.
+                if response.headers.get("content-encoding", "identity").strip().lower() != "identity":
+                    raise ValueError("Ses API yanıtı sıkıştırılmamış HTTP içeriği olmalıdır.")
                 self._capture(response)
-                budget = limit if response.is_success else 65536
                 size, chunks = 0, []
                 async for chunk in response.aiter_bytes():
                     size += len(chunk)
-                    if size > budget:
+                    if size > limit:
                         raise ValueError("Ses API yanıtı istemci boyut sınırını aşıyor.")
                     chunks.append(chunk)
-                buffered = httpx.Response(response.status_code, headers=response.headers,
-                                          content=b"".join(chunks), request=response.request)
-                if not buffered.is_success:
-                    self._decode(buffered)
-                return buffered
+                content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                return b"".join(chunks), content_type
         except httpx.TimeoutException:
-            raise AudioRequestError("Ses isteği zaman aşımına uğradı. Ücretli işlem yinelenmesin diye otomatik tekrar yapılmadı.") from None
+            raise AudioRequestError("Ses isteği zaman aşımına uğradı. Ücretli işlem yinelenmesin diye otomatik tekrar yapılmadı.",
+                                    reason="timeout") from None
         except httpx.HTTPError:
-            raise AudioRequestError("Ses hizmetine bağlantı kurulamadı. Otomatik tekrar yapılmadı; metinle devam edebilirsiniz.") from None
+            raise AudioRequestError("Ses hizmetine bağlantı kurulamadı. Otomatik tekrar yapılmadı; metinle devam edebilirsiniz.",
+                                    reason="connection") from None
 
     async def _transcribe_audio(self, audio: bytes, model: str, filename: str, options: dict) -> Any:
         validate_wav(audio)
         data = transcription_parameters(model, options)
-        response = await self._bounded_audio_response("/v1/audio/transcriptions", limit=MAX_TRANSCRIPT_BYTES,
+        content, content_type = await self._bounded_audio_response("/v1/audio/transcriptions", limit=MAX_TRANSCRIPT_BYTES,
             data=data, files={"file": (filename, audio, "audio/wav")})
-        content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
         if content_type not in ("application/json", "text/plain", "application/x-subrip", "text/srt"):
             raise ValueError("Ses çözümleme yanıtının içerik türü geçersiz.")
         # Recognized words such as '123', 'true' or 'null' are still text, even
         # though a generic JSON decoder would turn them into scalars.
         if options.get("response_format") in ("text", "srt") or content_type != "application/json":
             try:
-                return response.content.decode("utf-8-sig")
+                return content.decode("utf-8-sig")
             except UnicodeDecodeError:
                 raise ValueError("Transkript yanıtı geçerli UTF-8 metni değil.") from None
         try:
-            return response.json()
+            return json.loads(content)
         except ValueError:
             raise ValueError("Ses çözümleme yanıtı geçerli JSON değil.") from None
 
@@ -298,10 +325,9 @@ class FirikAPI:
         Voice cloning/reference-audio parameters are deliberately absent.
         """
         body = speech_parameters(text, model, voice, response_format, speed, instructions)
-        response = await self._bounded_audio_response("/v1/audio/speech", limit=MAX_AUDIO_BYTES, json=body)
-        content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-        validate_speech(response.content, content_type, response_format)
-        return SpeechResult(response.content, content_type, response_format,
+        audio, content_type = await self._bounded_audio_response("/v1/audio/speech", limit=MAX_AUDIO_BYTES, json=body)
+        validate_speech(audio, content_type, response_format)
+        return SpeechResult(audio, content_type, response_format,
                             self._redact(self.last_metadata),
                             48000 if response_format == "pcm" else None,
                             1 if response_format == "pcm" else None)

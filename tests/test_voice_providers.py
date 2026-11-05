@@ -4,6 +4,7 @@ from concurrent.futures import Future
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
+import logging
 from types import SimpleNamespace
 import threading
 import time
@@ -12,7 +13,7 @@ import httpx
 import pytest
 
 from firik_agent.api.audio import SpeechResult, TranscriptionResult
-from firik_agent.api.client import FirikAPIError
+from firik_agent.api.client import FirikAPI, FirikAPIError
 from firik_agent.ui.service import FirikService
 from firik_agent.voice.config import VoiceSettings
 from firik_agent.voice.controller import VoiceController
@@ -20,6 +21,8 @@ from firik_agent.voice.errors import VoiceAudioError, VoiceSynthesisError
 from firik_agent.voice.providers import (SpeechToTextProvider, TextToSpeechProvider,
     EvrenSpeechToTextProvider, EvrenTextToSpeechProvider, SystemTextToSpeechProvider,
     ProviderSynthesizer, VoiceRequestGate, evren_capabilities, conversational_models)
+from firik_agent.voice.transcription import TranscriptionPolicy
+from test_evren_audio_api import wav_audio
 
 
 def test_catalogue_requires_explicit_task_and_never_infers_audio_direction():
@@ -81,6 +84,64 @@ async def test_provider_contracts_and_independent_request_parameters():
     with pytest.raises(VoiceSynthesisError):
         await tts.synthesize("text", voice="clone")
     assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_segmented_utterance_reuses_client_and_cancel_leaves_tts_running(caplog):
+    caplog.set_level(logging.INFO, logger="firik_agent.voice.telemetry")
+    segment_started, tts_started, release_tts = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    clients, requests, closed = [], [], []
+    endpoint = "https://private-endpoint.example/v1"
+    gate = VoiceRequestGate()
+
+    class Transport(httpx.MockTransport):
+        async def aclose(self):
+            closed.append(self)
+
+    async def respond(request):
+        path = request.url.path
+        requests.append(path)
+        if path == "/v1/audio/speech":
+            tts_started.set()
+            await release_tts.wait()
+            return httpx.Response(200, content=wav_audio(), headers={"content-type": "audio/wav"})
+        if requests.count(path) == 2:
+            segment_started.set()
+            await asyncio.Event().wait()
+        return httpx.Response(200, json={"text": "private transcript", "language": "en"})
+
+    def client_factory():
+        transport = Transport(respond)
+        clients.append(transport)
+        return FirikAPI("private-key", endpoint, transport=transport)
+
+    asr = EvrenSpeechToTextProvider(client_factory, endpoint=endpoint, gate=gate)
+    tts = EvrenTextToSpeechProvider(client_factory, endpoint=endpoint, gate=gate)
+    asr_task = asyncio.create_task(asr.transcribe_utterance(wav_audio(.3), model="qwen3-asr-1.7b",
+        language="en", policy=TranscriptionPolicy(max_request_seconds=.1)))
+    tts_task = asyncio.create_task(tts.synthesize("private prompt"))
+    try:
+        await asyncio.wait_for(segment_started.wait(), 1)
+        await asyncio.wait_for(tts_started.wait(), 1)
+        assert len(clients) == 2
+        asr_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asr_task
+        assert closed == clients[:1]
+        assert requests.count("/v1/audio/transcriptions") == 2
+        assert not tts_task.done()
+        release_tts.set()
+        assert (await tts_task).audio == wav_audio()
+        assert closed == clients
+    finally:
+        for task in (asr_task, tts_task):
+            task.cancel()
+        await asyncio.gather(asr_task, tts_task, return_exceptions=True)
+
+    assert "stage=asr_request status=ok" in caplog.text
+    assert "stage=asr_request status=cancelled" in caplog.text
+    assert "stage=tts_request status=ok" in caplog.text
+    assert "private" not in caplog.text
 
 
 @pytest.mark.asyncio

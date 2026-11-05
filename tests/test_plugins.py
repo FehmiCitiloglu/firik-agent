@@ -1,7 +1,7 @@
 from __future__ import annotations
 import pytest
 from firik_agent.core.tools import ToolRegistry
-from firik_agent.core.types import Message, ToolCall, ToolCallFunction
+from firik_agent.core.types import Message, ToolCall, ToolCallFunction, ToolResult
 from firik_agent.plugins.base import BasePlugin
 from firik_agent.plugins.manager import PluginManager
 
@@ -103,3 +103,36 @@ async def test_logger_never_logs_unknown_exception_messages(caplog):
     await LoggerPlugin().on_error(ValueError("private prompt TOP-SECRET"))
     assert "error_type=ValueError" in caplog.text
     assert "TOP-SECRET" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_default_logger_records_counts_without_private_prompt_arguments_or_results(caplog):
+    from firik_agent.plugins.builtins.logger import LoggerPlugin
+
+    caplog.set_level("DEBUG", logger="firik.plugins.logger")
+    plugin = LoggerPlugin()
+    private = "Private transcript and password=TOP-SECRET"
+    call = ToolCall(id="call-private", function=ToolCallFunction(name="read_file", arguments=private))
+    await plugin.on_user_message(private)
+    await plugin.on_model_request([Message(role="user", content=private)], [])
+    await plugin.on_model_response(Message(role="assistant", content=private))
+    await plugin.on_tool_call(call)
+    await plugin.on_tool_result(ToolResult(tool_call_id=call.id, name="read_file", content=private))
+    assert "characters=" in caplog.text and "read_file" in caplog.text
+    assert private not in caplog.text and "TOP-SECRET" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_failing_plugin_hook_keeps_private_exception_text_out_of_logs(tmp_path, caplog):
+    class FailingPlugin(BasePlugin):
+        name = "failing"
+
+        async def on_user_message(self, text):
+            raise RuntimeError(text)
+
+    manager = PluginManager(ToolRegistry(), plugins_dir=tmp_path)
+    manager.register_plugin(FailingPlugin())
+    private = "Private microphone transcript TOP-SECRET"
+    assert await manager.dispatch_user_message(private) == private
+    assert "error_type=RuntimeError" in caplog.text
+    assert private not in caplog.text and "TOP-SECRET" not in caplog.text

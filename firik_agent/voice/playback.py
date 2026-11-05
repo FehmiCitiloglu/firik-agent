@@ -169,14 +169,16 @@ class SoundDevicePlayer:
     """
     supports_barge_in = False  # This stack has no acoustic echo cancellation.
 
-    def __init__(self, *, device=None, volume=1.0, backend=None):
+    def __init__(self, *, device=None, volume=1.0, backend=None, cache_replay=True, clock=time.monotonic):
         self.device = device
         self._backend = backend
+        self._clock = clock
         self._serial = threading.Lock()
         self._lock = threading.Lock()
         self._paused = threading.Event()
         self._stop = threading.Event()
         self._last = None
+        self._cache_replay = cache_replay
         self._closed = False
         self._playing = False
         self.volume = volume
@@ -224,14 +226,14 @@ class SoundDevicePlayer:
         self.play(audio, cancel, on_complete=on_complete)
         return not cancel.is_set() and not self._stop.is_set() and not self._closed
 
-    def play(self, audio, cancel: threading.Event, *, on_complete=None):
+    def play(self, audio, cancel: threading.Event, *, on_complete=None, on_first_audio=None):
         if cancel.is_set() or self._closed:
             return
         pcm = decode_audio(audio)
         while not self._serial.acquire(timeout=.025):
             if cancel.is_set() or self._closed:
                 return
-            self._stop.clear()
+        self._stop.clear()
         stream = None
         try:
             if cancel.is_set() or self._closed:
@@ -262,17 +264,19 @@ class SoundDevicePlayer:
                 if pcm is None:
                     return
             with self._lock:
-                self._last = original
+                if self._cache_replay:
+                    self._last = original
                 self._playing = True
             finished = threading.Event()
             errors = []
             position = 0
-            last_callback = time.monotonic()
+            first_audio_at = None
+            last_callback = self._clock()
             frame_bytes = pcm.format.frame_bytes
 
             def callback(outdata, frames, timing, status):
-                nonlocal position, last_callback
-                last_callback = time.monotonic()
+                nonlocal position, last_callback, first_audio_at
+                last_callback = self._clock()
                 # Buffer writes never wait for a lock, queue or UI callback.
                 outdata[:] = bytes(len(outdata))
                 if cancel.is_set() or self._stop.is_set():
@@ -296,6 +300,8 @@ class SoundDevicePlayer:
                         samples.byteswap()
                     block = samples.tobytes()
                 outdata[:count] = block
+                if position == 0 and count and on_first_audio is not None:
+                    first_audio_at = last_callback
                 position += count
                 if position >= len(pcm.data):
                     # CallbackStop drains queued data before finished_callback.
@@ -306,11 +312,17 @@ class SoundDevicePlayer:
                                              blocksize=max(1, pcm.format.sample_rate // 50),
                                              callback=callback, finished_callback=finished.set)
             stream.start()
-            while not finished.wait(.025):
+            while True:
+                drained = finished.wait(.025)
+                if on_first_audio is not None and first_audio_at is not None:
+                    on_first_audio(first_audio_at)
+                    on_first_audio = None
+                if drained:
+                    break
                 if cancel.is_set() or self._stop.is_set() or self._closed:
                     stream.abort()
                     return
-                if time.monotonic() - last_callback > 5:
+                if self._clock() - last_callback > 5:
                     raise VoicePlaybackError("Ses çıkış aygıtı yanıt vermiyor veya bağlantısı kesildi.")
                 if not stream.active:
                     # Permit finished_callback to race the inactive observation.

@@ -27,6 +27,7 @@ class CallbackBackend:
         self.cancel, self.permission = cancel, permission
         self.active = True
         self.closed = self.aborted = False
+        self.open_count = self.start_count = 0
 
     def query_devices(self, *args):
         return {'default_samplerate': 16000, 'max_input_channels': 1}
@@ -35,12 +36,14 @@ class CallbackBackend:
         pass
 
     def RawInputStream(self, **options):
+        self.open_count += 1
         if self.permission:
             raise OSError('private host: permission denied')
         self.options = options
         return self
 
     def start(self):
+        self.start_count += 1
         for _ in range(self.blocks):
             count = self.options['blocksize']
             self.options['callback'](pcm(count), count, None, self.status)
@@ -83,6 +86,82 @@ def test_native_disconnection_is_actionable_and_releases_handles():
     with pytest.raises(VoiceDeviceError, match='bağlantısı kesildi'):
         record(backend)
     assert backend.aborted and backend.closed
+
+
+def test_native_disconnection_discards_queued_data_even_at_frame_limit():
+    backend = CallbackBackend(disconnected=True)
+    with pytest.raises(VoiceDeviceError, match='bağlantısı kesildi'):
+        record(backend)
+    assert backend.aborted and backend.closed
+
+
+def test_push_to_talk_release_before_worker_runs_never_probes_or_opens_audio(monkeypatch):
+    stop = threading.Event()
+    stop.set()
+    recorder = SoundDeviceRecorder()
+    monkeypatch.setattr(recorder, '_load_backend', lambda: pytest.fail('Unexpected audio backend access'))
+    assert recorder.record(stop, threading.Event(), 1) == b''
+
+
+@pytest.mark.parametrize('boundary', ['settings', 'open'])
+@pytest.mark.parametrize('signal', ['stop', 'cancel'])
+def test_interruption_during_native_setup_never_starts_stream(boundary, signal):
+    stop, cancel = threading.Event(), threading.Event()
+    interrupt = stop if signal == 'stop' else cancel
+
+    class InterruptedBackend(CallbackBackend):
+        def check_input_settings(self, **kwargs):
+            if boundary == 'settings':
+                interrupt.set()
+
+        def RawInputStream(self, **kwargs):
+            stream = super().RawInputStream(**kwargs)
+            interrupt.set()
+            return stream
+
+    backend = InterruptedBackend()
+    recorder = SoundDeviceRecorder(backend)
+    if signal == 'stop':
+        with pytest.raises(VoiceAudioError, match='çok kısa'):
+            recorder.record(stop, cancel, 1)
+    else:
+        assert recorder.record(stop, cancel, 1) == b''
+    assert not backend.start_count
+    assert backend.open_count == (1 if boundary == 'open' else 0)
+    assert backend.closed is (boundary == 'open')
+
+
+def test_push_to_talk_release_drains_only_audio_accepted_before_release():
+    stop = threading.Event()
+
+    class ReleaseAfterCallbacks(CallbackBackend):
+        def start(self):
+            super().start()
+            stop.set()
+            count = self.options['blocksize']
+            self.options['callback'](pcm(count, 2000), count, None, False)
+
+        def abort(self):
+            super().abort()
+            self.options['finished_callback']()
+
+    backend = ReleaseAfterCallbacks()
+    result = PCMBuffer.from_wav(SoundDeviceRecorder(backend).record(stop, threading.Event(), 1))
+    assert result.frames == 3200
+    assert set(array('h', result.data)) == {-1000, 1000}
+    assert backend.aborted and backend.closed
+
+
+def test_missing_default_input_device_reports_safe_actionable_error():
+    class MissingDefault(CallbackBackend):
+        def query_devices(self, *args):
+            raise RuntimeError('Error querying device -1 (private host)')
+
+    backend = MissingDefault()
+    with pytest.raises(VoiceDeviceError, match='Mikrofon bulunamadı') as error:
+        record(backend)
+    assert 'private' not in str(error.value)
+    assert backend.open_count == 0
 
 
 def test_cancellation_without_callbacks_still_closes_stream_promptly():
@@ -135,8 +214,9 @@ def test_resampling_has_no_chunk_rounding_drift(source, target, count):
     assert abs(len(result)/2/target-count/source) <= .5/target
 
 
-def test_resampler_rejects_partial_samples_and_reuse_after_final():
-    converter = PCMResampler(44100,16000)
+@pytest.mark.parametrize('source', [16000, 44100])
+def test_resampler_rejects_partial_samples_and_reuse_after_final(source):
+    converter = PCMResampler(source, 16000)
     with pytest.raises(VoiceFormatError):
         converter.feed(b'x')
     converter.feed(b'',final=True)

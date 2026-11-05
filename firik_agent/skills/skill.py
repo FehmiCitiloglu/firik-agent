@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 import yaml
 
@@ -27,6 +27,7 @@ class Skill(BaseModel):
         description = ""
         instructions = ""
         tags = []
+        version = "1.0.0"
 
         # Check for skill.yaml or skill.json
         yaml_file = path / "skill.yaml"
@@ -36,6 +37,7 @@ class Skill(BaseModel):
                 name = data.get("name", name)
                 description = data.get("description", "")
                 tags = data.get("tags", [])
+                version = data.get("version", version)
 
         # Check for SKILL.md
         md_file = path / "SKILL.md"
@@ -50,6 +52,7 @@ class Skill(BaseModel):
                     fm = yaml.safe_load(parts[1]) or {}
                     name = fm.get("name", name)
                     description = fm.get("description", description)
+                    version = fm.get("version", version)
                     instructions = parts[2].strip()
                 else:
                     instructions = content.strip()
@@ -64,6 +67,7 @@ class Skill(BaseModel):
             instructions=instructions,
             source_dir=str(path.resolve()),
             tags=tags,
+            version=str(version),
         )
 
     def save(self, target_dir: Union[str, Path]) -> None:

@@ -340,7 +340,8 @@ def test_first_user_partial_and_plan_are_durable_while_model_is_blocked(bridge):
         future.result(timeout=3)
 
 
-def test_cancel_blocked_inference_releases_stream_and_ignores_late_done(bridge):
+@pytest.mark.parametrize("voice_origin", [False, True])
+def test_cancel_blocked_inference_releases_stream_and_ignores_late_done(bridge, voice_origin):
     service, state, roots = bridge
     running, finished = threading.Event(), threading.Event()
     done, errors, terminal = [], [], []
@@ -353,7 +354,16 @@ def test_cancel_blocked_inference_releases_stream_and_ignores_late_done(bridge):
             state["model_cancelled"] = True
         yield StreamChunk(delta_content="Should never arrive")
     state["script"] = script
-    session, future = start(bridge, on_done=lambda text: (done.append(text), finished.set()), on_error=errors.append,
+    session = request = None
+    prompt = "Inspect main.py"
+    if voice_origin:
+        from firik_agent.voice.intent_router import VoiceRequestRouter
+        from firik_agent.voice.requests import VoiceScope
+        session, _ = service.restore_coding("p1")
+        scope = VoiceScope(session.session_id, project_id="p1", workspace_id=str(roots["p1"].resolve()), target="coding")
+        request = VoiceRequestRouter(lambda request: True).create_request(prompt, scope)
+    session, future = start(bridge, session=session, prompt=prompt, options={"voice_request": request},
+                            on_done=lambda text: (done.append(text), finished.set()), on_error=errors.append,
                             on_event=lambda event: terminal.append(event) if event.type == AgentEventType.DONE else None)
     assert running.wait(4)
     assert service.coding_control(session.session_id, "cancel")
@@ -363,6 +373,8 @@ def test_cancel_blocked_inference_releases_stream_and_ignores_late_done(bridge):
     assert state["model_cancelled"] and not errors and len(done) == 1 and not terminal
     assert service.coding_store.latest_run("p1").status == "cancelled"
     assert not service._streams and not service._coding_controls
+    if request is not None:
+        assert request.cancellation_token.is_set()
 
 
 def test_two_project_models_events_messages_and_cancellation_are_isolated(bridge):
