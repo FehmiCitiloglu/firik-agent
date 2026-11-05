@@ -182,7 +182,7 @@ def test_parent_cancellation_stops_active_subagent_and_records_it(bridge):
     assert entered.wait(timeout=4)
     assert service.coding_control(session.session_id, "cancel")
     try:
-        future.result(timeout=4)
+        future.result(timeout=30)
     except CancelledError:
         pass
     # Future cancellation may precede the coroutine's durable cleanup.
@@ -302,7 +302,7 @@ def test_real_agent_approval_edit_diff_test_evidence_provider_and_sqlite_history
     assert restored.session_id == session.session_id and restored.messages[-1].content == "Dosya ve gerçek test tamamlandı."
     assert restored_record.id == record.id
     undone, undo_errors = [], []
-    service.undo_coding_async(session.session_id, "main.py", undone.append, undo_errors.append).result(timeout=4)
+    service.undo_coding_async(session.session_id, "main.py", undone.append, undo_errors.append).result(timeout=30)
     assert not undo_errors and undone[0]["undone"]
     assert "eski" in path.read_text(encoding="utf-8")
     saved_undo = service.coding_store.get_run(record.id)
@@ -399,7 +399,7 @@ def test_two_project_models_events_messages_and_cancellation_are_isolated(bridge
     with pytest.raises(ValueError, match="zaten"):
         start(bridge, session=b, project="p2", prompt="duplicate")
     gates["model-b"].set()
-    second.result(timeout=4)
+    second.result(timeout=30)
     assert not first.done()
     assert service.coding_store.latest_run("p2").messages[-1]["content"] == "B bitti"
     service.coding_control(a.session_id, "cancel")
@@ -416,7 +416,7 @@ def test_setup_and_final_persistence_errors_release_stream_and_report_truth(brid
     original = service.coding_store.create_run
     monkeypatch.setattr(service.coding_store, "create_run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db unavailable")))
     session, future = start(bridge, on_error=lambda text: (errors.append(text), finished.set()))
-    future.result(timeout=4)
+    future.result(timeout=30)
     assert finished.wait(3) and "db unavailable" in errors[0]
     assert not service._streams and not service._coding_controls
     monkeypatch.setattr(service.coding_store, "create_run", original)
@@ -428,7 +428,7 @@ def test_setup_and_final_persistence_errors_release_stream_and_report_truth(brid
     monkeypatch.setattr(service.coding_store, "update_run", fail_final)
     done, errors = [], []
     _, future = start(bridge, session=session, on_done=done.append, on_error=errors.append)
-    future.result(timeout=4)
+    future.result(timeout=30)
     assert not done and "saklanamadı" in errors[0]
     assert not service._streams and not service._coding_controls
 
@@ -441,9 +441,9 @@ def test_done_event_starts_next_turn_only_after_old_stream_cleanup(bridge):
         if event.type == AgentEventType.DONE:
             following.append(start(bridge, session=session, prompt="İkinci istek")[1])
     _, first = start(bridge, session=session, on_event=receive)
-    first.result(timeout=4)
+    first.result(timeout=30)
     assert len(following) == 1
-    following[0].result(timeout=4)
+    following[0].result(timeout=30)
     assert len(service.coding_store.list_runs("p1", session_id=session.session_id)) == 2
     assert not service._streams
 
@@ -475,7 +475,7 @@ def test_resume_revalidates_actual_hash_and_keeps_concurrent_user_edit(bridge):
     errors = []
     _, denied = start(bridge, session=session,
         options={"resume_run_id": previous.id, "resume_approved": True}, on_error=errors.append)
-    denied.result(timeout=4)
+    denied.result(timeout=30)
     assert errors and not state["requests"]
     controller.reconcile_workspace(previous.id, project_id="p1", approved=True, evidence="Kullanıcı düzenlemesi incelendi")
     _, future = start(bridge, session=session, options={"resume_run_id": previous.id, "resume_approved": True})
@@ -495,13 +495,13 @@ def test_repeated_explicit_resume_does_not_dispatch_or_overwrite_completed_conti
     service.coding_store.finish_run(previous.id, "interrupted")
     options = {"resume_run_id": previous.id, "resume_approved": True}
     _, first = start(bridge, session=session, options=options)
-    first.result(timeout=4)
+    first.result(timeout=30)
     completed = service.coding_store.latest_run("p1")
     assert completed.resumed_from == previous.id and completed.status == "completed"
     count = len(state["requests"])
     errors = []
     _, repeated = start(bridge, session=session, options=options, on_error=errors.append)
-    repeated.result(timeout=4)
+    repeated.result(timeout=30)
     assert errors and len(state["requests"]) == count
     assert service.coding_store.get_run(completed.id).status == "completed"
     assert len(service.coding_store.list_runs("p1")) == 2
@@ -513,7 +513,7 @@ def test_new_prompt_does_not_implicitly_resume_interrupted_run(bridge):
     previous = service.coding_store.create_run("p1", task_id="t-p1", session_id=session.session_id)
     service.coding_store.finish_run(previous.id, "interrupted")
     _, fresh = start(bridge, session=session, prompt="Yeni isteği incele")
-    fresh.result(timeout=4)
+    fresh.result(timeout=30)
     record = service.coding_store.latest_run("p1")
     assert record.id != previous.id and record.resumed_from is None
     assert service.coding_store.get_run(previous.id).status == "interrupted"
@@ -531,7 +531,7 @@ def test_exact_prepared_continuation_can_start_after_passive_startup_recovery(br
     assert service.coding_store.get_run(prepared.id).status == "queued"
     _, future = start(bridge, session=session, options={"resume_run_id": previous.id,
         "resume_approved": True, "resume_prepared_run_id": prepared.id})
-    future.result(timeout=4)
+    future.result(timeout=30)
     completed = service.coding_store.latest_run("p1")
     assert completed.id == prepared.id and completed.status == "completed"
     assert len(state["requests"]) == 1 and len(service.coding_store.list_runs("p1")) == 2
@@ -547,7 +547,7 @@ def test_resume_uses_durable_source_messages_instead_of_stale_live_session(bridg
     service.coding_store.finish_run(previous.id, "interrupted")
     session.messages = [Message(role="user", content="stale-live-session")]
     _, future = start(bridge, session=session, options={"resume_run_id": previous.id, "resume_approved": True})
-    future.result(timeout=4)
+    future.result(timeout=30)
     request = json.dumps(state["requests"][0]["messages"])
     assert "durable-source-request" in request and "durable-source-outcome" in request
     assert "stale-live-session" not in request
@@ -562,7 +562,7 @@ def test_project_legacy_denials_override_selected_tool_permissions(bridge):
     settings.permissions.update(network_access="never", write_files="deny")
     service.projects.db.save_settings(settings)
     _, future = start(bridge)
-    future.result(timeout=4)
+    future.result(timeout=30)
     record = service.coding_store.latest_run("p1")
     assert record.permissions["allow_edits"] is False
     assert record.permissions["allow_terminal"] is False and record.permissions["allow_tests"] is False
@@ -579,7 +579,7 @@ def test_skill_metadata_is_prepared_off_ui_and_selected_body_is_loaded(bridge):
     session = service.get_or_create_session()
     future = service.prepare_coding_async("p1", "İncele", lambda data: (result.append(data), finished.set()),
                 lambda error: (result.append(error), finished.set()), session_id=session.session_id, selected_skills=["turkce"])
-    future.result(timeout=4)
+    future.result(timeout=30)
     assert finished.wait(3)
     assert result[0]["selected_skills"] == ["turkce"]
     assert "Seçili beceri talimatı" in result[0]["system_prompt"]
@@ -608,7 +608,7 @@ def test_prepare_capabilities_use_only_explicit_selected_provider_model_config(b
     values = []
     future = service.prepare_coding_async("p1", "İncele", values.append, values.append,
         session_id=session.session_id, available_skills=[])
-    future.result(timeout=4)
+    future.result(timeout=30)
     assert isinstance(values[0], dict)
     assert values[0]["capabilities"]["context_window"] == expected_window
     assert values[0]["capabilities"]["supports_tools"] is expected_tools
@@ -626,7 +626,7 @@ def test_prepare_missing_selected_model_keeps_capabilities_unknown(bridge, confi
     service.config["providers"]["firik"]["models"] = configured
     values = []
     service.prepare_coding_async("p1", "İncele", values.append, values.append,
-        session_id=session.session_id, available_skills=[]).result(timeout=4)
+        session_id=session.session_id, available_skills=[]).result(timeout=30)
     assert values[0]["capabilities"]["context_window"] is None
     assert values[0]["capabilities"]["supports_tools"] is None
 
@@ -663,7 +663,7 @@ def test_mcp_startup_requires_application_mode_permission_exact_tool_and_server_
     monkeypatch.setattr(service.mcp_manager, "release_for_session", release)
     session, future = start(bridge, mode=mode, options={"permissions": {"allow_mcp": enabled},
         "mcp_servers": ["selected", "unselected"], "mcp_tools": selected})
-    future.result(timeout=4)
+    future.result(timeout=30)
     assert started == released == expected
     assert session.active_mcp_servers == set(expected)
     schemas = {value["function"]["name"] for value in state["requests"][0]["tools"]}

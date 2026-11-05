@@ -32,7 +32,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-tk libtk8.6 libtcl8.6 libsecret-1-dev xvfb xauth libportaudio2 espeak-ng
+          sudo apt-get install -y python3-tk libtk8.6 libtcl8.6 libsecret-1-dev xvfb xauth openbox libportaudio2 espeak-ng
 
       - name: Bağımlılıkları Kur
         run: |
@@ -45,7 +45,7 @@ jobs:
 
       - name: Testler (Linux sanal ekran)
         if: runner.os == 'Linux'
-        run: xvfb-run -a python -m pytest
+        run: xvfb-run -a sh -c 'openbox >/tmp/openbox.log 2>&1 & python -m pytest'
 
       - name: Testler (macOS ve Windows)
         if: runner.os != 'Linux'

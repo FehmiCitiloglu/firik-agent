@@ -1,4 +1,4 @@
-"""Run desktop checks with fresh native Tcl/Tk state for Windows GUI tests."""
+"""Run desktop checks with fresh native Tcl/Tk state for each GUI test."""
 from pathlib import Path
 import subprocess
 import sys
@@ -7,13 +7,13 @@ import sys
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     pytest = [sys.executable, "-m", "pytest"]
-    if sys.platform != "win32":
+    if sys.platform not in {"win32", "darwin"}:
         return subprocess.call(pytest, cwd=root)
 
     gui_files = sorted((root / "tests").glob("test_ui*.py"))
     relative = [str(path.relative_to(root)) for path in gui_files]
     result = subprocess.call(pytest + [f"--ignore={path}" for path in relative], cwd=root)
-    # Windows Tcl keeps process-wide initialization state across interpreters.
+    # Native Tcl/Tk keeps process-wide initialization state across interpreters.
     # Test each window lifecycle in a fresh process, as a desktop launch does.
     # Collect parametrized cases as well and preserve every test's exit status.
     collection = subprocess.run(pytest + ["--collect-only", "-q", *relative],

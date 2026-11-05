@@ -743,10 +743,11 @@ def temporary_source_repository(tmp_path):
     def git(*args):
         return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True, timeout=10).stdout
     git("init", "--quiet")
+    git("config", "core.autocrlf", "false")
     git("config", "user.name", "Learning fixture")
     git("config", "user.email", "learning@example.invalid")
     original = "def twice(value):\n    return value\n"
-    (root / "example.py").write_text(original)
+    (root / "example.py").write_bytes(original.encode())
     git("add", "example.py")
     git("-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "baseline")
     patch = "".join(difflib.unified_diff(original.splitlines(keepends=True),

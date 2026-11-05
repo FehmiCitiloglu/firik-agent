@@ -55,9 +55,10 @@ def repo(tmp_path):
         return subprocess.run(["git", "-C", str(root), *args], check=True,
                               capture_output=True, text=True, timeout=10).stdout
     git("init", "--quiet")
+    git("config", "core.autocrlf", "false")
     git("config", "user.name", "Fixture")
     git("config", "user.email", "fixture@example.invalid")
-    (root / "example.py").write_text("def twice(value):\n    return value\n")
+    (root / "example.py").write_bytes(b"def twice(value):\n    return value\n")
     git("add", "example.py")
     git("-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "baseline")
     patch = "".join(difflib.unified_diff("def twice(value):\n    return value\n".splitlines(keepends=True),

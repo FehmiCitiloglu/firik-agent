@@ -251,8 +251,9 @@ def test_automatic_reading_is_blocked_when_window_or_input_context_is_ineligible
         entry = ctk.CTkEntry(auxiliary)
         entry.pack()
         auxiliary.lift()
+        settle(app,.3)  # CTk applies native top-level state after mapping.
         entry.focus_force()
-        settle(app,.08)
+        until(app,lambda:app.focus_displayof() is entry._entry)
         assert app.focus_displayof().winfo_toplevel() is auxiliary
     elif blocked=='settings_modal':
         panel._dialog = ctk.CTkToplevel(app)
@@ -385,11 +386,12 @@ def test_voice_surface_follows_runtime_theme_and_restores_outlined_focus(workspa
             assert surface.live_text_note._label.cget('background') == expected
         outlined = surface.exit_button
         assert outlined.cget('border_width') == 1
+        settle(app,.3)
         outlined._canvas.focus_force()
-        settle(app,.02)
+        until(app,lambda:outlined.cget('border_width') == 2)
         assert outlined.cget('border_width') == 2
         surface.stop_speech_button._canvas.focus_force()
-        settle(app,.02)
+        until(app,lambda:outlined.cget('border_width') == 1)
         assert outlined.cget('border_width') == 1
     finally:
         panel._close_voice_surface()

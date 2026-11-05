@@ -41,9 +41,10 @@ def repo(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
     git(root, "init", "--quiet")
+    git(root, "config", "core.autocrlf", "false")
     git(root, "config", "user.name", "Candidate Test")
     git(root, "config", "user.email", "candidate@example.invalid")
-    (root / "example.py").write_text("def twice(value):\n    return value\n")
+    (root / "example.py").write_bytes(b"def twice(value):\n    return value\n")
     git(root, "add", "--all")
     git(root, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "baseline")
     return root

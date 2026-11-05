@@ -219,7 +219,8 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
         self.coding_chat_box.set_messages(state["messages"], state["text"])
         changes = self.coding_tabs.tab("Değişiklikler")
         changes.grid_rowconfigure(0, weight=0)
-        changes.grid_rowconfigure(2, weight=1)
+        changes.grid_rowconfigure(1, weight=1)
+        changes.grid_rowconfigure(2, weight=3, minsize=80)
         header = ctk.CTkFrame(changes, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew")
         header.grid_columnconfigure(0, weight=1)
@@ -365,8 +366,10 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             compact = container.winfo_width() < 1140
             if container.winfo_height() < 500:
                 self.coding_composer_hint.grid_remove()
+                models.grid_remove()
             else:
                 self.coding_composer_hint.grid()
+                models.grid()
             self.coding_status_label.configure(wraplength=max(250, mid.winfo_width() - 20))
             for side, widget, minimum, default in (("left", left, 180, 220), ("right", right, 250, 300)):
                 shown = str(widget) in tuple(map(str, panes.panes()))

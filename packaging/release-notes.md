@@ -1,3 +1,10 @@
+## v0.2.36 değişiklikleri
+
+- Dar kodlama pencerelerinde fark önizlemesinin görünür yüksekliği korundu.
+- macOS arayüz testlerinde Tcl/Tk süreç izolasyonu; Linux sanal ekran testlerinde pencere yöneticisi eklendi.
+- Windows testlerinde Git satır sonları, odak geçişleri ve yavaş CI bekleme sınırları düzeltildi.
+- v0.2.35 için hazırlanan ses ve öz iyileştirme özellikleri bu yayına dahildir.
+
 ## v0.2.35 değişiklikleri
 
 - Sesli giriş/çıkış, Evren ASR/TTS yönlendirmesi, cihaz ayarları ve tanılama geliştirildi.
