@@ -1,5 +1,8 @@
 name: Desktop diagnostics
 on:
+  push:
+    paths:
+      - '.github/workflows/desktop-diagnostics.yml'
   workflow_dispatch:
 permissions:
   contents: read
