@@ -79,7 +79,17 @@ def test_code_and_wide_tables_fit_without_clipping_reply(chat, mode, scale):
         pump(root, 0.1)
         last = renderer.blocks[-1]
         canvas = view.chat_scroll._parent_canvas
-        wait_for_layout(root, lambda: last.winfo_rooty() + last.winfo_height() <= canvas.winfo_rooty() + canvas.winfo_height(), diagnostics=lambda: {
+        def last_line_is_visible():
+            # Aqua Tk 8.6 can report unscrolled screen coordinates for widgets
+            # inside a Canvas window. Compare content coordinates with the
+            # actual canvas viewport instead of mixing the two coordinate spaces.
+            bottom = last.winfo_height()
+            widget = last
+            while widget is not view.chat_scroll:
+                bottom += widget.winfo_y()
+                widget = widget.master
+            return bottom <= canvas.canvasy(0) + canvas.winfo_height()
+        wait_for_layout(root, last_line_is_visible, diagnostics=lambda: {
             "view": canvas.yview(), "region": canvas.cget("scrollregion"),
             "bbox": canvas.bbox("all"), "offset": canvas.canvasy(0),
             "chat": (view.chat_scroll.winfo_rooty(), view.chat_scroll.winfo_height()),

@@ -27,6 +27,17 @@ def until(app,predicate,timeout=4):
     assert predicate()
 
 
+def focus_native(app, widget):
+    """Wait out CTk's native titlebar redraw and deliver actual focus events."""
+    settle(app,.3)
+    def focused():
+        widget.winfo_toplevel().lift()
+        widget.focus_force()
+        return app.focus_displayof() is widget
+    until(app,focused)
+    settle(app,.02)
+
+
 class SyntheticCapture:
     supports_barge_in = False
     def __init__(self):
@@ -387,10 +398,10 @@ def test_voice_surface_follows_runtime_theme_and_restores_outlined_focus(workspa
         outlined = surface.exit_button
         assert outlined.cget('border_width') == 1
         settle(app,.3)
-        outlined._canvas.focus_force()
+        focus_native(app,outlined._canvas)
         until(app,lambda:outlined.cget('border_width') == 2)
         assert outlined.cget('border_width') == 2
-        surface.stop_speech_button._canvas.focus_force()
+        focus_native(app,surface.stop_speech_button._canvas)
         until(app,lambda:outlined.cget('border_width') == 1)
         assert outlined.cget('border_width') == 1
     finally:
@@ -442,7 +453,7 @@ def test_focus_loss_cancels_queued_automatic_speech_without_cancelling_agent(wor
     elif destination=='other_window':
         auxiliary=ctk.CTkToplevel(app)
         auxiliary.geometry('260x140')
-        auxiliary.focus_force()
+        focus_native(app,auxiliary)
     else:
         panel.open_settings()
     try:

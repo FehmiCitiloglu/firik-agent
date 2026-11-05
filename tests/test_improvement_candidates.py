@@ -9,6 +9,7 @@ import asyncio
 from copy import deepcopy
 import difflib
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -205,6 +206,11 @@ def test_candidate_cannot_modify_evaluator_assertions_or_authorization(engine, r
 def test_code_promotion_uses_existing_worktree_controller_and_safe_rollback(engine, repo):
     payload = host_receipt(engine, "code", code(engine, repo))
     assert engine.validate("code", payload)["passed"]
+    if os.name == "nt":
+        with pytest.raises(WorkspaceError, match="POSIX dirfd"):
+            engine.apply("code", payload)
+        assert git(repo, "status", "--porcelain") == ""
+        return
     applied = engine.apply("code", payload)
     assert "return value * 2" in (repo / "example.py").read_text()
     assert applied["committed"] is False
@@ -218,6 +224,7 @@ def test_stale_code_and_conflicting_rollback_preserve_new_edits(engine, repo):
     assert not engine.validate("code", payload)["passed"]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Safe integration requires POSIX dirfd support")
 def test_code_rollback_preserves_conflicting_user_edits(engine, repo):
     payload = host_receipt(engine, "code", code(engine, repo))
     applied = engine.apply("code", payload)

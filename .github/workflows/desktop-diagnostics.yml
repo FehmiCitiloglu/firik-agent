@@ -8,7 +8,11 @@ permissions:
   contents: read
 jobs:
   native-layout:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
@@ -16,4 +20,14 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -e '.[dev,desktop-build]'
-      - run: python -m pytest 'tests/test_ui_markdown.py::test_code_and_wide_tables_fit_without_clipping_reply[Dark-1.25]' -q -s
+      - if: runner.os == 'macOS'
+        run: python -m pytest 'tests/test_ui_markdown.py::test_code_and_wide_tables_fit_without_clipping_reply[Dark-1.25]' -q -s
+      - if: runner.os == 'Windows'
+        run: |
+          python -m pytest tests/test_improvement_candidates.py -q
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pytest tests/test_ui_voice_experience.py::test_microphone_permission_error_exposes_retry_and_text_fallback -q
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pytest tests/test_ui_voice_experience.py::test_voice_surface_follows_runtime_theme_and_restores_outlined_focus -q
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pytest 'tests/test_ui_voice_experience.py::test_focus_loss_cancels_queued_automatic_speech_without_cancelling_agent[other_window]' -q

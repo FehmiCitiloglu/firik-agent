@@ -371,7 +371,9 @@ class VoicePanel(ctk.CTkFrame):
     def _window_unmapped(self, event):
         self._focus_out(event)
         if event.widget in (self.winfo_toplevel(), self._voice_surface):
-            self.after_idle(self._stop_hidden_capture)
+            # CTk briefly withdraws Windows top-levels to repaint the titlebar.
+            # Recheck after that native remap instead of cancelling live input.
+            self.after(50, self._stop_hidden_capture)
 
     def _stop_hidden_capture(self):
         if not self._active or self._closed or not self.controller:
