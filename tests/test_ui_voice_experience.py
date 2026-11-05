@@ -34,7 +34,13 @@ def focus_native(app, widget):
         widget.winfo_toplevel().lift()
         widget.focus_force()
         return app.focus_displayof() is widget
-    until(app,focused)
+    try:
+        until(app,focused)
+    except AssertionError:
+        raise AssertionError(str({"top_state": widget.winfo_toplevel().state(),
+            "owner_state": app.state(), "mapped": widget.winfo_ismapped(),
+            "viewable": widget.winfo_viewable(), "focus": str(app.focus_displayof()),
+            "target": str(widget)})) from None
     settle(app,.02)
 
 

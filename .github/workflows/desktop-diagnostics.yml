@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - '.github/workflows/desktop-diagnostics.yml'
+      - 'firik_agent/ui/components/voice_session.py'
   workflow_dispatch:
 permissions:
   contents: read

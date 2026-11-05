@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+import sys
 import customtkinter as ctk
 
 from firik_agent.ui.theme import THEME_COLORS
@@ -26,6 +27,7 @@ class VoiceSessionPanel(ctk.CTkToplevel):
     """All actions delegate to the existing panel/controller; no new session."""
 
     def __init__(self, owner):
+        self._theme_restore_job = None
         super().__init__(owner)
         self.owner = owner
         self._closed = False
@@ -191,8 +193,27 @@ class VoiceSessionPanel(ctk.CTkToplevel):
     def show_error(self, message):
         self.error_label.configure(text=str(message))
 
+    def _apply_appearance_mode(self, mode_string):
+        super()._apply_appearance_mode(mode_string)
+        if sys.platform == "win32" and not getattr(self, "_closed", True):
+            if self._theme_restore_job is not None:
+                self.after_cancel(self._theme_restore_job)
+            self._theme_restore_job = self.after(50, self._restore_after_theme)
+
+    def _restore_after_theme(self):
+        self._theme_restore_job = None
+        # CTk withdraws the owner to recolor its Windows titlebar. A transient
+        # can inherit that hidden state while its own theme callback runs.
+        # Restore only this live surface, after the owner is visible again.
+        if (not self._closed and self.state() == "withdrawn"
+                and self.owner.winfo_toplevel().state() in {"normal", "zoomed"}):
+            self.deiconify()
+
     def destroy(self):
         self._closed = True
+        if self._theme_restore_job is not None:
+            self.after_cancel(self._theme_restore_job)
+            self._theme_restore_job = None
         if self._layout_job is not None:
             try:
                 self.after_cancel(self._layout_job)
