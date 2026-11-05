@@ -1,0 +1,80 @@
+tests/test_ui_voice_assistant.py::test_local_status_inventory_and_summary_are_visible_without_model_requests
+.                                                                        [100%]
+1 passed in 1.49s
+
+tests/test_ui_voice_assistant.py::test_command_suggestion_cancels_capture_and_requires_review_with_auto_send_enabled
+.                                                                        [100%]
+1 passed in 1.69s
+
+tests/test_ui_voice_assistant.py::test_opted_in_spoken_status_answers_and_resumes_listening_without_a_send_click
+.                                                                        [100%]
+1 passed in 1.64s
+
+tests/test_ui_voice_assistant.py::test_coding_plan_pause_resume_and_stop_use_existing_task_control
+.                                                                        [100%]
+1 passed in 1.49s
+
+tests/test_ui_voice_assistant.py::test_spoken_task_controls_reach_existing_coding_run_through_real_capture_pipeline
+.                                                                        [100%]
+1 passed in 1.97s
+
+tests/test_ui_voice_assistant.py::test_voice_project_navigation_continues_in_destination_scope_without_starting_task
+.                                                                        [100%]
+1 passed in 2.39s
+
+tests/test_ui_voice_assistant.py::test_actual_progress_and_approval_wait_are_visible_without_exposing_tool_arguments
+.                                                                        [100%]
+1 passed in 1.61s
+
+tests/test_ui_voice_assistant.py::test_navigation_handoff_does_not_restart_capture_after_user_changes_destination
+.                                                                        [100%]
+1 passed in 1.48s
+
+tests/test_ui_voice_assistant.py::test_rejected_suggestion_cannot_rebind_queued_transcript_to_changed_scope
+.                                                                        [100%]
+1 passed in 1.48s
+
+tests/test_ui_voice_assistant.py::test_early_window_close_cancels_initial_layout_even_after_configure_event
+.                                                                        [100%]
+1 passed in 1.43s
+
+tests/test_ui_voice_assistant.py::test_reopening_console_preserves_long_prose_but_filters_secrets_and_hidden_reasoning
+.                                                                        [100%]
+1 passed in 1.52s
+
+tests/test_ui_voice_assistant.py::test_coding_prose_streams_into_console_without_narrating_the_raw_task_stream
+.                                                                        [100%]
+1 passed in 1.64s
+
+tests/test_ui_voice_assistant.py::test_console_orb_tracks_input_and_stops_animation_when_hidden_or_reduced[Dark]
+.                                                                        [100%]
+1 passed in 2.69s
+
+tests/test_ui_voice_assistant.py::test_console_orb_tracks_input_and_stops_animation_when_hidden_or_reduced[Light]
+.                                                                        [100%]
+1 passed in 2.67s
+
+tests/test_ui_voice_experience.py::test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes[Light]
+.                                                                        [100%]
+1 passed in 2.36s
+
+tests/test_ui_voice_experience.py::test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes[Dark]
+.                                                                        [100%]
+1 passed in 2.26s
+
+tests/test_ui_voice_experience.py::test_voice_surface_follows_runtime_theme_and_restores_outlined_focus
+.                                                                        [100%]
+1 passed in 2.79s
+
+tests/test_ui_voice_experience.py::test_session_mute_resume_and_window_close_release_capture_without_agent_cancel
+.                                                                        [100%]
+1 passed in 1.43s
+
+tests/test_ui_voice_settings_section.py::test_voice_form_fits_narrow_native_window_and_theme_without_horizontal_clipping[Light]
+.                                                                        [100%]
+1 passed in 1.95s
+
+tests/test_ui_voice_settings_section.py::test_voice_form_fits_narrow_native_window_and_theme_without_horizontal_clipping[Dark]
+.                                                                        [100%]
+1 passed in 1.96s
+

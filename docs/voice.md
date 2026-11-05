@@ -5,6 +5,61 @@ It uses the selected conversation, execution policy, stream, history and approva
 controls. ASR and TTS have their own providers/models; changing a voice never
 changes the model selected for chat or coding. It does not create a parallel agent session.
 
+## Assistant console
+
+The voice window is a session-bound assistant console. Its animated orb follows
+listening, transcription, review, thinking, execution, playback and error states.
+The center bars and input meter follow actual microphone levels; output playback
+has a state animation, not a fabricated audio waveform. **Hareketi azalt** stops
+decorative motion, and hidden/closed windows stop animation timers. Dark and
+light palettes follow the application's theme. Microphone, speech and task stop
+controls remain visible when the transcript area scrolls.
+The header identifies the current chat or project. **Konuş** also permits a new
+push-to-talk command while a coding task is running and conversational listening
+is inactive; it never cancels that task.
+
+Say a complete phrase while recording or in an explicitly started conversation:
+
+| Example | Behavior |
+| --- | --- |
+| Jarvis, ne yapıyorsun? / Görev ne durumda? | Report actual selected-session activity; no model request. |
+| Projelerimi listele / Sohbetlerimi listele | List existing names, without creating projects or conversations. |
+| Evren projesine geç / Planlama sohbetine geç | Resolve a unique exact existing name and navigate after review. |
+| Kodlamaya geç | Open an existing coding session; choose when multiple targets exist. |
+| Görevi duraklat / Göreve devam et / Görevi durdur | Use the selected coding run's ordinary control service. Pause/resume are coding-only. |
+| Görev planını göster / Son görevi özetle | Read the recorded plan or latest assistant result; an unfinished task is identified as unfinished. |
+| Ayarları aç / Sohbete geç | Navigate through the application's normal views. |
+| Neler yapabilirsin? | Explain available application controls locally. |
+
+**Firik** and **Jarvis** are optional transcript prefixes, including `Hey Firik`;
+they do not enable wake-word or background listening. `Lütfen` / `please` can
+surround a complete command. Compound or arbitrary phrases are not guessed as
+navigation commands; task descriptions continue through the normal selected
+chat/coding agent, with its context, tools and approvals.
+
+**Sesle neler yapabilirim?** exposes contextual command suggestions. Selecting a
+suggestion cancels unfinished audio and opens an editable review, even when
+ordinary voice auto-send is enabled. It executes only after **Gönder**. Exact
+read-only status/inventory/plan commands use local application state; reading
+their answer aloud uses the configured TTS provider. Speech cannot approve a
+tool or plan.
+When **Sıradan istekleri otomatik gönder** is enabled and **Göndermeden önce her
+transkripti incele** is disabled, spoken read-only status, inventory, plan and
+summary queries can answer and return to listening without a send click.
+Navigation, pause/resume and task cancellation still require transcript review.
+
+Reviewed navigation to another chat/project continues an active voice
+conversation with the destination's actual session/project scope. Source audio
+is cancelled first. A busy destination opens its console without starting
+listening or a new task. Leaving for a non-conversation view, such as settings,
+does not keep an invisible microphone session running.
+
+The console shows real tool progress and approval waits without copying tool
+arguments or hidden reasoning. Visible assistant prose streams into its answer
+area (bounded to 8,000 characters); the normal chat retains the full history and
+technical evidence. Reopening the console applies the same secret/hidden-text
+filters as live updates.
+
 ## Start here
 
 Install `python -m pip install -e '.[voice]'`, launch `firik-gui`, then open
@@ -32,6 +87,8 @@ conversation or project keeps its own LLM.
   utterance goes to transcription. Silent windows make no transcription request.
   **Duraklat / Devam et** pauses/resumes the same conversation; **Sohbetten çık**
   ends the voice session. Follow-ups retain the conversation's session ID.
+  Starting a conversation clears a previous **Sesli komut** selection so ordinary
+  questions can be sent from its review window. Exact supported commands still work.
 - Final recognition appears in an editable review field. **Gönder / Uygula**,
   **Kopyala**, **Yeniden kaydet**, and **Vazgeç** send/apply, copy, start a new
   recording, or discard. Transcripts stay outside history until submitted through
@@ -73,7 +130,9 @@ A spoken `Firik,` prefix is stripped after transcription. It is not a wake word:
 the user must first hold the control or explicitly start a conversational session.
 Command parsing uses complete allowlisted phrases, never fuzzy intent matching.
 Commands work in both modes; the separate **Sesli komut** selection restricts
-submission to supported commands. Unknown command text stays available to edit.
+push-to-talk submission outside a voice conversation to supported commands.
+Unknown command text stays available to edit. Review errors also appear next to
+**Gönder** in the voice window, with the rejected transcript preserved for editing.
 
 | Spoken example | Actual application path |
 | --- | --- |
@@ -86,7 +145,8 @@ submission to supported commands. Unknown command text stays available to edit.
 | stop response / yanıtı durdur | Reviewed cancellation through the existing session/run service. |
 | new chat / yeni sohbet | Reviewed navigation through the normal chat workspace (chat surface only). |
 
-Auto-send can apply the exact read-last and stop-speaking commands. Navigation,
+Auto-send can apply exact read-only status/inventory/plan/summary queries as well
+as read-last and stop-speaking commands. Navigation,
 new-chat and agent-cancellation commands always require review. No voice command
 approves a tool or plan. Transcription uses `/audio/transcriptions`, never a
 translation endpoint. `auto` omits the language hint; `tr` / `en` supply one.

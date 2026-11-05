@@ -321,6 +321,7 @@ class VoiceSettingsFrame(ctk.CTkFrame):
         page = "Gizlilik ve yardım"
         self._check(page, "auto_send", "Sıradan istekleri otomatik gönder")
         self._check(page, "review_before_send", "Göndermeden önce her transkripti incele")
+        self._note(page, "Otomatik gönderim açık ve her transkripti inceleme kapalıysa durum, proje/sohbet listesi ve plan sorguları da yanıtlanır. Gezinme ve görev kontrolü inceleme bekler.")
         self._note(page, "Transkript onayı araç veya plan onayı değildir. Hassas işlemler ilgili işlem ekranında ayrıca incelenir; sesli onay kabul edilmez.")
         self._check(page, "barge_in", "Ses çalarken araya gir", disabled=True)
         self._note(page, "Yankı iptali yok: yanıt okunurken mikrofon kapalıdır. Araya girmek için Basılı tut sesi durdurur. Kulaklık önerilir.")

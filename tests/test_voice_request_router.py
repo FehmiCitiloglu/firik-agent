@@ -85,7 +85,8 @@ def test_ambiguous_destructive_utterance_never_reaches_agent(text):
 
 
 @pytest.mark.parametrize('text',['approve','yes','allow all','approve all tools','approve pending tool calls',
-                                'Firik, onayla','tüm araçları onayla','planı onayla'])
+                                'Firik, onayla','tüm araçları onayla','planı onayla',
+                                'Jarvis, lütfen onayla', 'please approve the tool', 'onayla lütfen'])
 def test_speech_cannot_approve_a_tool_or_plan(text):
     instance,calls = router()
     with pytest.raises(VoiceApprovalRejected):

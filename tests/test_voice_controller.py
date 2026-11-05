@@ -134,6 +134,38 @@ def test_session_cancel_discards_already_queued_transcript(runtime):
     c.close()
 
 
+def test_typed_review_cancels_unfinished_capture_and_never_calls_asr(runtime):
+    recorder = Recorder()
+    c, d, states, transcripts, errors, _, requests = controller(runtime, recorder=recorder)
+    try:
+        assert c.start_recording() and recorder.started.wait(1)
+        assert c.review_text('Projelerimi listele')
+        assert recorder.finished.wait(1)
+        assert not c.review_text('Do not replace the pending review')
+        d.drain()
+        assert transcripts == ['Projelerimi listele'] and not requests and not errors
+        assert c.state_id.value == 'awaiting_confirmation'
+        assert c.transcript_resolved(submitted=False)
+        assert c.state_id.value == 'ready'
+    finally:
+        c.close()
+
+
+def test_typed_review_is_generation_bound_and_disabled_or_empty_text_is_rejected(runtime):
+    c, d, _, transcripts, _, _, requests = controller(runtime)
+    try:
+        assert not c.review_text(' ') and not c.review_text('x' * (MAX_TRANSCRIPT_CHARS + 1))
+        assert c.review_text('Ne yapıyorsun?')
+        c.bind_session('another-session')
+        d.drain()
+        assert not transcripts and not requests
+        c.settings = VoiceSettings(enabled=False)
+        assert not c.review_text('Projelerimi listele')
+    finally:
+        c.close()
+    assert not c.review_text('Projelerimi listele')
+
+
 def test_completed_agent_speech_cannot_invalidate_pending_dictation(runtime):
     c, d, _, transcripts, errors, _, requests = controller(runtime, recorder=Recorder(wait=False))
     try:

@@ -312,7 +312,7 @@ class FirikApp(ctk.CTk):
         self.views["settings"] = SettingsView(self.content_container, service=self.service)
         self.views["about"] = AboutView(self.content_container)
 
-    def open_existing_coding_conversation(self) -> bool:
+    def open_existing_coding_conversation(self, *, continue_voice=False) -> bool:
         """Navigate to an existing coding session without starting agent work."""
         projects = self.views["projects"]
         candidates = []
@@ -328,6 +328,8 @@ class FirikApp(ctk.CTk):
             if projects.active_workspace_tab != "coding":
                 projects._switch_workspace_tab("coding")
             self.show_view("projects")
+            if continue_voice:
+                self._continue_voice_navigation()
 
         if current is not None or len(candidates) == 1:
             open_project((current or candidates[0]).id)
@@ -366,39 +368,77 @@ class FirikApp(ctk.CTk):
                           for project in projects.project_service.db.list_projects())
         return tuple(result)
 
+    def _active_voice_panel(self):
+        if self.active_tab == "chat":
+            return getattr(self.views["chat"].current, "voice_panel", None)
+        projects = self.views.get("projects")
+        if self.active_tab == "projects" and getattr(projects, "active_workspace_tab", None) == "coding":
+            panel = getattr(projects, "coding_voice_panel", None)
+            return panel if (panel is not None and panel.winfo_exists()
+                             and projects.workspace_container.winfo_manager() == "grid") else None
+        return None
+
+    def _continue_voice_navigation(self):
+        """Continue an explicitly navigated voice conversation in its new scope."""
+        panel = self._active_voice_panel()
+        if panel is None:
+            return
+        session_id = panel.get_session_id()
+        def resume():
+            if (self._closing or self._active_voice_panel() is not panel or panel._closed
+                    or not panel._active or panel.get_session_id() != session_id):
+                return
+            if panel.is_busy():
+                panel._controller().sync_agent_state(True)
+                panel.show_voice_surface()
+            else:
+                panel.start_conversation()
+        self.after_idle(resume)
+
     def handle_voice_command(self, request) -> bool:
         """Deterministic UI actions only; agent tasks use their normal composer."""
         from firik_agent.voice.commands import VoiceCommand
         from firik_agent.voice.summaries import agent_activity_summary, coding_speech_summary
         projects, chat = self.views.get("projects"), self.views.get("chat")
         command, destination = request.command, request.destination
+        state = getattr(projects, "_coding_states", {}).get(request.project_id) if projects else None
+        page = getattr(chat, "pages", {}).get(request.session_id) if chat else None
+        panel = getattr(projects, "coding_voice_panel", None) if request.intended_target == "coding" else getattr(page, "voice_panel", None)
+        follow_voice = bool(panel is not None and panel._conversation)
         if destination is not None:
             if destination not in self.voice_destinations():
                 return False
             if command == VoiceCommand.OPEN_TAB and destination.id in self.views:
                 self.show_view(destination.id)
+                if follow_voice:
+                    self._continue_voice_navigation()
                 return True
             if command == VoiceCommand.SELECT_CONVERSATION and chat is not None:
                 # open_chat reuses the page or existing session restoration.
                 chat.open_chat(destination.id)
                 self.show_view("chat")
+                if follow_voice:
+                    self._continue_voice_navigation()
                 return True
             if command == VoiceCommand.SELECT_PROJECT and projects is not None:
                 projects.show_workspace_screen(destination.id)
+                projects._switch_workspace_tab("coding")
                 self.show_view("projects")
+                if follow_voice:
+                    self._continue_voice_navigation()
                 return True
         if command == VoiceCommand.NEW_CHAT and chat is not None:
             chat.new_chat()
             self.show_view("chat")
+            if follow_voice:
+                self._continue_voice_navigation()
             return True
         if command == VoiceCommand.SWITCH_CODING:
-            return self.open_existing_coding_conversation()
-        state = getattr(projects, "_coding_states", {}).get(request.project_id) if projects else None
-        page = getattr(chat, "pages", {}).get(request.session_id) if chat else None
-        panel = getattr(projects, "coding_voice_panel", None) if request.intended_target == "coding" else getattr(page, "voice_panel", None)
+            return self.open_existing_coding_conversation(continue_voice=follow_voice)
         if command in {VoiceCommand.PAUSE_AGENT, VoiceCommand.RESUME_AGENT}:
             if not state or request.intended_target != "coding":
-                return False
+                from firik_agent.voice.intent_router import VoiceUnsupportedCommand
+                raise VoiceUnsupportedCommand("Görevi duraklatma ve sürdürme kodlama oturumunda kullanılabilir. Kodlamaya geçip yeniden deneyin.")
             action = "pause" if command == VoiceCommand.PAUSE_AGENT else "resume"
             if not self.service.coding_control(request.session_id, action):
                 return False
@@ -406,6 +446,8 @@ class FirikApp(ctk.CTk):
             state["status"] = "İşlem sınırında duraklatılıyor…" if action == "pause" else "Devam ediliyor…"
             if projects.current_project_id == request.project_id:
                 projects._refresh_coding_display()
+            if panel is not None:
+                panel.command_feedback(state["status"])
             return True
         if command == VoiceCommand.VIEW_ACTIVITY:
             if state and projects.current_project_id == request.project_id:
@@ -418,8 +460,46 @@ class FirikApp(ctk.CTk):
                 return True
             return False
         if command == VoiceCommand.AGENT_STATUS:
-            summary = (agent_activity_summary(state["cockpit"].agents, state["activities"]) if state else
+            summary = ("Görev duraklatıldı." if state and state.get("busy") and state.get("paused") else
+                       "İşlem onayı bekleniyor; ana penceredeki onay ekranını inceleyin." if state and state.get("busy") and state.get("pending_approvals") else
+                       agent_activity_summary(state["cockpit"].agents, state["activities"]) if state and state.get("busy") else
                        "Mevcut sohbet ajanı yanıt hazırlıyor." if page and page.is_streaming else "Bu oturumda çalışan ajan yok.")
+        elif command in {VoiceCommand.LIST_PROJECTS, VoiceCommand.LIST_CONVERSATIONS}:
+            kind = "project" if command == VoiceCommand.LIST_PROJECTS else "conversation"
+            items = [item.label for item in self.voice_destinations() if item.kind == kind]
+            title = "Projeleriniz" if kind == "project" else "Sohbetleriniz"
+            summary = (title + ": " + "; ".join(items[:10]) + "." if items else title + " henüz boş.")
+            if len(items) > 10:
+                summary += f" Toplam {len(items)} kayıt var; ilk onu gösteriliyor."
+            summary += (' Geçiş için “proje adı projesine geç” diyebilirsiniz.' if kind == "project" else
+                        ' Geçiş için “sohbet adı sohbetine geç” diyebilirsiniz.')
+        elif command == VoiceCommand.TASK_SUMMARY:
+            if state:
+                project = projects.project_service.db.get_project(request.project_id)
+                last = next((row.get("content", "") for row in reversed(state.get("messages", ()))
+                             if row.get("role") == "assistant" and row.get("content")), "")
+                summary = coding_speech_summary(last or state.get("status") or "Henüz görev sonucu yok.",
+                    project_name=project.name if project else None,
+                    activities=state.get("activities", ()))
+                if state.get("busy"):
+                    summary = "Görev henüz sürüyor. " + summary
+            else:
+                last = next((row.get("content", "") for row in reversed(getattr(page, "messages", ()))
+                             if row.get("role") == "assistant" and not row.get("pending")), "")
+                summary = coding_speech_summary(last) if last else "Bu oturumda henüz tamamlanan bir yanıt yok."
+        elif command == VoiceCommand.SHOW_PLAN:
+            plan = state.get("plan", ()) if state else ()
+            if isinstance(plan, dict):
+                plan = plan.get("steps", ())
+            if not isinstance(plan, (list, tuple)):
+                plan = [plan] if isinstance(plan, str) else ()
+            steps = [str(item.get("title") or item.get("step") or item.get("description") or "")
+                     if isinstance(item, dict) else str(item) for item in list(plan or ())[:8]]
+            summary = "Görev planı: " + "; ".join(filter(None, steps)) if any(steps) else "Bu oturumda henüz kayıtlı bir görev planı yok."
+        elif command == VoiceCommand.HELP:
+            summary = ("Projeleri ve sohbetleri listeleyebilir, adlarıyla aralarında geçebilir, görev durumunu ve son sonucu sorabilirsiniz. "
+                       "Kodlama oturumunda görevi duraklatabilir, sürdürebilir veya durdurabilirsiniz. "
+                       "Yeni bir görev için ne yapılacağını söyleyin. İşlem onayları ana pencereden verilir.")
         elif command == VoiceCommand.DESCRIBE_PROJECT:
             project_id = request.project_id or getattr(projects, "current_project_id", None)
             project = projects.project_service.db.get_project(project_id) if projects and project_id else None
@@ -431,8 +511,9 @@ class FirikApp(ctk.CTk):
             return False
         if panel is None:
             return False
-        panel.status.configure(text=summary)
-        panel.read_text(summary)
+        from firik_agent.projects.indexer import sanitize_secrets
+        from firik_agent.voice.speech import speech_text
+        panel.command_feedback(speech_text(sanitize_secrets(summary)))
         return True
 
 

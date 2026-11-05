@@ -284,6 +284,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             on_submit_request=self._submit_coding_voice_request,
             get_session_id=lambda: self._coding_state()["session"].session_id,
             get_project_id=lambda: self.current_project_id, target="coding",
+            get_context_label=lambda: project.name,
             get_workspace_id=self._voice_workspace_id,
             compact=True, on_text_fallback=lambda: self.coding_input.focus_set(),
             is_busy=lambda: self._coding_state()["busy"],
@@ -800,6 +801,8 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 return
             if event.metadata.get("project_id", project_id) != project_id or event.metadata.get("task_id", state["task_id"]) != state["task_id"]:
                 return
+            if visible() and panel is not None and panel.winfo_exists():
+                panel.report_agent_event(event)
             state["cockpit"].apply(event)
             update_accounting_state(state, event)
             kind = event.type.value
@@ -814,6 +817,9 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 refresh(True)
             elif kind == "text_delta" and event.content:
                 content = sanitize_secrets(event.content)
+                if visible() and panel is not None and panel.winfo_exists():
+                    # Coding narration stays with the final task summary.
+                    panel.response_delta(content, speak=False)
                 response["content"] += content
                 state["text"] += content
                 refresh()

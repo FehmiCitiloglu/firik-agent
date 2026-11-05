@@ -1,0 +1,108 @@
+{
+  "mode": "fresh native process per case",
+  "tests": [
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_local_status_inventory_and_summary_are_visible_without_model_requests",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_command_suggestion_cancels_capture_and_requires_review_with_auto_send_enabled",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_opted_in_spoken_status_answers_and_resumes_listening_without_a_send_click",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_coding_plan_pause_resume_and_stop_use_existing_task_control",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_spoken_task_controls_reach_existing_coding_run_through_real_capture_pipeline",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_voice_project_navigation_continues_in_destination_scope_without_starting_task",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_actual_progress_and_approval_wait_are_visible_without_exposing_tool_arguments",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_navigation_handoff_does_not_restart_capture_after_user_changes_destination",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_rejected_suggestion_cannot_rebind_queued_transcript_to_changed_scope",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_early_window_close_cancels_initial_layout_even_after_configure_event",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_reopening_console_preserves_long_prose_but_filters_secrets_and_hidden_reasoning",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_coding_prose_streams_into_console_without_narrating_the_raw_task_stream",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_console_orb_tracks_input_and_stops_animation_when_hidden_or_reduced[Dark]",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_assistant.py::test_console_orb_tracks_input_and_stops_animation_when_hidden_or_reduced[Light]",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_experience.py::test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes[Light]",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_experience.py::test_voice_surface_and_compact_composer_fit_small_native_window_in_both_themes[Dark]",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_experience.py::test_voice_surface_follows_runtime_theme_and_restores_outlined_focus",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_experience.py::test_session_mute_resume_and_window_close_release_capture_without_agent_cancel",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_settings_section.py::test_voice_form_fits_narrow_native_window_and_theme_without_horizontal_clipping[Light]",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_voice_settings_section.py::test_voice_form_fits_narrow_native_window_and_theme_without_horizontal_clipping[Dark]",
+      "exit_code": 0
+    }
+  ],
+  "passed": 20,
+  "total": 20,
+  "seconds": 52.66,
+  "date": "2026-11-05",
+  "headless": {
+    "passed": 320,
+    "command": ".venv/bin/python -m pytest -q tests/test_voice_commands.py tests/test_voice_request_router.py tests/test_voice_controller.py tests/test_voice_request_service.py tests/test_voice_summaries.py"
+  },
+  "live_audio_or_inference": false,
+  "native_platform": "macOS arm64",
+  "aggregate_capture_observation": "A prior combined process stopped with 104 passed / 1 failed on a blank Settings light-tab pixel capture. Both Settings theme cases passed in fresh native processes, matching scripts/test_desktop.py isolation policy.",
+  "python_3_10_grammar": [
+    "firik_agent/ui/app.py",
+    "firik_agent/ui/coding_workspace.py",
+    "firik_agent/ui/components/voice_panel.py",
+    "firik_agent/ui/components/voice_session.py",
+    "firik_agent/ui/components/voice_orb.py",
+    "firik_agent/ui/components/voice_settings.py",
+    "firik_agent/ui/views/chat_view.py",
+    "firik_agent/voice/commands.py",
+    "firik_agent/voice/controller.py",
+    "firik_agent/voice/intent_router.py"
+  ]
+}

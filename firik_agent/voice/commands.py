@@ -23,13 +23,18 @@ class VoiceCommand(str, Enum):
     REPLAY_SPEECH = "replay_speech"
     DESCRIBE_PROJECT = "describe_project"
     AGENT_STATUS = "agent_status"
+    LIST_PROJECTS = "list_projects"
+    LIST_CONVERSATIONS = "list_conversations"
+    TASK_SUMMARY = "task_summary"
+    SHOW_PLAN = "show_plan"
+    HELP = "help"
 
 
 def strip_invocation(text: str) -> str:
     """Remove an explicit spoken name, without pretending it is a wake detector."""
     if not isinstance(text, str):
         return ""
-    return re.sub(r"^\s*firik(?:\s*[,.:!?]\s*|\s+)", "", text, count=1, flags=re.IGNORECASE).strip()
+    return re.sub(r"^\s*(?:hey\s+)?(?:firik|jarvis)(?:\s*[,.:!?]\s*|\s+)", "", text, count=1, flags=re.IGNORECASE).strip()
 
 
 def _normalize(text: str) -> str:
@@ -39,19 +44,24 @@ def _normalize(text: str) -> str:
 
 
 _ALIASES = {
-    VoiceCommand.STOP_RESPONSE: ("yanıtı durdur", "cevabı durdur", "yanıtı iptal et", "stop response", "cancel response", "stop agent", "cancel agent", "cancel task", "ajanı durdur", "ajanı iptal et", "görevi iptal et"),
+    VoiceCommand.STOP_RESPONSE: ("yanıtı durdur", "cevabı durdur", "yanıtı iptal et", "stop response", "cancel response", "stop agent", "cancel agent", "cancel task", "ajanı durdur", "ajanı iptal et", "görevi iptal et", "görevi durdur", "çalışmayı durdur", "işlemi iptal et"),
     VoiceCommand.NEW_CHAT: ("yeni sohbet", "yeni sohbet aç", "new chat", "start new chat"),
     VoiceCommand.READ_LAST: ("son yanıtı oku", "son cevabı oku", "yanıtı oku", "read last response", "read response", "read your last answer aloud", "read your last response aloud"),
     VoiceCommand.STOP_SPEECH: ("seslendirmeyi durdur", "konuşmayı durdur", "okumayı durdur", "sesi durdur", "stop speaking", "stop speech"),
-    VoiceCommand.SWITCH_CODING: ("switch to the existing coding conversation", "switch to coding conversation", "mevcut kodlama sohbetine geç", "kodlama sohbetine geç"),
+    VoiceCommand.SWITCH_CODING: ("switch to the existing coding conversation", "switch to coding conversation", "mevcut kodlama sohbetine geç", "kodlama sohbetine geç", "kodlamaya geç", "kodlama ekranını aç"),
     VoiceCommand.VIEW_ACTIVITY: ("view activity", "show activity", "open activity", "etkinliği göster", "etkinlikleri göster", "etkinliği aç"),
-    VoiceCommand.PAUSE_AGENT: ("pause agent", "pause task", "ajanı duraklat", "görevi duraklat"),
-    VoiceCommand.RESUME_AGENT: ("resume agent", "resume task", "ajanı devam ettir", "görevi devam ettir", "göreve devam et"),
+    VoiceCommand.PAUSE_AGENT: ("pause agent", "pause task", "ajanı duraklat", "görevi duraklat", "çalışmayı duraklat", "işlemi duraklat"),
+    VoiceCommand.RESUME_AGENT: ("resume agent", "resume task", "ajanı devam ettir", "görevi devam ettir", "göreve devam et", "çalışmaya devam et", "işlemi sürdür"),
     VoiceCommand.MUTE_SPEECH: ("mute speech", "mute voice", "sesi kapat", "seslendirmeyi kapat"),
     VoiceCommand.UNMUTE_SPEECH: ("unmute speech", "unmute voice", "sesi aç", "seslendirmeyi aç"),
     VoiceCommand.REPLAY_SPEECH: ("replay speech", "replay last response", "seslendirmeyi tekrar oynat", "son yanıtı tekrar oku"),
     VoiceCommand.DESCRIBE_PROJECT: ("describe the active project", "describe active project", "describe the current project", "describe current project", "etkin projeyi anlat", "aktif projeyi anlat", "mevcut projeyi anlat"),
-    VoiceCommand.AGENT_STATUS: ("which agent is working", "agent status", "which agents are working", "çalışan ajanlar", "hangi ajan çalışıyor", "ajan durumu"),
+    VoiceCommand.AGENT_STATUS: ("which agent is working", "agent status", "which agents are working", "çalışan ajanlar", "hangi ajan çalışıyor", "ajan durumu", "ne yapıyorsun", "görev ne durumda", "durum raporu ver", "işlem ne durumda"),
+    VoiceCommand.LIST_PROJECTS: ("list projects", "show my projects", "projelerimi listele", "projelerimi göster", "hangi projeler var"),
+    VoiceCommand.LIST_CONVERSATIONS: ("list conversations", "list chats", "sohbetlerimi listele", "son sohbetlerimi göster"),
+    VoiceCommand.TASK_SUMMARY: ("summarize the last task", "son görevi özetle", "son işlemi özetle", "ne yaptın", "son sonucu özetle"),
+    VoiceCommand.SHOW_PLAN: ("show the plan", "görev planını göster", "planı göster", "sıradaki adım ne"),
+    VoiceCommand.HELP: ("voice commands", "what can you do", "neler yapabilirsin", "sesli komutları göster", "komutları göster"),
 }
 _COMMANDS = {_normalize(alias): command for command, aliases in _ALIASES.items() for alias in aliases}
 
@@ -67,11 +77,20 @@ for _tab, _names in _TAB_NAMES.items():
     for _name in _names:
         for _phrase in (f"open {_name}", f"open {_name} tab", f"{_name} aç", f"{_name} sekmesini aç"):
             _TAB_COMMANDS[_normalize(_phrase)] = _tab
+for _phrase, _tab in {"ayarları aç": "settings", "ayarlara geç": "settings",
+        "projeleri aç": "projects", "projelere geç": "projects", "sohbete geç": "chat",
+        "sohbet ekranını aç": "chat", "kendini geliştirme ekranını aç": "improvement"}.items():
+    _TAB_COMMANDS[_normalize(_phrase)] = _tab
+
+
+def _command_text(text):
+    value = strip_invocation(text).strip().rstrip(".!?。！？")
+    return re.sub(r"^(?:lütfen|please)\s+|\s+(?:lütfen|please)$", "", value, flags=re.I).strip()
 
 
 def command_tab(text: str) -> str | None:
     """Return an existing built-in tab ID for a complete local command."""
-    return _TAB_COMMANDS.get(_normalize(strip_invocation(text))) if isinstance(text, str) else None
+    return _TAB_COMMANDS.get(_normalize(_command_text(text))) if isinstance(text, str) else None
 
 
 def selection_command(text: str):
@@ -81,7 +100,7 @@ def selection_command(text: str):
     """
     if not isinstance(text, str) or len(text) > 500:
         return None
-    value = strip_invocation(text).strip().rstrip(".!?。！？")
+    value = _command_text(text)
     patterns = (
         (VoiceCommand.SELECT_CONVERSATION, r"(?:open|select|switch to) (?:chat|conversation) (.+)"),
         (VoiceCommand.SELECT_PROJECT, r"(?:open|select|switch to) project (.+)"),
@@ -89,6 +108,8 @@ def selection_command(text: str):
         (VoiceCommand.SELECT_PROJECT, r"proje (.+?) (?:aç|seç)"),
         (VoiceCommand.SELECT_PROJECT, r"(.+?) projesini (?:aç|seç)"),
         (VoiceCommand.SELECT_CONVERSATION, r"(.+?) sohbetini (?:aç|seç)"),
+        (VoiceCommand.SELECT_PROJECT, r"(.+?) projesine geç"),
+        (VoiceCommand.SELECT_CONVERSATION, r"(.+?) sohbetine geç"),
     )
     for command, pattern in patterns:
         match = re.fullmatch(pattern, value, flags=re.IGNORECASE)
@@ -112,7 +133,7 @@ def parse_command(text: str) -> VoiceCommand | None:
     """
     if not isinstance(text, str) or len(text) > 200:
         return None
-    value = _normalize(strip_invocation(text))
+    value = _normalize(_command_text(text))
     direct = _COMMANDS.get(value) or (VoiceCommand.OPEN_TAB if value in _TAB_COMMANDS else None)
     selected = selection_command(text) if direct is None else None
     return direct or (selected[0] if selected else None)
@@ -130,7 +151,9 @@ def requires_review(text: str) -> bool:
         return True
     command = parse_command(value)
     if command is not None:
-        return command not in {VoiceCommand.STOP_SPEECH, VoiceCommand.READ_LAST}
+        return command not in {VoiceCommand.STOP_SPEECH, VoiceCommand.READ_LAST,
+            VoiceCommand.AGENT_STATUS, VoiceCommand.LIST_PROJECTS, VoiceCommand.LIST_CONVERSATIONS,
+            VoiceCommand.TASK_SUMMARY, VoiceCommand.SHOW_PLAN, VoiceCommand.HELP, VoiceCommand.DESCRIBE_PROJECT}
     sensitive = (
         r"\b(delete|remove|erase|wipe|deploy|publish|send|email|message|purchase|buy|pay|"
         r"transfer|approve|allow|grant|revoke|execute|run|install|uninstall|commit|push|"
@@ -145,3 +168,12 @@ def requires_review(text: str) -> bool:
         r"^(explain|summarize|describe|translate|what|why|how|show|tell|compare|list)\b|"
         r"\b(aç[ıi]kla|acikla|özetle|ozetle|anlat|çevir|cevir|nedir|neden|nas[ıi]l)\b", value)
     return ordinary is None
+
+
+def command_examples(target="conversation"):
+    """Discoverable, complete phrases; selecting one still opens UI review."""
+    common = (("Durum raporu", "Ne yapıyorsun?"), ("Projelerim", "Projelerimi listele"),
+              ("Sohbetlerim", "Sohbetlerimi listele"), ("Son sonuç", "Son görevi özetle"))
+    coding = (("Görevi duraklat", "Görevi duraklat"), ("Göreve devam et", "Göreve devam et"),
+              ("Görev planı", "Görev planını göster")) if target == "coding" else (("Kodlamaya geç", "Kodlamaya geç"),)
+    return common + coding + (("Son yanıtı oku", "Son yanıtı oku"),)

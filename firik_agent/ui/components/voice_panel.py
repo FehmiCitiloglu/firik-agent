@@ -15,7 +15,7 @@ class VoicePanel(ctk.CTkFrame):
     def __init__(self, master, service, *, on_dictation, actions, on_submit=None,
                  get_session_id=None, is_busy=None, on_submit_request=None,
                  get_project_id=None, get_workspace_id=None, target="conversation",
-                 compact=False, on_text_fallback=None, **kwargs):
+                 compact=False, on_text_fallback=None, get_context_label=None, **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
         self.service, self.on_dictation, self.actions = service, on_dictation, actions
         self.on_submit = on_submit
@@ -23,11 +23,15 @@ class VoicePanel(ctk.CTkFrame):
         self.get_project_id = get_project_id or (lambda: None)
         self.get_workspace_id = get_workspace_id or (lambda: None)
         self.target = target
+        self.get_context_label = get_context_label or (lambda: "Mevcut proje" if target == "coding" else "Mevcut sohbet")
         self.compact = compact
         self.on_text_fallback = on_text_fallback or (lambda: None)
         self.composer_mic_button = None
         self._voice_surface = None
         self._response_preview_text = ""
+        self._activity_text = ""
+        self._manual_review = False
+        self._voice_motion_enabled = True
         self._last_transcript = ""
         self._last_operation = "idle"
         self._last_state = "idle"
@@ -208,9 +212,15 @@ class VoicePanel(ctk.CTkFrame):
             return False
         return True
 
-    def _prepare_capture(self):
+    def _prepare_capture(self, *, conversation=False):
         if not self._allowed() or self._pending:
             return False
+        self._manual_review = False
+        # Conversation input accepts ordinary messages and exact commands. A
+        # previous command-only PTT selection must not restrict that session,
+        # including retries and recordings made while it remains active.
+        if conversation or self._conversation:
+            self.mode.set("Bas-konuş")
         self._recording_mode = self.mode.get()
         self._capture_session = self.get_session_id()
         self._capture_scope = self._voice_scope() if self._capture_session else None
@@ -227,6 +237,10 @@ class VoicePanel(ctk.CTkFrame):
             from firik_agent.voice.intent_router import VoiceRequestRouter
             from firik_agent.voice.commands import VoiceCommand
             def handler(request):
+                top = self.winfo_toplevel()
+                if (request.command in {VoiceCommand.NEW_CHAT, VoiceCommand.SWITCH_CODING}
+                        and hasattr(top, "handle_voice_command")):
+                    return bool(top.handle_voice_command(request))
                 action = self.actions.get(request.command.value)
                 if action is not None:
                     return action() is not False
@@ -234,7 +248,6 @@ class VoicePanel(ctk.CTkFrame):
                          "replay_speech": self.replay_speech, "stop_speech": self.stop_speaking}
                 if request.command.value in local:
                     return local[request.command.value]() is not False
-                top = self.winfo_toplevel()
                 return bool(getattr(top, "handle_voice_command", lambda request: False)(request))
             options = dict(on_submit=self._submit_scoped_request,
                 command_handlers={command: handler for command in VoiceCommand},
@@ -386,7 +399,7 @@ class VoicePanel(ctk.CTkFrame):
             self.stop_listening()
 
     def start_conversation(self):
-        if not self._prepare_capture():
+        if not self._prepare_capture(conversation=True):
             return
         controller = self._controller()
         if not hasattr(controller, "start_conversation"):
@@ -439,7 +452,8 @@ class VoicePanel(ctk.CTkFrame):
         self._voice_surface = VoiceSessionPanel(self)
         self._bind_shortcut(force=True)
         self._voice_surface.set_transcript(self._last_transcript, pending=self._pending)
-        self._voice_surface.set_preview(self._response_preview_text)
+        self._voice_surface.set_preview(self._safe_response_preview())
+        self._voice_surface.set_activity(self._activity_text)
         self._sync_voice_surface()
         # Creating a native Windows top-level can pump Tk callbacks before the
         # constructor returns. Replay an error delivered during that interval.
@@ -543,6 +557,7 @@ class VoicePanel(ctk.CTkFrame):
                 or self._capture_session != self.get_session_id()):
             return
         self._pending = True
+        manual_review, self._manual_review = self._manual_review, False
         self._last_transcript = str(text)
         self._stop_duration()
         self.toggle_button.configure(text="Aç / bitir")
@@ -558,9 +573,7 @@ class VoicePanel(ctk.CTkFrame):
                 self._voice_request = self._router().create_request(str(text), self._capture_scope or self._voice_scope(),
                     recognized_language=getattr(text, "recognized_language", None))
             except ValueError as error:
-                self.status.configure(text=str(error))
-                if self._voice_surface is not None:
-                    self._voice_surface.show_error(error)
+                self._show_review_error(error)
                 return
         # Preserve the legacy dictation-only embedding API. Actual chat/coding
         # panels supply on_submit and keep unsent speech solely in this review.
@@ -571,7 +584,7 @@ class VoicePanel(ctk.CTkFrame):
             return
         settings = self._settings()
         from firik_agent.voice.commands import requires_review
-        if (getattr(settings, "auto_send", False) and not getattr(settings, "review_before_send", True)
+        if (not manual_review and getattr(settings, "auto_send", False) and not getattr(settings, "review_before_send", True)
                 and not requires_review(text)):
             # Keep the recognized utterance visible for a Tk draw before the
             # normal submission service starts. No invented partial transcript.
@@ -605,6 +618,52 @@ class VoicePanel(ctk.CTkFrame):
         self.status.configure(text="Metin girişi kullanılabilir.")
         self.on_text_fallback()
 
+    def _show_review_error(self, message):
+        self.status.configure(text=str(message))
+        if self._voice_surface is not None:
+            self._voice_surface.show_error(message)
+
+    def stage_prompt(self, text):
+        """Suggestions are editable requests, never an implicit execution."""
+        if self._pending:
+            self._show_review_error("Önce bekleyen metni gönderin veya vazgeçin.")
+            return False
+        previous_capture = (self._capture_session, self._capture_scope, self._recording_mode, self._manual_review)
+        if not self._prepare_capture(conversation=True):
+            return False
+        controller = self._controller()
+        self._manual_review = True
+        if not getattr(controller, "review_text", lambda text: False)(text):
+            # A finalized ASR result may still be queued for Tk delivery. A
+            # rejected suggestion must not rebind that result to a newer scope.
+            self._capture_session, self._capture_scope, self._recording_mode, self._manual_review = previous_capture
+            self._show_review_error("Önce mevcut transkripti inceleyin veya yeni bir kayıt başlatın.")
+            return False
+        return True
+
+    def command_feedback(self, text):
+        self.status.configure(text=text)
+        self._update_response_preview(text)
+        self.read_text(text)
+
+    def report_agent_event(self, event):
+        """Display real progress without copying arguments, results or reasoning."""
+        kind = getattr(event.type, "value", event.type)
+        labels = {"model_request_started": "İsteğiniz değerlendiriliyor",
+                  "tool_call_result": "İşlem adımı tamamlandı", "tool_call_error": "İşlem adımında hata oluştu",
+                  "approval_required": "Onay bekleniyor · ana pencereden inceleyin",
+                  "approval_decided": "Onay kararı alındı", "plan_updated": "Görev planı güncellendi",
+                  "verification": "Doğrulama adımı yürütülüyor", "done": "Yanıt hazır", "error": "İşlem tamamlanamadı"}
+        if kind == "tool_call_started":
+            text = {"read_file": "Dosya inceleniyor", "write_file": "Dosya güncelleniyor",
+                    "run_command": "Komut çalıştırılıyor", "web_search": "Web'de aranıyor"}.get(event.tool_name, "Bir araçla çalışılıyor")
+        else:
+            text = labels.get(kind)
+        if text:
+            self._activity_text = text
+            if self._voice_surface is not None:
+                self._voice_surface.set_activity(text)
+
     def apply_transcript(self, *, _from_auto=False, _command_only=False):
         if (not self._active or self._closed or not self._pending or self._submitting
                 or self._capture_session != self.get_session_id()):
@@ -613,7 +672,10 @@ class VoicePanel(ctk.CTkFrame):
             return
         text = self.command_text.get().strip()
         if not text:
+            self._show_review_error("Transkript boş. Metin girin veya yeniden kaydedin.")
             return
+        if self._voice_surface is not None:
+            self._voice_surface.show_error("")
         self._submitting = True
         try:
             router = self._router()
@@ -622,17 +684,18 @@ class VoicePanel(ctk.CTkFrame):
                 request = router.create_request(text, self._capture_scope or self._voice_scope())
             elif request.request_text != text:
                 request = router.revise(request, text)
+            # Retain the registered revision even if command-only validation
+            # rejects it, so the user can edit and submit the same review again.
+            self._voice_request = request
             if (self._recording_mode == "Sesli komut" or _command_only) and request.command is None:
-                self.status.configure(text="Komut tanınmadı. Desteklenen komutlar için Ses ayarları bölümünü açın.")
+                self._show_review_error("Komut tanınmadı. Desteklenen komutlar için Ses ayarları bölümünü açın.")
                 return
             if not _from_auto:
                 request = router.confirm(request, source="ui")
             self._voice_request = request
             accepted = router.route(request)
         except ValueError as error:
-            self.status.configure(text=str(error))
-            if self._voice_surface is not None:
-                self._voice_surface.show_error(error)
+            self._show_review_error(error)
             return
         finally:
             self._submitting = False
@@ -646,10 +709,8 @@ class VoicePanel(ctk.CTkFrame):
             if self.controller and hasattr(self.controller, "transcript_resolved"):
                 self.controller.transcript_resolved(submitted=request.command is None)
         else:
-            self.status.configure(text=("Etkin işlem sürüyor. Transkript bekliyor; işlem bitince gönderebilirsiniz."
-                                       if self.is_busy() else "Transkript gönderilmedi. Mevcut taslağı veya etkin işlemi kontrol edin."))
-            if self._voice_surface is not None:
-                self._voice_surface.show_error(self.status.cget("text"))
+            self._show_review_error("Etkin işlem sürüyor. Transkript bekliyor; işlem bitince gönderebilirsiniz."
+                                    if self.is_busy() else "Transkript gönderilmedi. Mevcut taslağı veya etkin işlemi kontrol edin.")
 
     def apply_command(self):
         self.apply_transcript(_command_only=True)
@@ -657,7 +718,7 @@ class VoicePanel(ctk.CTkFrame):
     def _review_current(self):
         if self.controller and getattr(self.controller, "generation", None) != self._review_generation:
             self.dismiss_command(resolve=False)
-            self.status.configure(text="Ses oturumu değişti. Yeni bir kayıt başlatın.")
+            self._show_review_error("Ses oturumu değişti. Yeni bir kayıt başlatın.")
             return False
         return True
 
@@ -686,14 +747,17 @@ class VoicePanel(ctk.CTkFrame):
             self._last_transcript = ""
         if self._voice_surface is not None:
             self._voice_surface.set_transcript(self._last_transcript, pending=False)
+            self._voice_surface.show_error("")
         if pending and resolve and self.controller and hasattr(self.controller, "transcript_resolved"):
             self.controller.transcript_resolved(submitted=False)
 
     def response_started(self, state="thinking", *, from_voice=False):
         self._stop_audio_guard()
         self._response_preview_text = ""
+        self._activity_text = "İsteğiniz hazırlanıyor"
         if self._voice_surface is not None:
             self._voice_surface.set_preview("")
+            self._voice_surface.set_activity(self._activity_text)
         settings = self._settings()
         if self._active and not self._closed and (self.controller or
                 settings.enabled and settings.read_replies and settings.stream_replies):
@@ -719,9 +783,11 @@ class VoicePanel(ctk.CTkFrame):
         if hasattr(self.controller, "mark_agent_state"):
             self.controller.mark_agent_state(state)
 
-    def response_delta(self, text):
+    def response_delta(self, text, *, speak=True):
         settings = self._settings()
         self._update_response_preview(text, append=True)
+        if not speak:
+            return
         if (self._active and not self._closed and self.winfo_ismapped() and settings.enabled
                 and settings.read_replies and settings.stream_replies and self._automatic_audio_allowed()):
             controller = self._controller()
@@ -775,11 +841,14 @@ class VoicePanel(ctk.CTkFrame):
     def _update_response_preview(self, text, *, append=False):
         if not self._settings().enabled or not self._active or self._closed:
             return
-        self._response_preview_text = ((self._response_preview_text + str(text)) if append else str(text))[:2048]
+        self._response_preview_text = ((self._response_preview_text + str(text)) if append else str(text))[:8000]
         if self._voice_surface is not None:
-            from firik_agent.projects.indexer import sanitize_secrets
-            from firik_agent.voice.speech import speech_text
-            self._voice_surface.set_preview(speech_text(sanitize_secrets(self._response_preview_text)))
+            self._voice_surface.set_preview(self._safe_response_preview())
+
+    def _safe_response_preview(self):
+        from firik_agent.projects.indexer import sanitize_secrets
+        from firik_agent.voice.speech import speech_text
+        return speech_text(sanitize_secrets(self._response_preview_text))
 
     def _automatic_audio_allowed(self):
         if (not self._settings().enabled or not self._active or self._closed
@@ -865,6 +934,8 @@ class VoicePanel(ctk.CTkFrame):
         self._voice_request = None
         self._capture_scope = None
         self._response_preview_text = self._last_transcript = ""
+        self._activity_text = ""
+        self._manual_review = False
         if self.controller:
             self.controller.cancel()
         self._holding, self._hold_source = False, None

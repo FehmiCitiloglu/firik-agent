@@ -162,15 +162,17 @@ def test_composer_microphone_shares_send_row_and_keyboard_activates_existing_con
     panel.exit_conversation()
 
 
-def test_dedicated_session_edits_final_transcript_into_same_chat_without_partial_text(workspace,monkeypatch):
+@pytest.mark.parametrize('selected_mode', ['Bas-konuş', 'Sesli komut'])
+def test_dedicated_session_edits_final_transcript_into_same_chat_without_partial_text(workspace,monkeypatch,selected_mode):
     app,view,panel,controller,capture,speaker,streams = setup_chat(workspace,monkeypatch)
     sid = view.session.session_id
+    panel.mode.set(selected_mode)
     panel.start_conversation()
     surface = panel._voice_surface
     until(app,lambda:len(capture.windows)==1 and panel._last_state=='listening')
     assert surface is not None and panel.controller is controller
     assert surface.transcript.get('1.0','end-1c') == '' and not streams
-    assert 'canlı metin sunmuyor' in surface.live_text_note.cget('text')
+    assert 'söyleyin' in surface.live_text_note.cget('text')
     assert surface.send_button.cget('state') == 'disabled'
     panel._on_level(1.7)
     assert surface.level.get() == 1
@@ -184,13 +186,14 @@ def test_dedicated_session_edits_final_transcript_into_same_chat_without_partial
     assert surface.send_button.cget('state') == 'normal'
     assert 'Firik' in surface.transcript.get('1.0','end-1c')
     surface.transcript.delete('1.0','end')
-    surface.transcript.insert('1.0','Summarize this synthetic project in Turkish.')
+    surface.transcript.insert('1.0','Veri yapıları ve algoritmalar hakkında bilgi verir misin?')
     snapshot(surface,'session-review')
     surface.send_button.invoke()
     assert len(streams)==1 and streams[0]['session_id']==sid
+    assert panel.mode.get() == 'Bas-konuş' and panel.apply_button.cget('text') == 'Gönder'
     request = streams[0]['voice_request']
     assert request.original_transcript == 'Firik, explain this synthetic project.'
-    assert request.request_text == 'Summarize this synthetic project in Turkish.'
+    assert request.request_text == 'Veri yapıları ve algoritmalar hakkında bilgi verir misin?'
     assert view.session.session_id==sid and request.recognized_language=='tr'
     surface.stop_speech_button.invoke()
     surface.listen_button.invoke()
@@ -334,10 +337,12 @@ def test_voice_surface_and_compact_composer_fit_small_native_window_in_both_them
     settle(app,.12)
     assert surface.exit_button.winfo_ismapped()
     assert surface.exit_button.winfo_rooty()+surface.exit_button.winfo_height()<=surface.winfo_rooty()+surface.winfo_height()
-    for button in (surface.mic_mute_button, surface.listen_button, surface.stop_speech_button):
+    for button in (surface.mic_mute_button, surface.listen_button, surface.stop_speech_button,
+                   surface.stop_agent_button, surface.text_button, surface.exit_button):
         assert button.winfo_ismapped()
         assert button.winfo_rooty() >= surface.winfo_rooty()
         assert button.winfo_rooty()+button.winfo_height() <= surface.winfo_rooty()+surface.winfo_height()
+        assert button.winfo_rootx()+button.winfo_width() <= surface.winfo_rootx()+surface.winfo_width()
     assert surface.state_label.winfo_width()>180
     assert surface.transcript.winfo_width()<=surface.winfo_width()
     viewport = surface.body._parent_canvas
@@ -345,8 +350,7 @@ def test_voice_surface_and_compact_composer_fit_small_native_window_in_both_them
     assert viewport.winfo_rooty()+viewport.winfo_height()<=surface.exit_button.winfo_rooty()
     viewport.yview_moveto(1)
     settle(app,.06)
-    assert surface.text_button.winfo_rooty()>=viewport.winfo_rooty()
-    assert surface.text_button.winfo_rooty()+surface.text_button.winfo_height()<=viewport.winfo_rooty()+viewport.winfo_height()+5
+    assert surface.body.winfo_width() <= surface.winfo_width()
     viewport.yview_moveto(0)
     settle(app,.05)
     snapshot(surface,'session-'+theme.lower())

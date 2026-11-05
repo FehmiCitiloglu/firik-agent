@@ -534,6 +534,7 @@ class ChatView(ctk.CTkFrame):
 
         self.voice_panel = VoicePanel(bottom_box, self.service, on_dictation=self._insert_dictation,
             on_submit=self._submit_voice_transcript, get_session_id=lambda: self.session.session_id,
+            get_context_label=lambda: self.session.title or "Yeni sohbet",
             on_submit_request=self._submit_voice_request,
             compact=True, on_text_fallback=lambda: self.input_textbox.focus_set(),
             is_busy=lambda: self.is_streaming,
@@ -1021,6 +1022,7 @@ class ChatView(ctk.CTkFrame):
             nonlocal text_before_tools
             if self._stream_token is not stream_token:
                 return
+            self.voice_panel.report_agent_event(evt)
             if evt.type == AgentEventType.MODEL_REQUEST_STARTED:
                 self.voice_panel.agent_activity("thinking")
                 self._show_activity_stage("Model yanıtı bekleniyor", "Modelin sonraki adımı bekleniyor…")

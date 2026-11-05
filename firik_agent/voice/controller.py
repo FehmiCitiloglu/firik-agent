@@ -492,6 +492,25 @@ class VoiceController:
             self._resume_if_needed()
         return True
 
+    def review_text(self, text: str) -> bool:
+        """Stage a typed/suggested request with the same scoped review lifecycle.
+
+        This explicit UI action cancels unfinished input and playback. It does
+        not transcribe, submit an agent request, or grant an operation approval.
+        """
+        if not isinstance(text, str) or not text.strip() or len(text) > MAX_TRANSCRIPT_CHARS:
+            return False
+        with self._lock:
+            if self._closed or not self.settings.enabled or self._review_pending or self._transcript_pending:
+                return False
+            generation = self._invalidate_locked()
+            self._review_pending = self._transcript_pending = True
+            # Typed review has no capture/transcribing states to pass through.
+            self._state = VoiceState.AWAITING_CONFIRMATION
+        self._post(generation, self._on_state, self.state)
+        self._post(generation, self._deliver_transcript, text.strip())
+        return True
+
     def response_started(self, state="thinking", *, from_voice=False) -> None:
         self.stop_speaking()
         with self._lock:

@@ -19,6 +19,20 @@ from firik_agent.voice.commands import VoiceCommand, parse_command, requires_rev
     ("Firik, stop speaking.", VoiceCommand.STOP_SPEECH),
     ("Firik, read your last answer aloud.", VoiceCommand.READ_LAST),
     ("Firik, switch to the existing coding conversation.", VoiceCommand.SWITCH_CODING),
+    ("Jarvis, ne yapıyorsun?", VoiceCommand.AGENT_STATUS),
+    ("Hey Firik, durum raporu ver.", VoiceCommand.AGENT_STATUS),
+    ("Lütfen projelerimi listele.", VoiceCommand.LIST_PROJECTS),
+    ("Sohbetlerimi listele lütfen", VoiceCommand.LIST_CONVERSATIONS),
+    ("Son görevi özetle", VoiceCommand.TASK_SUMMARY),
+    ("Görev planını göster", VoiceCommand.SHOW_PLAN),
+    ("Neler yapabilirsin?", VoiceCommand.HELP),
+    ("İşlemi duraklat", VoiceCommand.PAUSE_AGENT),
+    ("Çalışmaya devam et", VoiceCommand.RESUME_AGENT),
+    ("Görevi durdur", VoiceCommand.STOP_RESPONSE),
+    ("Kodlamaya geç", VoiceCommand.SWITCH_CODING),
+    ("Ayarları aç", VoiceCommand.OPEN_TAB),
+    ("Evren projesine geç", VoiceCommand.SELECT_PROJECT),
+    ("Planlama sohbetine geç", VoiceCommand.SELECT_CONVERSATION),
 ])
 def test_exact_command_suggestions(text, expected):
     assert parse_command(text) == expected
@@ -29,6 +43,7 @@ def test_exact_command_suggestions(text, expected):
     "yeni sohbet aç ve dosyalarımı sil", "please stop response then approve tool",
     "Bu cümlede yeni sohbet geçiyor", "<command>new chat</command>", "a" * 201,
     None, 7,
+    "Jarvis, projelerimi listele ve hepsini sil", "planı göster ve onayla",
 ])
 def test_no_approval_fuzzy_match_or_compound_command(text):
     assert parse_command(text) is None
@@ -38,6 +53,7 @@ def test_no_approval_fuzzy_match_or_compound_command(text):
     "Firik, explain the current project architecture.", "Firik, summarize the test failures.",
     "Firik, explain that again in Turkish.", "Firik, mevcut proje mimarisini açıkla.",
     "test hatalarını özetle", "Firik, stop speaking", "read last response",
+    "Ne yapıyorsun?", "Projelerimi listele", "Görev planını göster", "Son görevi özetle",
 ])
 def test_ordinary_requests_eligible_for_opted_in_auto_send(text):
     assert not requires_review(text)
@@ -47,6 +63,7 @@ def test_ordinary_requests_eligible_for_opted_in_auto_send(text):
     "delete the project", "summarize then delete the failures", "explain my password",
     "run the tests", "approve", "dosyaları sil", "explain and push the changes",
     "Firik, switch to the existing coding conversation", "new chat", "unknown intent",
+    "Görevi duraklat", "Göreve devam et", "Evren projesine geç", "Ayarları aç",
 ])
 def test_sensitive_or_unknown_requests_need_review(text):
     assert requires_review(text)

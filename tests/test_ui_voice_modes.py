@@ -195,6 +195,59 @@ def test_conversation_controls_do_not_cancel_agent_and_reuse_controller(panel):
     assert not widget._conversation and not widget._holding
 
 
+def test_command_only_rejection_is_visible_in_voice_window_and_edit_can_recover(panel):
+    widget = panel.panel
+    widget.mode.set('Sesli komut')
+    recognize(panel, 'Bu proje hakkında bilgi ver.')
+    surface = widget.show_voice_surface()
+    surface.transcript.delete('1.0', 'end')
+    surface.transcript.insert('1.0', 'Veri yapıları ve algoritmalar hakkında bilgi verir misin?')
+    surface.send_button.invoke()
+    pump(panel.root, .05)
+    assert widget._pending and not panel.submitted and not panel.cancelled
+    assert 'Komut tanınmadı' in surface.error_label.cget('text')
+    assert surface.error_label.cget('text') == widget.status.cget('text')
+    viewport = surface.body._parent_canvas
+    assert surface.error_label.winfo_rooty() >= viewport.winfo_rooty()
+    assert (surface.error_label.winfo_rooty() + surface.error_label.winfo_height()
+            <= viewport.winfo_rooty() + viewport.winfo_height())
+    surface.transcript.delete('1.0', 'end')
+    surface.transcript.insert('1.0', 'yanıtı durdur')
+    surface.send_button.invoke()
+    assert panel.cancelled == ['session-one'] and not panel.submitted
+    assert not widget._pending and not surface.error_label.cget('text')
+
+
+def test_conversation_retry_keeps_ordinary_messages_after_command_selection(panel):
+    widget = panel.panel
+    widget.mode.set('Sesli komut')
+    widget.start_conversation()
+    controller = panel.controllers[-1]
+    controller.state = 'awaiting_confirmation'
+    controller.callbacks['on_transcript']('İlk kayıt.')
+    surface = widget._voice_surface
+    widget.mode.set('Sesli komut')
+    surface.retry_button.invoke()
+    assert controller.events.count('capture') == 1 and widget._conversation
+    controller.state = 'awaiting_confirmation'
+    controller.callbacks['on_transcript']('Veri yapıları ve algoritmalar hakkında bilgi verir misin?')
+    surface.send_button.invoke()
+    surface.send_button.invoke()
+    assert panel.submitted == ['Veri yapıları ve algoritmalar hakkında bilgi verir misin?']
+    assert widget.mode.get() == 'Bas-konuş' and not widget._pending
+    assert not panel.cancelled and ('resolved', True) in controller.events
+
+
+def test_empty_reviewed_transcript_shows_feedback_in_voice_window(panel):
+    widget = panel.panel
+    recognize(panel, 'Explain this project.')
+    surface = widget.show_voice_surface()
+    surface.transcript.delete('1.0', 'end')
+    surface.send_button.invoke()
+    assert widget._pending and not panel.submitted
+    assert 'Transkript boş' in surface.error_label.cget('text')
+
+
 def test_session_switch_rejects_late_transcript_and_hidden_shortcut(panel):
     widget = panel.panel
     widget.toggle_recording()

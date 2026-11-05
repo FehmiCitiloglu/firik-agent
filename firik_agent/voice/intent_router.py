@@ -51,7 +51,9 @@ _APPROVAL_COMMAND = re.compile(
 _SPEECH = {VoiceCommand.STOP_SPEECH,VoiceCommand.READ_LAST,VoiceCommand.REPLAY_SPEECH,
            VoiceCommand.MUTE_SPEECH,VoiceCommand.UNMUTE_SPEECH}
 _AGENT = {VoiceCommand.STOP_RESPONSE,VoiceCommand.PAUSE_AGENT,VoiceCommand.RESUME_AGENT}
-_APP_STATE = {VoiceCommand.DESCRIBE_PROJECT,VoiceCommand.AGENT_STATUS,VoiceCommand.VIEW_ACTIVITY}
+_APP_STATE = {VoiceCommand.DESCRIBE_PROJECT,VoiceCommand.AGENT_STATUS,VoiceCommand.VIEW_ACTIVITY,
+              VoiceCommand.LIST_PROJECTS,VoiceCommand.LIST_CONVERSATIONS,VoiceCommand.TASK_SUMMARY,
+              VoiceCommand.SHOW_PLAN,VoiceCommand.HELP}
 _CONVERSATION = {'repeat that','repeat your answer','say that again','summarize','summarize that',
                  'summarize your answer','continue','continue your answer','tekrar et',
                  'yaniti tekrar et','yanıtı tekrar et','özetle','ozetle','devam et'}
@@ -137,7 +139,8 @@ class VoiceRequestRouter:
         if not normalized or len(normalized) > 32000:
             raise VoiceRouteError('İncelenen ses isteği boş veya metin sınırını aşıyor.')
         value = _normalize(normalized)
-        if value in {_normalize(t) for t in _APPROVAL_PHRASES} or _APPROVAL_COMMAND.fullmatch(value):
+        approval_value = re.sub(r'^(?:lütfen|please)\s+|\s+(?:lütfen|please)$', '', value).strip()
+        if approval_value in {_normalize(t) for t in _APPROVAL_PHRASES} or _APPROVAL_COMMAND.fullmatch(approval_value):
             raise VoiceApprovalRejected('Sesli onay kabul edilmez. Araç veya plan onayını ilgili arayüz denetiminden verin.')
         if _AMBIGUOUS_DESTRUCTIVE.fullmatch(value):
             raise VoiceNeedsClarification('Neyin silineceğini veya değiştirileceğini açıkça belirtin; belirsiz yıkıcı istek gönderilmedi.')
