@@ -230,6 +230,17 @@ def test_coding_prose_streams_into_console_without_narrating_the_raw_task_stream
 @pytest.mark.parametrize('theme', ['Dark', 'Light'])
 def test_console_orb_tracks_input_and_stops_animation_when_hidden_or_reduced(workspace, monkeypatch, theme):
     app, view, panel, controller, capture, speaker, streams = setup_chat(workspace, monkeypatch)
+    import traceback
+    pauses = []
+    pause = controller.pause_conversation
+    def traced_pause():
+        pauses.append({'stack': traceback.format_stack(limit=12),
+            'root_state': app.state(), 'root_mapped': app.winfo_viewable(),
+            'root_refresh': getattr(app, '_voice_native_theme_refresh', None),
+            'root_remap': getattr(app, '_windows_set_titlebar_color_called', None),
+            'surface_assigned': panel._voice_surface is not None})
+        return pause()
+    monkeypatch.setattr(controller, 'pause_conversation', traced_pause)
     ctk.set_appearance_mode(theme)
     until(app, lambda: app.state() in {'normal', 'zoomed'} and app.winfo_viewable())
     panel.start_conversation()
@@ -242,7 +253,7 @@ def test_console_orb_tracks_input_and_stops_animation_when_hidden_or_reduced(wor
             'canvas_mapped': surface.orb.canvas.winfo_ismapped(), 'orb_state': surface.orb.state,
             'controller_state': str(controller.state_id), 'panel_state': panel._last_state,
             'paused': controller.paused, 'active': controller.conversation_active,
-            'motion': surface.orb._motion, 'level': panel.input_level.get()}))
+            'motion': surface.orb._motion, 'level': panel.input_level.get(), 'pauses': pauses}))
     until(app, lambda: surface.orb.level == .63)
     panel._on_level(.82)
     count = len(surface.orb.canvas.find_all())
