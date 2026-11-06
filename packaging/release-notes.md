@@ -1,3 +1,9 @@
+## v0.2.46 değişiklikleri
+
+- Harici harness oturum başlatma el sıkışması (`get_state`) zaman aşımı sabit 10 saniyeye ayarlanarak, alt-saniye görev zaman aşımlı testlerde ve yavaş macOS koşucularında erken oturum iptali (`startup_timeout`) önlendi.
+- Linux, macOS ve Windows platformlarında masaüstü paketleme ve regresyon testleri tam uyumlu hale getirildi.
+- v0.2.42-v0.2.45 sürümlerinde hazırlanan tüm MCP ve arayüz iyileştirmeleri bu yayına dahildir.
+
 ## v0.2.45 değişiklikleri
 
 - Windows headless test ortamında CTkToplevel ve Tcl native widget odaklanma ve olay işleme (`update_idletasks` ve toplevel pencere senkronizasyonu) güvenceye alındı.

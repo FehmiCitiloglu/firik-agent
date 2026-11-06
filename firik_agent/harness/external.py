@@ -191,7 +191,7 @@ class PiBackend:
     async def _response(self, state: _PiSession, kind: str, **values: Any) -> dict[str, Any]:
         request_id = uuid4().hex
         await state.transport.send({"id": request_id, "type": kind, **values})
-        deadline = time.monotonic() + min(10, state.policy.timeout_seconds)
+        deadline = time.monotonic() + 10.0
         for _ in range(32):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
