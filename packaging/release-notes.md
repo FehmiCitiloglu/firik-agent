@@ -1,3 +1,9 @@
+## v0.2.45 değişiklikleri
+
+- Windows headless test ortamında CTkToplevel ve Tcl native widget odaklanma ve olay işleme (`update_idletasks` ve toplevel pencere senkronizasyonu) güvenceye alındı.
+- Linux, macOS ve Windows platformlarında masaüstü paketleme ve regresyon testleri tam uyumlu hale getirildi.
+- v0.2.42-v0.2.44 sürümlerinde hazırlanan tüm MCP ve arayüz iyileştirmeleri bu yayına dahildir.
+
 ## v0.2.44 değişiklikleri
 
 - Windows ortamında metin düzenleme kısayol testleri (`Control` değiştirici tuşu ve Tk Text `\n` kırpma) platforma uygun hale getirildi.

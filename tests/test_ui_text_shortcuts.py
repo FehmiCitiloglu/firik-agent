@@ -59,9 +59,16 @@ def select(widget, start, end):
 
 
 def key(root, widget, sequence):
+    top = widget.winfo_toplevel() if hasattr(widget, "winfo_toplevel") else root
     widget.focus_force()
+    top.update_idletasks()
+    top.update()
+    root.update_idletasks()
     root.update()
     widget.event_generate(sequence)
+    top.update_idletasks()
+    top.update()
+    root.update_idletasks()
     root.update()
 
 
@@ -156,13 +163,17 @@ def test_later_dialog_inputs_inherit_shortcuts_and_install_is_idempotent(root):
     install_text_shortcuts(root)
     assert bindings == {name: root.bind_class(name, f"<{modifier}-BackSpace>") for name in bindings}
     dialog = ctk.CTkToplevel(root)
+    dialog.update_idletasks()
+    dialog.update()
     try:
         _, widget = control(dialog, "entry")
         reset(widget, "alpha beta gamma")
-        key(root, widget, f"<{modifier}-BackSpace>")
+        key(dialog, widget, f"<{modifier}-BackSpace>")
         assert value(widget) == "alpha beta "
     finally:
         dialog.destroy()
+        root.update_idletasks()
+        root.update()
 
 
 def test_tcl_created_inputs_without_python_wrappers_use_shortcuts(root):
@@ -175,18 +186,25 @@ def test_tcl_created_inputs_without_python_wrappers_use_shortcuts(root):
         path = f".native_{kind}"
         root.tk.call(kind, path)
         root.tk.call("pack", path)
+        root.update_idletasks()
+        root.update()
         root.tk.call(path, "insert", "1.0" if kind == "text" else 0, "alpha beta")
         if kind == "text":
             root.tk.call(path, "mark", "set", "insert", "end-1c")
         else:
             root.tk.call(path, "icursor", "end")
         root.tk.call("focus", "-force", path)
+        root.update_idletasks()
         root.update()
         root.tk.call("event", "generate", path, f"<{modifier}-BackSpace>")
+        root.update_idletasks()
         root.update()
         arguments = ("1.0", "end-1c") if kind == "text" else ()
         result = root.tk.call(path, "get", *arguments)
         assert result == "alpha "
+        root.tk.call("destroy", path)
+        root.update_idletasks()
+        root.update()
     assert errors == []
 
 
