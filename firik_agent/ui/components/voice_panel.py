@@ -28,6 +28,7 @@ class VoicePanel(ctk.CTkFrame):
         self.on_text_fallback = on_text_fallback or (lambda: None)
         self.composer_mic_button = None
         self._voice_surface = None
+        self._opening_voice_surface = False
         self._response_preview_text = ""
         self._activity_text = ""
         self._manual_review = False
@@ -395,7 +396,7 @@ class VoicePanel(ctk.CTkFrame):
         # CTk pumps Tk events while Windows redraws the titlebar. Its own
         # withdrawal marker is set only after that nested update returns.
         # Wait for both the synchronous refresh and delayed remap to finish.
-        if any(getattr(top, "_voice_native_theme_refresh", False)
+        if self._opening_voice_surface or any(getattr(top, "_voice_native_theme_refresh", False)
                or getattr(top, "_windows_set_titlebar_color_called", False)
                for top in (self.winfo_toplevel(), surface) if top is not None):
             self.after(50, self._stop_hidden_capture)
@@ -457,7 +458,11 @@ class VoicePanel(ctk.CTkFrame):
             self._voice_surface.lift()
             return self._voice_surface
         from firik_agent.ui.components.voice_session import VoiceSessionPanel
-        self._voice_surface = VoiceSessionPanel(self)
+        self._opening_voice_surface = True
+        try:
+            self._voice_surface = VoiceSessionPanel(self)
+        finally:
+            self._opening_voice_surface = False
         self._bind_shortcut(force=True)
         self._voice_surface.set_transcript(self._last_transcript, pending=self._pending)
         self._voice_surface.set_preview(self._safe_response_preview())

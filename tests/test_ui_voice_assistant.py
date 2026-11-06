@@ -324,3 +324,19 @@ def test_native_titlebar_refresh_defers_hidden_capture_check_but_real_hide_pause
     app._voice_native_theme_refresh = False
     panel._stop_hidden_capture()
     assert controller.paused
+
+
+def test_console_construction_cannot_pause_capture_before_surface_is_assigned(workspace, monkeypatch):
+    from firik_agent.ui.components.voice_session import VoiceSessionPanel
+    app, view, panel, controller, capture, speaker, streams = setup_chat(workspace, monkeypatch)
+    initialize = VoiceSessionPanel.__init__
+    def initialize_with_native_events(surface, owner):
+        with monkeypatch.context() as mapping:
+            mapping.setattr(owner, 'winfo_viewable', lambda: False)
+            owner._stop_hidden_capture()
+            assert not controller.paused
+        initialize(surface, owner)
+    monkeypatch.setattr(VoiceSessionPanel, '__init__', initialize_with_native_events)
+    panel.start_conversation()
+    until(app, lambda: len(capture.windows) == 1 and panel._voice_surface.orb._job is not None)
+    assert not controller.paused

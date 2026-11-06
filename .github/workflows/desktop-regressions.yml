@@ -37,3 +37,6 @@ jobs:
       - name: Native titlebar capture lifecycle
         if: always()
         run: python -m pytest -q tests/test_ui_voice_assistant.py::test_native_titlebar_refresh_defers_hidden_capture_check_but_real_hide_pauses
+      - name: Console construction capture lifecycle
+        if: always()
+        run: python -m pytest -q tests/test_ui_voice_assistant.py::test_console_construction_cannot_pause_capture_before_surface_is_assigned
