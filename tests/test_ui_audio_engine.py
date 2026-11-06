@@ -73,4 +73,7 @@ def test_settings_device_picker_persists_stable_ids_and_controls_are_visible(voi
     assert panel.input_level.winfo_ismapped()
     surface = panel.show_voice_surface()
     pump(root, .1)
+    assert not surface.playback_controls.winfo_ismapped()
+    panel._update_response_preview('Tamamlanan sesli yanıt.')
+    pump(root, .1)
     assert surface.pause_speech_button.winfo_ismapped() and surface.replay_button.winfo_ismapped()

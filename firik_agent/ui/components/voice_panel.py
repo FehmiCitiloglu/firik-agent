@@ -472,9 +472,12 @@ class VoicePanel(ctk.CTkFrame):
         if self._voice_surface is not None and self._voice_surface.winfo_exists():
             canonical = getattr(self.controller, "state_id", self._last_state)
             canonical = getattr(canonical, "value", canonical)
+            recording = canonical in {"recording", "listening", "speech_detected"}
             self._voice_surface.update_state(canonical,
-                recording=self._last_state in {"recording", "listening", "speech_detected"},
+                recording=recording,
                 paused=self._paused, conversation=self._conversation)
+            if recording:
+                self._voice_surface.update_level(self.input_level.get())
 
     def _sync_surface_draft(self):
         if self._voice_surface is not None and self._pending:

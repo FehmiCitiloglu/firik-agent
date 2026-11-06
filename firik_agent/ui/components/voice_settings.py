@@ -741,6 +741,9 @@ class VoiceSettingsFrame(ctk.CTkFrame):
         self.stop_input_test()
         self.stop_output_test()
         self._output_volume_value.trace_remove("write", self._output_volume_trace)
+        # CTkEntry installs its own variable trace, which otherwise keeps the
+        # destroyed entry and its parent form alive through the Tcl command.
+        self.entries["output_volume"].configure(textvariable=None)
         remove = getattr(self.service, "remove_voice_settings_listener", None)
         if callable(remove):
             remove(self._service_settings_changed)

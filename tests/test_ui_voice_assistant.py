@@ -262,3 +262,19 @@ def test_console_orb_tracks_input_and_stops_animation_when_hidden_or_reduced(wor
     panel.exit_conversation()
     assert orb._job is None and not surface.winfo_exists()
     ctk.set_appearance_mode('System')
+
+
+def test_console_replays_level_delivered_during_native_window_construction(workspace, monkeypatch):
+    from firik_agent.ui.components.voice_session import VoiceSessionPanel
+    app, view, panel, controller, capture, speaker, streams = setup_chat(workspace, monkeypatch)
+    initialize = VoiceSessionPanel.__init__
+
+    def initialize_with_level(surface, owner):
+        initialize(surface, owner)
+        # Native window setup may process the queued capture event before the
+        # newly constructed surface has been assigned to its owner.
+        owner._on_level(.74)
+
+    monkeypatch.setattr(VoiceSessionPanel, '__init__', initialize_with_level)
+    panel.start_conversation()
+    assert panel._voice_surface.orb.level == .74

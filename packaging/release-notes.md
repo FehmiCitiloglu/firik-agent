@@ -1,3 +1,11 @@
+## v0.2.39 değişiklikleri
+
+- Ses penceresi; gerçek mikrofon düzeyini ve görev durumunu gösteren, hareketi azaltılabilen bir asistan konsoluna dönüştürüldü.
+- Mevcut proje/sohbetlere sesle geçiş, görev durumu ve planını sorgulama, incelenmiş duraklatma/devam/durdurma komutları eklendi. Araç ve plan onayları mevcut onay akışında kalır.
+- Mikrofon, seslendirme ve ajan görevi için bağımsız kontroller; gerçek işlem ilerlemesi ve onay bekleme göstergeleri eklendi.
+- Konsol açılırken gelen mikrofon düzeyi korunur; kapatılan ses ayarlarının bellekten serbest bırakılması düzeltildi.
+- Entegre tarayıcı için tasarım önerisi belgelendi; bu sürümde tarayıcı uygulaması bulunmaz.
+
 ## v0.2.38 değişiklikleri
 
 - Apple CloudKit bilet servisindeki geçici bağlantı kesintileri için kademeli, sınırlı yeniden deneme süresi artırıldı.
