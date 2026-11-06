@@ -44,6 +44,41 @@ def test_app_views_initialized(tmp_path, monkeypatch):
         app._shutdown_thread.join(timeout=5)
 
 
+def test_app_shortcuts_preserve_native_macos_text_movement(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(FirikApp, "_check_initial_status", lambda self: None)
+    app = FirikApp()
+    try:
+        aqua = app.tk.call("tk", "windowingsystem") == "aqua"
+        modifier = "Command" if aqua else "Control"
+        actions = []
+        monkeypatch.setattr(app, "_on_new_chat_shortcut", lambda: actions.append("new"))
+        textbox = app.views["chat"].current.input_textbox._textbox
+        textbox.insert("1.0", "first line\nsecond line")
+        textbox.mark_set("insert", "2.2")
+        textbox.focus_force()
+        app.update()
+        if aqua:
+            textbox.event_generate("<Control-p>")
+            app.update()
+            assert textbox.index("insert").startswith("1.")
+            assert app.active_tab == "chat"
+            textbox.event_generate("<Control-n>")
+            app.update()
+            assert textbox.index("insert").startswith("2.")
+            assert not actions
+        textbox.event_generate(f"<{modifier}-n>")
+        app.update()
+        assert actions == ["new"]
+        textbox.event_generate(f"<{modifier}-p>")
+        app.update()
+        assert app.active_tab == "projects"
+    finally:
+        app.destroy()
+        app._shutdown_thread.join(timeout=5)
+
+
 def test_theme_colors():
     """Koyu ve açık tema renk paletlerini doğrular."""
     assert "dark" in THEME_COLORS

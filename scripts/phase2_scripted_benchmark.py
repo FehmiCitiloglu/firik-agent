@@ -27,8 +27,11 @@ from firik_agent.core.types import StreamChunk, ToolCall, ToolDefinition, ToolRe
 from firik_agent.providers.base import BaseProvider
 
 CASES = ("rate-limit", "overloaded", "connect-not-submitted", "submitted-timeout", "partial",
-         "authentication", "policy-refusal", "cancel-backoff", "unknown-external", "confirmed-external-then-overload")
+         "authentication", "policy-refusal", "cancel-backoff", "unknown-external", "unknown-host-external",
+         "confirmed-external-then-overload")
 RECOVERABLE = {"rate-limit", "overloaded", "connect-not-submitted", "confirmed-external-then-overload"}
+SOURCE_EVIDENCE = "Collected source reports 42 available records."
+PARTIAL_ANSWER = "The collected source reports 42 available records. The remote action is unconfirmed and was not repeated."
 
 
 class ProbeProvider(BaseProvider):
@@ -56,14 +59,27 @@ class ProbeProvider(BaseProvider):
 
     async def chat_stream(self, **kwargs):
         self.requests += 1
-        if self.case in {"unknown-external", "confirmed-external-then-overload"}:
+        if self.case in {"unknown-external", "unknown-host-external", "confirmed-external-then-overload"}:
             if self.requests == 1:
-                yield StreamChunk(tool_calls=[ToolCall(id="effect-1", function={"name": "remote_action", "arguments": "{}"})])
+                calls = [ToolCall(id="effect-1", function={"name": "remote_action", "arguments": "{}"})]
+                if self.case == "unknown-external":
+                    calls.insert(0, ToolCall(id="source-1", function={"name": "collected_source", "arguments": "{}"}))
+                yield StreamChunk(tool_calls=calls)
                 return
             if self.case == "unknown-external":
-                # If the runtime wrongly continues it receives the same mutation.
-                yield StreamChunk(tool_calls=[ToolCall(id="effect-2", function={"name": "remote_action", "arguments": "{}"})])
+                if self.requests == 2:
+                    # Continue the conversation, but never redispatch the
+                    # uncertain remote mutation even when the model asks again.
+                    yield StreamChunk(tool_calls=[ToolCall(id="effect-2", function={"name": "remote_action", "arguments": "{}"})])
+                    return
+                messages = kwargs["messages"]
+                assert any(message.role == "tool" and message.content == SOURCE_EVIDENCE for message in messages)
+                assert any(message.role == "tool" and "not repeated" in str(message.content) for message in messages)
+                yield StreamChunk(delta_content=PARTIAL_ANSWER,
+                                  usage={"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12})
                 return
+            if self.case == "unknown-host-external":
+                raise AssertionError("An uncertain host action must fail closed.")
             if self.requests == 2:
                 raise self._fault(self.case)
         elif self.case == "partial":
@@ -100,11 +116,14 @@ async def trial(case: str, adaptive: bool, repeat: int):
     effects = []
     def remote_action():
         effects.append("confirmed external ledger entry")
-        if case == "unknown-external":
+        if case in {"unknown-external", "unknown-host-external"}:
             return ToolResult(tool_call_id="", name="remote_action", content="Scripted remote result was not recorded.", is_error=True,
                 metadata={"failure_kind": "tool_outcome_unknown", "request_phase": "tool_dispatched", "reconciliation_status": "required"})
         return "Confirmed remote operation completed."
-    agent.tools.register(ToolDefinition(name="remote_action", description="Scripted external action", source="mcp:offline"), remote_action)
+    source = "builtin" if case == "unknown-host-external" else "mcp:offline"
+    agent.tools.register(ToolDefinition(name="remote_action", description="Scripted external action", source=source), remote_action)
+    agent.tools.register(ToolDefinition(name="collected_source", description="Previously collected source evidence", source="mcp:offline"),
+                         lambda: SOURCE_EVIDENCE)
     trace, cancelled = [], False
     started = time.monotonic()
     try:
@@ -122,7 +141,11 @@ async def trial(case: str, adaptive: bool, repeat: int):
     if case in RECOVERABLE:
         passed = (done == adaptive) and (case != "confirmed-external-then-overload" or len(effects) == 1)
     elif case == "unknown-external":
-        passed = not done and len(effects) == 1 and provider.requests == 1 and not retries
+        replay_blocked = any(event["type"] == "tool_call_error" and event["metadata"].get("replay_blocked") for event in trace)
+        partial_answer = any(event["type"] == "done" and event.get("content") == PARTIAL_ANSWER for event in trace)
+        passed = done and partial_answer and replay_blocked and len(effects) == 1 and provider.requests == 3 and not retries
+    elif case == "unknown-host-external":
+        passed = policy_stopped and len(effects) == 1
     elif case == "cancel-backoff":
         passed = not done and not retries and provider.requests == 1
     else:

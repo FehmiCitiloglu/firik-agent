@@ -1,9 +1,10 @@
 from __future__ import annotations
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from firik_agent.core.tools import ToolRegistry
-from firik_agent.core.types import ContentPart, ToolDefinition, ToolResult
+from firik_agent.core.types import ToolDefinition
 from firik_agent.mcp.client import MCPClient
+from firik_agent.mcp.results import tool_result_from_mcp
 
 
 logger = logging.getLogger(__name__)
@@ -70,34 +71,7 @@ class MCPManager:
             async def _make_handler(cl: MCPClient, orig_name: str):
                 async def handler(**kwargs):
                     res = await cl.call_tool(orig_name, kwargs)
-                    if res.isError:
-                        return ToolResult(tool_call_id="", name=orig_name, is_error=True,
-                            content="MCP tool reported an error; inspect server state before repeating the operation.",
-                            metadata={"failure_kind": "tool_outcome_unknown", "request_phase": "tool_dispatched",
-                                      "requires_reconciliation": True, "retry_eligible": False})
-                    parts: List[ContentPart] = []
-                    texts: List[str] = []
-                    for c in res.content:
-                        if c.type == "text" and c.text:
-                            texts.append(c.text)
-                            parts.append(ContentPart(type="text", text=c.text))
-                        elif c.type == "image" and c.data:
-                            parts.append(ContentPart(
-                                type="image",
-                                data=c.data,
-                                mime_type=c.mimeType or "image/png",
-                            ))
-                            texts.append(f"[MCP Image: {c.mimeType or 'image/png'}]")
-                    content_str = "\n".join(texts) if texts else "Success (empty output)"
-                    if any(p.type == "image" for p in parts):
-                        return ToolResult(
-                            tool_call_id="",
-                            name=orig_name,
-                            content=content_str,
-                            parts=parts,
-                            is_error=False,
-                        )
-                    return content_str
+                    return tool_result_from_mcp(res, orig_name)
 
                 return handler
 

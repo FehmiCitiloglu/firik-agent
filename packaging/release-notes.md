@@ -1,3 +1,11 @@
+## v0.2.42 değişiklikleri
+
+- MCP çağrı hataları sonrası sohbetin kesilmeden devam edebilmesi sağlandı; sunucu ve taşıma hataları araç sonucu olarak döndürülür ve model eldeki başarılı sonuçlarla veya bağımsız araçlarla devam eder.
+- Tekrarlanan işlem hataları ve araç sınırı aşıldığında güvenli sentez yanıtı mekanizması eklendi; sonucu belirsiz yan etkili işlemlerin kontrolsüz tekrarı engellendi.
+- Masaüstü arayüzünde (FirikApp) çapraz platform ve işletim sistemine özgü (Aqua/macOS vs. Windows/Linux) metin düzenleme kısayolları ve seçim kontrolleri eklendi; yerel kısayol çakışmaları giderildi.
+- Kodlama çalışma alanında sekme tamamlama (Tab) ve öneri seçimi için niteleyici tuş filtreleme (Shift/Ctrl/Cmd/Alt) eklendi.
+- Phase 2 scripted benchmark senaryoları ve MCP continuation/results testleri eklendi.
+
 ## v0.2.41 değişiklikleri
 
 - Windows'ta ses konsolu kurulurken ve native başlık çubuğu yenilenirken mikrofonun yanlışlıkla duraklatılmasına yol açan olay sırası düzeltildi.

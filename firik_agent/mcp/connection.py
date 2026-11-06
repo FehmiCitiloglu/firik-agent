@@ -7,7 +7,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from firik_agent.core.tools import ToolRegistry
-from firik_agent.core.types import ContentPart, ToolCall, ToolDefinition, ToolResult
+from firik_agent.core.types import ToolDefinition
 from firik_agent.mcp.client import MCPClient
 from firik_agent.mcp.models import (
     MCPLogEntry,
@@ -20,6 +20,7 @@ from firik_agent.mcp.models import (
     resolve_server_env,
 )
 from firik_agent.mcp.protocol import MCPCallToolResult, MCPToolSchema
+from firik_agent.mcp.results import tool_result_from_mcp
 
 logger = logging.getLogger(__name__)
 
@@ -396,24 +397,7 @@ class MCPConnectionManager:
             def _make_handler(c: MCPConnection, orig_name: str):
                 async def handler(**kwargs):
                     res = await c.call_tool(orig_name, kwargs)
-                    if res.isError:
-                        return ToolResult(tool_call_id="", name=orig_name, is_error=True,
-                            content="MCP tool reported an error; inspect server state before repeating the operation.",
-                            metadata={"failure_kind": "tool_outcome_unknown", "request_phase": "tool_dispatched",
-                                      "requires_reconciliation": True, "retry_eligible": False})
-                    parts: List[ContentPart] = []
-                    texts: List[str] = []
-                    for item in res.content:
-                        if item.type == "text" and item.text:
-                            texts.append(item.text)
-                            parts.append(ContentPart(type="text", text=item.text))
-                        elif item.type == "image" and item.data:
-                            parts.append(ContentPart(type="image", data=item.data, mime_type=item.mimeType or "image/png"))
-                            texts.append(f"[MCP Image: {item.mimeType or 'image/png'}]")
-                    content_str = "\n".join(texts) if texts else "Success (empty output)"
-                    if any(p.type == "image" for p in parts):
-                        return ToolResult(tool_call_id="", name=orig_name, content=content_str, parts=parts, is_error=False)
-                    return content_str
+                    return tool_result_from_mcp(res, orig_name)
 
                 return handler
 

@@ -177,6 +177,27 @@ a new operation is appropriate. They block verified coding completion and furthe
 side-effectful coding tools. Opening an old session never replays tools; a legacy
 assistant tool call with no result is conservatively recorded as outcome-unknown.
 
+### Continuing after an MCP failure
+
+Both MCP connection managers return server-reported errors as failed tool results,
+without exposing the remote error body. Ordinary chat continues after these errors
+and MCP transport failures: the remaining calls in the batch receive results, and
+the model can use earlier successful evidence or independent tools. The failed
+call remains visible as a tool error. Host permission/policy denials, authentication
+failures, cancellation and run resource exhaustion still stop execution.
+
+Conversation continuation does not establish that a failed remote operation had
+no side effects. Unknown outcomes keep their reconciliation records. A repeated
+call with the same fingerprint receives a local error without dispatch; changing
+the call ID does not bypass this guard. After `repeated_tool_failures` errors for
+one fingerprint in the current run, the next request asks for a final answer with
+an empty tool inventory. If an MCP failure occurs at the tool iteration limit,
+one final synthesis request is allowed, also without tool execution. These requests
+use the existing request/time/token/cost budget; they cannot bypass an exhausted
+resource limit. The host refuses further tool execution even if the model ignores
+the empty inventory. Coding completion and restrictions on further side effects
+remain blocked while an outcome is unresolved.
+
 ## Evidence-based completion
 
 Coding lifecycle states are `planning`, `implementing`, `verifying`, `repairing`,
@@ -222,6 +243,7 @@ Focused checks use scripted providers/tools and `httpx.MockTransport`:
 .venv/bin/python -m pytest -q \
   tests/test_provider_failures.py tests/test_recovery_engine.py tests/test_completion_controller.py \
   tests/test_request_metrics.py tests/test_agent_loop.py \
+  tests/test_mcp_continuation.py tests/test_mcp_results.py \
   tests/test_phase2_scripted_benchmark.py tests/test_phase2_recovery_report.py \
   tests/benchmarks/test_security.py
 ```

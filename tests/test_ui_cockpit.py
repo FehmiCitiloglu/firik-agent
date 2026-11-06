@@ -119,3 +119,40 @@ def test_composer_autocomplete_resolves_real_project_paths_and_plan_mode(workspa
     assert any(item.get("path") == "main.py" and item.get("included") for item in view._coding_state()["context_items"])
     call["on_done"]("Plan hazır")
     settle(app)
+
+
+def test_composer_suggestions_preserve_modified_arrow_navigation(workspace):
+    app, view, project, streams = workspace
+    settle(app)
+    textbox = view.coding_input._textbox
+    textbox.insert("1.0", "first line\nsecond line")
+    view._coding_suggestions = [{"label": "suggestion", "insert": "suggestion "}]
+    view.coding_suggestion_list.insert("end", "suggestion")
+    view.coding_suggestion_list.grid()
+    textbox.mark_set("insert", "1.2")
+    textbox.focus_force()
+    settle(app)
+    textbox.event_generate("<Shift-Down>")
+    settle(app)
+    assert app.focus_get() is textbox
+    assert textbox.tag_ranges("sel")
+    modifier = view.coding_shortcut_modifier
+    textbox.event_generate(f"<{modifier}-Down>")
+    settle(app)
+    assert app.focus_get() is textbox
+    textbox.event_generate("<Down>")
+    settle(app)
+    assert app.focus_get() is view.coding_suggestion_list
+    textbox.delete("1.0", "end")
+    textbox.insert("1.0", "@file:main")
+    textbox.focus_force()
+    settle(app)
+    textbox.event_generate("<Shift-Tab>")
+    settle(app)
+    assert view.coding_input.get() == "@file:main"
+    assert view._coding_suggestions
+    textbox.focus_force()
+    settle(app)
+    textbox.event_generate("<Tab>")
+    settle(app)
+    assert view.coding_input.get() == "suggestion "

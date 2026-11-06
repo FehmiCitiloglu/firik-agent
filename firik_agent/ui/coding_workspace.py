@@ -470,9 +470,17 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 owner.after_cancel(owner._suggestion_job)
             owner._suggestion_job = owner.after(160, lambda: self._load_coding_composer_suggestions(owner, project_id))
         owner.bind("<KeyRelease>", changed, add="+")
-        owner.bind("<Tab>", self._accept_coding_suggestion, add="+")
+        # Shift, Control, Alt/Command; Aqua uses Mod2 for Option. Do not
+        # treat Windows/X11 Num Lock (also Mod2) as an editing modifier.
+        modifier_mask = 0x000D | (0x0010 if self.tk.call("tk", "windowingsystem") == "aqua" else 0x20000)
+        def accept_tab(event):
+            if event.state & modifier_mask:
+                return None
+            return self._accept_coding_suggestion(event)
+        owner.bind("<Tab>", accept_tab, add="+")
         def select(event):
-            if not self._coding_suggestions:
+            # Modified arrows extend selections or navigate the document.
+            if event.state & modifier_mask or not self._coding_suggestions:
                 return None
             self.coding_suggestion_list.focus_set()
             self.coding_suggestion_list.selection_set(0)
@@ -480,7 +488,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             return "break"
         owner.bind("<Down>", select, add="+")
         self.coding_suggestion_list.bind("<Return>", self._accept_coding_suggestion)
-        self.coding_suggestion_list.bind("<Tab>", self._accept_coding_suggestion)
+        self.coding_suggestion_list.bind("<Tab>", accept_tab)
         self.coding_suggestion_list.bind("<Double-Button-1>", self._accept_coding_suggestion)
         def hide(event=None):
             if self._coding_suggestions:

@@ -32,6 +32,7 @@ except (ImportError, ModuleNotFoundError) as err:
 from firik_agent.ui.icons import ensure_app_icon
 from firik_agent.ui.service import FirikService
 from firik_agent.ui.theme import APP_NAME
+from firik_agent.ui.text_shortcuts import install_text_shortcuts
 from firik_agent.ui.views.about_view import AboutView
 from firik_agent.ui.views.chat_view import ChatView
 from firik_agent.ui.views.chat_workspace import ChatWorkspace
@@ -71,6 +72,7 @@ class FirikApp(ctk.CTk):
     def __init__(self, *, config_path=None) -> None:
         _ensure_tk_environment()
         super().__init__()
+        install_text_shortcuts(self)
 
         # Pencere Başlığı ve Boyutlandırma: Adı SADECE 'firik-agent'
         self.title(APP_NAME)
@@ -562,17 +564,11 @@ class FirikApp(ctk.CTk):
 
     def _setup_keybindings(self) -> None:
         """Klavye kısayollarını ayarlar."""
-        # Yeni Sohbet: Ctrl+N veya Cmd+N
-        self.bind("<Control-n>", lambda _: self._on_new_chat_shortcut())
-        self.bind("<Command-n>", lambda _: self._on_new_chat_shortcut())
-
-        # Projeler: Ctrl+P veya Cmd+P
-        self.bind("<Control-p>", lambda _: self.show_view("projects"))
-        self.bind("<Command-p>", lambda _: self.show_view("projects"))
-
-        # Ayarlar: Ctrl+, veya Cmd+,
-        self.bind("<Control-comma>", lambda _: self.show_view("settings"))
-        self.bind("<Command-comma>", lambda _: self.show_view("settings"))
+        # On macOS Control+N/P belong to native text cursor movement.
+        modifier = "Command" if self.tk.call("tk", "windowingsystem") == "aqua" else "Control"
+        self.bind(f"<{modifier}-n>", lambda _: self._on_new_chat_shortcut())
+        self.bind(f"<{modifier}-p>", lambda _: self.show_view("projects"))
+        self.bind(f"<{modifier}-comma>", lambda _: self.show_view("settings"))
 
 
     def _on_new_chat_shortcut(self) -> None:

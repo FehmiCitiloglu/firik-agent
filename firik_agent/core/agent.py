@@ -36,6 +36,58 @@ from firik_agent.skills.manager import SkillManager
 logger = logging.getLogger(__name__)
 
 
+_TERMINAL_TOOL_FAILURES = {
+    FailureKind.CANCELLED.value, FailureKind.BUDGET_EXCEEDED.value,
+    FailureKind.PERMISSION_DENIED.value, FailureKind.POLICY_REFUSAL.value,
+    FailureKind.AUTHENTICATION_FAILED.value,
+}
+_MCP_CONTINUATION_INSTRUCTIONS = (
+    "An MCP call failed. Continue with the successful results already collected or independent tools. "
+    "Treat failed calls as missing evidence, explain relevant gaps, and do not invent their results. "
+    "Do not repeat an operation with an uncertain outcome; its side effects must be reconciled first."
+)
+_MCP_SYNTHESIS_INSTRUCTIONS = (
+    "Tool execution has ended for this turn. Give the best final answer supported by the available "
+    "evidence, explain missing information and uncertain operations, and do not request more tools."
+)
+
+
+def _isolated_mcp_failure(attempt):
+    # The boundary is assigned by the host registry, never by remote tool data.
+    # Continuing the conversation grants no permission to replay the operation.
+    local_failure_limit = (attempt.get("replay_blocked")
+                           and attempt.get("request_phase") == RequestPhase.TOOL_NOT_DISPATCHED.value
+                           and attempt.get("failure_kind") == FailureKind.BUDGET_EXCEEDED.value)
+    return (attempt.get("execution_boundary") == "remote_mcp"
+            and (attempt.get("failure_kind") not in _TERMINAL_TOOL_FAILURES or local_failure_limit))
+
+
+def _mcp_synthesis_required(failures, repeated_limit, iteration, iteration_limit):
+    return bool(failures) and (max(failures.values()) >= repeated_limit
+                              or (iteration_limit is not None and iteration >= iteration_limit))
+
+
+def _finish_mcp_synthesis(response):
+    # Even a provider ignoring the empty tool inventory cannot dispatch again.
+    response.tool_calls = None
+    if not response.content:
+        response.content = ("Bazı MCP işlemleri tamamlanamadı. Eldeki sonuçlardan yanıt üretilemedi; "
+                            "eksik bilgiler doğrulanamadı ve sonucu belirsiz işlemler tekrarlanmadı.")
+
+
+def _record_undispatched_tool_calls(response, messages):
+    """Close the advertised batch when a terminal failure stops execution."""
+    start = next(index for index, message in enumerate(messages) if message is response)
+    recorded = {message.tool_call_id for message in messages[start + 1:] if message.role == "tool"}
+    for tc in response.tool_calls or []:
+        if tc.id not in recorded:
+            messages.append(ToolResult(tool_call_id=tc.id, name=tc.function.name, is_error=True,
+                content="Tool was not dispatched because execution stopped after an earlier failure.",
+                metadata={"request_phase": RequestPhase.TOOL_NOT_DISPATCHED.value,
+                          "status": "not_dispatched", "retry_eligible": False}).to_message())
+            recorded.add(tc.id)
+
+
 def _profile_schemas(schemas, session=None, control=None, *, profile_override=None, report_owner=None):
     from firik_agent.projects.harness_profiles import runtime_profile
     from firik_agent.projects.tool_selection import select_tool_schemas
@@ -1128,6 +1180,14 @@ class Agent:
             attempt.update(status="reconciliation_required", failure_kind=kind.value, reconciliation_status="required")
             if durable:
                 run_control.durable_transition(attempt["attempt_id"], "needs_reconciliation", error={"failure_kind": kind.value})
+            if attempt["execution_boundary"] == "remote_mcp":
+                # This is a per-operation replay/failure limit, not exhaustion of
+                # the run's request/time/token budget. Other work may continue.
+                attempt.update(replay_blocked=True, retry_eligible=False)
+                result = ToolResult(tool_call_id=tc.id, name=tc.function.name, is_error=True,
+                    content="MCP operation was not repeated because its outcome is uncertain or its failure limit was reached. "
+                            + _MCP_CONTINUATION_INSTRUCTIONS, metadata=dict(attempt))
+                return attempt, result, None
             return attempt, None, RuntimeFailure(kind, phase=RequestPhase.TOOL_NOT_DISPATCHED)
         try:
             arguments = json.loads(tc.function.arguments or "{}")
@@ -1190,11 +1250,17 @@ class Agent:
                 raise
             failure = normalize_failure(exc, phase=RequestPhase.TOOL_DISPATCHED)
             if attempt["side_effect_risk"] not in {SideEffectRisk.PURE_READ.value, SideEffectRisk.STATE_INSPECTION.value} and failure.kind not in {
-                    FailureKind.PERMISSION_DENIED, FailureKind.POLICY_REFUSAL, FailureKind.AUTHENTICATION_FAILED}:
+                    FailureKind.PERMISSION_DENIED, FailureKind.POLICY_REFUSAL, FailureKind.AUTHENTICATION_FAILED,
+                    FailureKind.BUDGET_EXCEEDED, FailureKind.CANCELLED}:
                 failure = RuntimeFailure(FailureKind.TOOL_OUTCOME_UNKNOWN, phase=RequestPhase.TOOL_DISPATCHED,
                                          source_type=type(exc).__name__)
             result = ToolResult(tool_call_id=tc.id, name=tc.function.name, is_error=True,
                                 content=str(failure), metadata=failure.metadata)
+            if (pending is not None and failure.kind in {FailureKind.BUDGET_EXCEEDED, FailureKind.CANCELLED}
+                    and attempt["side_effect_risk"] not in {SideEffectRisk.PURE_READ.value, SideEffectRisk.STATE_INSPECTION.value}):
+                # A run deadline does not establish whether an in-flight remote
+                # action took effect. Preserve the stop reason AND replay guard.
+                result.metadata.update(request_phase=RequestPhase.TOOL_DISPATCHED.value, requires_reconciliation=True)
         finally:
             if pending is not None and not pending.done():
                 pending.cancel()
@@ -1204,7 +1270,11 @@ class Agent:
         attempt.update({key: value for key, value in result.metadata.items() if key in {
             "failure_kind", "request_phase", "requires_reconciliation", "retry_eligible"}})
         kind = attempt.get("failure_kind")
-        if kind == FailureKind.TOOL_OUTCOME_UNKNOWN.value or (kind == FailureKind.TOOL_TIMEOUT.value
+        if result.is_error and _isolated_mcp_failure(attempt):
+            if "Continue with" not in result.content:
+                result.content += "\n" + _MCP_CONTINUATION_INSTRUCTIONS
+            attempt["continuation_allowed"] = True
+        if attempt.get("requires_reconciliation") or kind == FailureKind.TOOL_OUTCOME_UNKNOWN.value or (kind == FailureKind.TOOL_TIMEOUT.value
                 and attempt.get("request_phase") != RequestPhase.TOOL_NOT_DISPATCHED.value):
             attempt.update(status="outcome_unknown", reconciliation_status="required")
         else:
@@ -1438,8 +1508,12 @@ class Agent:
         iteration_limit = (self.max_iterations or 50) if run_control else self.max_iterations
         if profile:
             iteration_limit = min(iteration_limit or profile["max_iterations"], profile["max_iterations"])
-        while iteration_limit is None or iteration < iteration_limit:
+        mcp_failures = {}
+        synthesis_only = False
+        while not synthesis_only and (iteration_limit is None or iteration < iteration_limit or mcp_failures):
             await checkpoint()
+            synthesis_only = _mcp_synthesis_required(mcp_failures, self.recovery_engine.limits.repeated_tool_failures,
+                                                     iteration, iteration_limit)
             iteration += 1
 
             # Prepare message chain for LLM
@@ -1450,6 +1524,10 @@ class Agent:
                 full_sys = base_sys
             if profile:
                 full_sys += "\n\n" + profile_instructions(profile)
+            if mcp_failures:
+                full_sys += "\n\n" + _MCP_CONTINUATION_INSTRUCTIONS
+            if synthesis_only:
+                full_sys += "\n\n" + _MCP_SYNTHESIS_INSTRUCTIONS
             system_msg = Message(role="system", content=full_sys)
             request_messages = [system_msg] + msg_target
 
@@ -1458,6 +1536,8 @@ class Agent:
             else:
                 tools_schemas = self.tools.get_schemas()
             tools_schemas = _profile_schemas(tools_schemas, session, run_control, profile_override=profile, report_owner=self)
+            if synthesis_only:
+                tools_schemas = []
 
             if run_control and run_control.capabilities.get("supports_tools") is False:
                 tools_schemas = []
@@ -1556,6 +1636,8 @@ class Agent:
                 await self.plugins.dispatch_model_response(response)
             else:
                 response = sanitize_message(response)
+            if synthesis_only:
+                _finish_mcp_synthesis(response)
             msg_target.append(response)
 
             # Check if model requested tool execution
@@ -1594,6 +1676,7 @@ class Agent:
                     on_event(AgentEvent(AgentEventType.TOOL_CALL_STARTED, session.session_id if session else "default",
                                         tool_name=fn_name, metadata=dict(attempt)))
                 if failure:
+                    _record_undispatched_tool_calls(response, msg_target)
                     if run_control:
                         run_control.set_state("blocked", str(failure))
                     if on_event:
@@ -1614,10 +1697,17 @@ class Agent:
                 if on_event:
                     on_event(AgentEvent(AgentEventType.TOOL_CALL_ERROR if result.is_error else AgentEventType.TOOL_CALL_RESULT,
                         session.session_id if session else "default", tool_name=fn_name, content=result.content, metadata=dict(attempt)))
-                if result.metadata.get("reconciliation_status") == "required":
+                if result.is_error and _isolated_mcp_failure(attempt):
+                    fingerprint = attempt["fingerprint"]
+                    mcp_failures[fingerprint] = mcp_failures.get(fingerprint, 0) + 1
+                elif result.metadata.get("reconciliation_status") == "required" or (
+                        attempt.get("execution_boundary") == "remote_mcp" and result.is_error
+                        and attempt.get("failure_kind") in _TERMINAL_TOOL_FAILURES):
+                    _record_undispatched_tool_calls(response, msg_target)
                     if run_control:
                         run_control.set_state("blocked", result.content)
-                    raise RuntimeFailure(FailureKind.TOOL_OUTCOME_UNKNOWN, phase=RequestPhase.TOOL_DISPATCHED)
+                    raise RuntimeFailure(attempt.get("failure_kind", FailureKind.TOOL_OUTCOME_UNKNOWN),
+                                         phase=attempt.get("request_phase", RequestPhase.TOOL_DISPATCHED))
 
         if run_control:
             run_control.set_state("blocked", "Tool iteration budget exhausted; the task is incomplete.")
@@ -1773,7 +1863,9 @@ class Agent:
         iteration_limit = (self.max_iterations or 50) if run_control else self.max_iterations
         if profile:
             iteration_limit = min(iteration_limit or profile["max_iterations"], profile["max_iterations"])
-        while iteration_limit is None or iteration < iteration_limit:
+        mcp_failures = {}
+        synthesis_only = False
+        while not synthesis_only and (iteration_limit is None or iteration < iteration_limit or mcp_failures):
             if run_control:
                 await run_control.checkpoint()
                 drain = getattr(run_control, "drain_pending_messages", None)
@@ -1785,6 +1877,8 @@ class Agent:
                 yield event(type=AgentEventType.DONE, session_id=sid, content="Çalışma kullanıcı tarafından durduruldu.")
                 return
 
+            synthesis_only = _mcp_synthesis_required(mcp_failures, self.recovery_engine.limits.repeated_tool_failures,
+                                                     iteration, iteration_limit)
             iteration += 1
             if run_control:
                 mode_instructions = {
@@ -1821,6 +1915,10 @@ class Agent:
                 full_sys = base_sys
             if profile:
                 full_sys += "\n\n" + profile_instructions(profile)
+            if mcp_failures:
+                full_sys += "\n\n" + _MCP_CONTINUATION_INSTRUCTIONS
+            if synthesis_only:
+                full_sys += "\n\n" + _MCP_SYNTHESIS_INSTRUCTIONS
             system_msg = Message(role="system", content=full_sys)
             request_messages = [system_msg] + msg_target
 
@@ -1829,6 +1927,8 @@ class Agent:
             else:
                 tools_schemas = self.tools.get_schemas()
             tools_schemas = _profile_schemas(tools_schemas, session, run_control, profile_override=profile, report_owner=self)
+            if synthesis_only:
+                tools_schemas = []
 
             provider = self.providers.get_active()
             provider.reasoning_effort = session.reasoning_effort if session else None
@@ -2047,6 +2147,12 @@ class Agent:
                 await self.plugins.dispatch_model_response(assistant_msg)
             else:
                 assistant_msg = sanitize_message(assistant_msg)
+            if synthesis_only:
+                _finish_mcp_synthesis(assistant_msg)
+                stream_tool_calls = []
+                if not content_accum:
+                    yield event(type=AgentEventType.TEXT_DELTA, session_id=sid, content=assistant_msg.content)
+                content_accum = [assistant_msg.content]
             msg_target.append(assistant_msg)
 
             # A final message is a completion claim, not verification evidence.
@@ -2107,6 +2213,7 @@ class Agent:
                     await self.plugins.dispatch_tool_call(tc)
 
                 if failure:
+                    _record_undispatched_tool_calls(assistant_msg, msg_target)
                     if run_control:
                         run_control.set_state("blocked", str(failure))
                     yield event(type=AgentEventType.RECOVERY, session_id=sid, content=str(failure),
@@ -2149,7 +2256,13 @@ class Agent:
                         metadata=dict(attempt),
                     )
 
-                if attempt.get("reconciliation_status") == "required":
+                if result.is_error and _isolated_mcp_failure(attempt):
+                    fingerprint = attempt["fingerprint"]
+                    mcp_failures[fingerprint] = mcp_failures.get(fingerprint, 0) + 1
+                elif attempt.get("reconciliation_status") == "required" or (
+                        attempt.get("execution_boundary") == "remote_mcp" and result.is_error
+                        and attempt.get("failure_kind") in _TERMINAL_TOOL_FAILURES):
+                    _record_undispatched_tool_calls(assistant_msg, msg_target)
                     if run_control:
                         run_control.set_state("blocked", result.content)
                     yield event(type=AgentEventType.RECOVERY, session_id=sid, content=result.content,

@@ -138,9 +138,13 @@ class ToolRegistry:
             failure = normalize_failure(e, phase=RequestPhase.TOOL_DISPATCHED)
             risk = tool_semantics(name, self.get_tool(name))
             if risk not in {SideEffectRisk.PURE_READ, SideEffectRisk.STATE_INSPECTION} and failure.kind not in {
-                    FailureKind.PERMISSION_DENIED, FailureKind.POLICY_REFUSAL, FailureKind.AUTHENTICATION_FAILED}:
+                    FailureKind.PERMISSION_DENIED, FailureKind.POLICY_REFUSAL, FailureKind.AUTHENTICATION_FAILED,
+                    FailureKind.BUDGET_EXCEEDED, FailureKind.CANCELLED}:
                 failure = RuntimeFailure(FailureKind.TOOL_OUTCOME_UNKNOWN, phase=RequestPhase.TOOL_DISPATCHED,
                                          source_type=type(e).__name__)
+            if (risk not in {SideEffectRisk.PURE_READ, SideEffectRisk.STATE_INSPECTION}
+                    and failure.kind in {FailureKind.BUDGET_EXCEEDED, FailureKind.CANCELLED}):
+                failure.metadata.update(request_phase=RequestPhase.TOOL_DISPATCHED.value, requires_reconciliation=True)
             logger.warning("Tool failed (%s): %s", name, failure.kind.value)
             return ToolResult(
                 tool_call_id=tool_call.id,
