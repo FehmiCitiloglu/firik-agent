@@ -45,6 +45,9 @@ async def test_expanded_offline_faults_have_objective_native_evaluators():
 @pytest.mark.asyncio
 async def test_replay_and_git_revisions_stable_across_concurrent_trials():
     manifest = next(task for task in offline_tasks() if task.id == "guarded-edit")
+    # Each trial initializes its Git fixture synchronously. Under a loaded
+    # Windows runner, the second setup can consume the first trial's budget.
+    manifest = manifest.model_copy(update={"timeout_seconds": 30.0})
     a, b = await asyncio.gather(run_trial(manifest, 1), run_trial(manifest, 2))
     assert a["fixture_passed"] and b["fixture_passed"], [
         {key: row.get(key) for key in ('runtime_status', 'failure_reason', 'terminal_outcome', 'verification', 'persistence_verified')}

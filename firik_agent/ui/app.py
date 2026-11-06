@@ -127,6 +127,13 @@ class FirikApp(ctk.CTk):
         if not self._closing:
             self._callback_timer = self.after(25, self._drain_callbacks)
 
+    def _windows_set_titlebar_color(self, color_mode):
+        self._voice_native_theme_refresh = True
+        try:
+            return super()._windows_set_titlebar_color(color_mode)
+        finally:
+            self._voice_native_theme_refresh = False
+
     def destroy(self) -> None:
         if self._closing:
             return

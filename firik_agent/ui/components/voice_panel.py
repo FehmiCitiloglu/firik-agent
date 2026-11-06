@@ -392,6 +392,14 @@ class VoicePanel(ctk.CTkFrame):
         if not self._active or self._closed or not self.controller:
             return
         surface = self._voice_surface
+        # CTk pumps Tk events while Windows redraws the titlebar. Its own
+        # withdrawal marker is set only after that nested update returns.
+        # Wait for both the synchronous refresh and delayed remap to finish.
+        if any(getattr(top, "_voice_native_theme_refresh", False)
+               or getattr(top, "_windows_set_titlebar_color_called", False)
+               for top in (self.winfo_toplevel(), surface) if top is not None):
+            self.after(50, self._stop_hidden_capture)
+            return
         if self.winfo_viewable() or (surface is not None and surface.winfo_viewable()):
             return
         state = getattr(self.controller, "state_id", self.controller.state)

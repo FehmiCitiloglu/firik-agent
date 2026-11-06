@@ -361,6 +361,13 @@ class VoiceSessionPanel(ctk.CTkToplevel):
             from firik_agent.ui.components.keyboard_focus import reveal_in_scroll_frame
             reveal_in_scroll_frame(self.error_label)
 
+    def _windows_set_titlebar_color(self, color_mode):
+        self._voice_native_theme_refresh = True
+        try:
+            return super()._windows_set_titlebar_color(color_mode)
+        finally:
+            self._voice_native_theme_refresh = False
+
     def _set_appearance_mode(self, mode_string):
         super()._set_appearance_mode(mode_string)
         if sys.platform == "win32" and not getattr(self, "_closed", True):

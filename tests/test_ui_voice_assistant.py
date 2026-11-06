@@ -298,3 +298,18 @@ def test_console_restores_temporary_native_withdrawal_without_restarting_capture
     surface._restore_after_theme()
     until(app, lambda: surface.winfo_viewable() and surface.orb._job is not None)
     assert len(capture.windows) == 1 and controller.conversation_active
+
+
+def test_native_titlebar_refresh_defers_hidden_capture_check_but_real_hide_pauses(workspace, monkeypatch):
+    app, view, panel, controller, capture, speaker, streams = setup_chat(workspace, monkeypatch)
+    panel.start_conversation()
+    surface = panel._voice_surface
+    until(app, lambda: len(capture.windows) == 1)
+    monkeypatch.setattr(panel, 'winfo_viewable', lambda: False)
+    monkeypatch.setattr(surface, 'winfo_viewable', lambda: False)
+    app._voice_native_theme_refresh = True
+    panel._stop_hidden_capture()
+    assert not controller.paused
+    app._voice_native_theme_refresh = False
+    panel._stop_hidden_capture()
+    assert controller.paused
