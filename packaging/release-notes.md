@@ -1,3 +1,9 @@
+## v0.2.40 değişiklikleri
+
+- Windows'ta tema yenilenirken açılan ses konsolunun geçici gizli pencere durumunu devralması düzeltildi.
+- Tema testleri, gerçek ana pencere yeniden görünür olduktan sonra ses yakalamayı başlatır; pencere yenilemesinin yeni kayıt başlatmadığı da doğrulanır.
+- v0.2.39 için hazırlanan sesli asistan konsolu ve kapanış düzeltmeleri bu yayına dahildir.
+
 ## v0.2.39 değişiklikleri
 
 - Ses penceresi; gerçek mikrofon düzeyini ve görev durumunu gösteren, hareketi azaltılabilen bir asistan konsoluna dönüştürüldü.

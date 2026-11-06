@@ -189,6 +189,12 @@ class VoiceSessionPanel(ctk.CTkToplevel):
         self._update_motion_label()
         self.bind("<Configure>", self._resize, add="+")
         self._layout_job = self.after_idle(self._resize)
+        # A Windows theme update can temporarily withdraw the parent while
+        # this transient window is constructed. Explicitly show the completed
+        # console, rather than inheriting that temporary withdrawn state.
+        self.deiconify()
+        if sys.platform == "win32":
+            self._theme_restore_job = self.after(50, self._restore_after_theme)
 
     @staticmethod
     def _secondary(master, text, command):

@@ -231,6 +231,7 @@ def test_coding_prose_streams_into_console_without_narrating_the_raw_task_stream
 def test_console_orb_tracks_input_and_stops_animation_when_hidden_or_reduced(workspace, monkeypatch, theme):
     app, view, panel, controller, capture, speaker, streams = setup_chat(workspace, monkeypatch)
     ctk.set_appearance_mode(theme)
+    until(app, lambda: app.state() in {'normal', 'zoomed'} and app.winfo_viewable())
     panel.start_conversation()
     surface = panel._voice_surface
     until(app, lambda: len(capture.windows) == 1 and surface.orb._job is not None)
@@ -278,3 +279,14 @@ def test_console_replays_level_delivered_during_native_window_construction(works
     monkeypatch.setattr(VoiceSessionPanel, '__init__', initialize_with_level)
     panel.start_conversation()
     assert panel._voice_surface.orb.level == .74
+
+
+def test_console_restores_temporary_native_withdrawal_without_restarting_capture(workspace, monkeypatch):
+    app, view, panel, controller, capture, speaker, streams = setup_chat(workspace, monkeypatch)
+    panel.start_conversation()
+    surface = panel._voice_surface
+    until(app, lambda: len(capture.windows) == 1 and surface.winfo_viewable())
+    surface.withdraw()
+    surface._restore_after_theme()
+    until(app, lambda: surface.winfo_viewable() and surface.orb._job is not None)
+    assert len(capture.windows) == 1 and controller.conversation_active
