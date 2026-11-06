@@ -1,3 +1,8 @@
+## v0.2.48 değişiklikleri
+
+- Windows yayınını engelleyen POSIX kabuk sözdizimli süreç iptal testi, platformun gerçek kabuğunda çalışan Python süreç ağacı ve hazır olma sinyaliyle düzeltildi; hızlı Windows regresyon akışına eklendi.
+- v0.2.47 için hazırlanan entegre Chromium tarayıcısı, sohbet/kodlama panelleri, denetimli geliştirme sunucuları ve paketlenmiş tarayıcı doğrulaması bu yayına dahildir.
+
 ## v0.2.47 değişiklikleri
 
 - Yerel ajan döngüsüne gerçek Chromium tarayıcı araçları, sohbet ve Kodlama Ajanı için Tarayıcı paneli ve isteğe bağlı canlı önizleme eklendi.

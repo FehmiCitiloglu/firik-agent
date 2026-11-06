@@ -23,6 +23,8 @@ jobs:
           python-version: '3.11'
           cache: pip
       - run: python -m pip install -e '.[dev,desktop-build]'
+      - name: Portable process tree cancellation
+        run: python -m pytest -q tests/test_execution_backends.py::test_cancel_process_group
       - name: Concurrent benchmark replay
         run: python -m pytest -q tests/benchmarks/test_runner.py::test_replay_and_git_revisions_stable_across_concurrent_trials
       - name: Light console

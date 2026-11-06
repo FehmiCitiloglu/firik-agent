@@ -68,18 +68,37 @@ async def test_timeout_and_output_bound(tmp_path, python_command):
 
 
 @pytest.mark.asyncio
-async def test_cancel_process_group(tmp_path):
+async def test_cancel_process_group(tmp_path, python_command):
     backend = HostExecutionBackend()
     workspace = await backend.create_workspace(tmp_path)
-    request = CommandRequest("sleep 30 & wait")
+    # Exercise the configured shell on every OS. POSIX background/wait syntax
+    # can exit early under cmd.exe, racing cancellation against normal exit.
+    request = CommandRequest(python_command("-u", "-c",
+        "import subprocess, sys; "
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+        "print('process-tree-ready', flush=True); child.wait()"))
     task = asyncio.create_task(backend.execute_command(workspace, request))
-    for _ in range(100):
-        if request.command_id in backend.commands and backend.commands[request.command_id].process:
-            break
-        await asyncio.sleep(.001)
-    assert await backend.cancel_command(request.command_id)
-    assert task.cancelled()
-    assert backend.commands[request.command_id].result.cancelled
+    async def wait_ready():
+        # Registration precedes process startup and output publication.
+        while request.command_id not in backend.commands:
+            await asyncio.sleep(.001)
+        output = ""
+        async for event in backend.stream_output(request.command_id):
+            output += event.text
+            if "process-tree-ready" in output:
+                return
+        pytest.fail("Process tree exited before reporting readiness")
+    try:
+        await asyncio.wait_for(wait_ready(), timeout=20)
+        assert await backend.cancel_command(request.command_id)
+        assert task.cancelled()
+        assert backend.commands[request.command_id].result.cancelled
+        assert backend.commands[request.command_id].process.returncode is not None
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await backend.destroy_workspace(workspace)
 
 
 @pytest.mark.asyncio
