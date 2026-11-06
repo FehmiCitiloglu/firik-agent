@@ -1,0 +1,16 @@
+{
+  "artifact": "/private/tmp/firik-browser-20261106-dist/firik-agent.app",
+  "architecture": "arm64",
+  "application_version": "0.2.46",
+  "pyinstaller_version": "6.22.3",
+  "signature_verification_exit_code": 0,
+  "signature": "ad hoc; no Developer ID/notarization claimed",
+  "binary_sha256": "25a0ff13ca23b13184c3022d74e364686d83fc7f1a86afdf522045ffb4ddef8f",
+  "driver_node_bundled": true,
+  "native_smoke_exit_code": 0,
+  "browser_smoke_exit_code": 0,
+  "chromium_version": "156.0.8078.4",
+  "distribution_ready": false,
+  "build_command": "PYINSTALLER_CONFIG_DIR=/private/tmp/firik-browser-20261106-pyi-cache .venv/bin/python -m PyInstaller --noconfirm --distpath /private/tmp/firik-browser-20261106-dist --workpath /private/tmp/firik-browser-20261106-build firik-agent.spec",
+  "metadata_refresh": "Refreshed editable distribution and generated egg-info from stale 0.2.38 to source version0.2.46 without dependencies."
+}

@@ -87,6 +87,7 @@ class _ChildControl(CodingRunControl):
                                     "max_parallel_agents": 1, "max_iterations": manager.limits.max_iterations}
         # Children never expose delegation tools, regardless of parent permission.
         self.permissions["allow_subagents"] = False
+        self.browser_grant = parent.browser_grant
         self.permit_provider_fallback = False
         # Implicit summary inference has no child reservation/usage hooks yet.
         # Keep the deterministic context bound so every paid request is reserved.
@@ -527,13 +528,22 @@ class SubagentToolFilter:
         if permissions is not None and not isinstance(permissions, Mapping):
             raise ValueError("Alt ajan izinleri nesne olmalıdır.")
         requested_permissions = dict(intersect_permissions(self.control.permissions, permissions))
+        # Browser use is delegated explicitly, never inherited merely because
+        # the parent has an enabled context. Every child receives its own owner.
+        requested_permissions["allow_browser"] = bool(requested_permissions.get("allow_browser") is True
+            and permissions is not None and permissions.get("allow_browser") is True
+            and permitted_tools and any(name.startswith("browser_") for name in permitted_tools))
         configured = getattr(self.control, "execution_config", None)
         backend = getattr(configured, "backend", "host") if configured else "host"
         selected_backend = execution_backend or backend
         if selected_backend != backend:
             raise PermissionError("Child execution backend cannot replace the parent's boundary.")
         role_kind = ROLE_ASSIGNMENTS[canonical_role]
-        offered = READ_TOOLS if canonical_role in {"researcher", "reviewer"} else ROLE_TOOLS[role_kind] - {"run_command"}
+        offered = ROLE_TOOLS[role_kind] - {"run_command"}
+        if canonical_role in {"researcher", "reviewer"}:
+            offered = frozenset(name for name in offered if name in READ_TOOLS or name.startswith("browser_"))
+        if requested_permissions["allow_browser"] is not True:
+            offered = frozenset(name for name in offered if not name.startswith("browser_"))
         # Application path grants cannot constrain an arbitrary host script.
         if canonical_role in {"worker", "tester"} and backend == "host":
             offered -= {"run_tests", "run_quality_gate"}
@@ -646,7 +656,8 @@ class SubagentToolFilter:
                     control.on_event = lambda event: self._event(job, event)
                     control.plan = [dict(step) for step in self.control.plan]
                     job["control"] = control
-                    local_parent = CodingToolFilter(job["workspace"]["path"], control)
+                    local_parent = CodingToolFilter(job["workspace"]["path"], control,
+                        browser_manager=self.parent.browser_manager)
                     job["local_filter"] = local_parent
                     local_session = job["session"]
                     workspace = WorkspaceBinding(self.control.project_id, job["workspace"]["path"],
@@ -669,6 +680,9 @@ class SubagentToolFilter:
             job.update(status="outcome_unknown" if uncertain or isinstance(error, (TimeoutError, asyncio.TimeoutError)) else "failed",
                        result=self.redact(safe_text(str(error))) or "Alt ajan zaman sınırını aştı.")
         finally:
+            child_adapter = getattr(self.parent, "_browser_adapters", {}).get(job["agent_id"])
+            if child_adapter is not None:
+                await child_adapter.manager.close_owner(child_adapter.identity)
             if job.get("workspace"):
                 if job.get("local_filter"):
                     try:

@@ -207,6 +207,18 @@ Kullanıcı mesajı gönderildiğinde bir kez, model yanıtı tamamlandığında
 
 **Web MCP** de masaüstünde varsayılan olarak yeni sohbetlere eklenir: `web_search` DuckDuckGo üzerinden bağlantı arar, `web_open` HTTP(S) sayfalarını metin olarak okur. Harici MCP kurulumu veya API anahtarı gerekmez; arama sağlayıcısının erişilebilirliği ve sayfaların sunucu tarafında okunabilir olması gerekir. JavaScript ile oluşturulan içerik, oturum açılmış sayfalar ve PDF'ler desteklenmez. MCP yöneticisinden veya sohbetin MCP seçicisinden kapatılabilir. Arama sorguları sağlayıcıya gönderilir; web araçları Docker komut sandbox'ının dışında, uygulamanın ağ erişimiyle çalışır ve yerel ağ adreslerini de açabilir. Web içeriği güvenilir talimat olarak değerlendirilmemelidir.
 
+### Yerel Tarayıcı
+
+İsteğe bağlı `browser` paketiyle aynı yerel ajan döngüsü gerçek Chromium sekmelerini yönetebilir. Sohbette **Tarayıcı**, Kodlama Ajanı çalışma alanında **Tarayıcı** sekmesini açın; yetkiyi ve tam site kökenlerini açıkça seçin. Yerel uygulamalar için bağlantı noktasıyla birlikte ayrı yerel ağ izni gerekir. Form etkileşimleri mevcut onay penceresinden geçer; giriş ve MFA için elle kontrol kullanılır.
+
+```sh
+python -m pip install -e '.[browser]'
+firik-agent browser install
+firik-agent browser doctor --launch
+```
+
+Kurulum otomatik yapılmaz. Ekran görüntüsü izni ayrıdır; kalıcı profil ve dosya aktarımı kapalıdır. Tarayıcı ana makinede çalışır; Docker komut sandbox'ı tarayıcıyı kapsamaz. [Kullanım ve sınırlar](docs/BROWSER_ENGINE.md), [mimari](docs/BROWSER_ARCHITECTURE.md) ve [doğrulama raporu](docs/BROWSER_VERIFICATION_REPORT.md).
+
 ### Projeler: Kodlama Ajanı
 
 Projenin **Kodlama Ajanı** sekmesinde model seçimi proje bazında kaydedilir. **Değişiklikler**, her çalışma başlangıcındaki dosyalarla karşılaştırarak eklenen, değişen ve silinen dosyaları; yeşil/kırmızı satır farklarını gösterir. Araç işlemlerinden sonra ve çalışma sonunda otomatik güncellenir. Git deposu olmayan projelerde de çalışır. **İşlemler** sekmesinden araç parametreleri, komut çıktısı, çalışma süresi ve hatalar incelenebilir. **Dosyalar** alt klasörlerdeki kaynak dosyaları listeler ve satır numaralı önizleme açar.

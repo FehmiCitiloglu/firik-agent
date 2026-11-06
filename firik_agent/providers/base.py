@@ -22,6 +22,10 @@ class BaseProvider(ABC):
         self.current_model = default_model
         self.model_metadata: Dict[str, Dict[str, Any]] = {}
         self.reasoning_effort: Optional[str] = None
+        # Host evidence that this exact endpoint accepts user image_url input.
+        # Browser tools additionally require per-observation delivery permission
+        # and explicit model vision metadata. No name-based default enables it.
+        self.browser_image_transport_verified: bool = False
 
     def set_model(self, model_name: str) -> None:
         self.current_model = model_name

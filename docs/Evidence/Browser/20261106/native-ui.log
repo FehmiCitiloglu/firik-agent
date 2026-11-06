@@ -1,0 +1,76 @@
+tests/test_ui_browser.py::test_explicit_scope_and_preview_defaults
+.                                                                        [100%]
+1 passed in 0.81s
+
+tests/test_ui_browser.py::test_preview_and_handoff_do_not_capture_authentication
+.                                                                        [100%]
+1 passed in 0.85s
+
+tests/test_ui_browser.py::test_coding_browser_tab_saves_project_grant_without_launch
+.                                                                        [100%]
+1 passed in 1.61s
+
+tests/test_ui_coding_workspace.py::test_scan_omissions_do_not_mask_the_actual_run_error
+.                                                                        [100%]
+1 passed in 1.35s
+
+tests/test_ui_coding_workspace.py::test_model_failure_detail_survives_final_workspace_scan
+.                                                                        [100%]
+1 passed in 1.65s
+
+tests/test_ui_coding_workspace.py::test_phase3_profile_selector_prepares_separate_context_and_inspector
+.                                                                        [100%]
+1 passed in 1.89s
+
+tests/test_ui_coding_workspace.py::test_subagent_opt_in_native_activity_card_and_terminal_isolation
+.                                                                        [100%]
+1 passed in 1.86s
+
+tests/test_ui_coding_workspace.py::test_modes_multiline_cards_approvals_and_project_identity
+.                                                                        [100%]
+1 passed in 2.74s
+
+tests/test_ui_coding_workspace.py::test_panel_preferences_and_long_conversation_are_bounded
+.                                                                        [100%]
+1 passed in 5.48s
+
+tests/test_ui_coding_workspace.py::test_hidden_conversation_renders_latest_text_when_opened
+.                                                                        [100%]
+1 passed in 2.10s
+
+tests/test_ui_coding_workspace.py::test_native_drop_line_references_and_compact_approval_review
+.                                                                        [100%]
+1 passed in 1.57s
+
+tests/test_ui_coding_workspace.py::test_history_export_selects_visible_run_and_preserves_json
+.                                                                        [100%]
+1 passed in 1.50s
+
+tests/test_ui_coding_workspace.py::test_stop_during_context_preparation_prevents_model_start
+.                                                                        [100%]
+1 passed in 1.29s
+
+tests/test_ui_coding_workspace.py::test_native_compaction_stage_is_visible_and_keeps_running
+.                                                                        [100%]
+1 passed in 1.87s
+
+tests/test_ui_chat_workspace.py::test_two_streams_keep_messages_drafts_and_cancellation_separate
+.                                                                        [100%]
+1 passed in 1.03s
+
+tests/test_ui_chat_workspace.py::test_deltas_do_not_write_history_and_hidden_completion_is_marked
+.                                                                        [100%]
+1 passed in 1.71s
+
+tests/test_ui_chat_workspace.py::test_history_search_and_delete_do_not_resurrect_chat
+.                                                                        [100%]
+1 passed in 0.89s
+
+tests/test_ui_chat_workspace.py::test_workspace_toolbar_fits_small_window
+.                                                                        [100%]
+1 passed in 0.85s
+
+tests/test_ui_chat_workspace.py::test_sidebar_reports_each_background_chats_actual_phase
+.                                                                        [100%]
+1 passed in 0.87s
+

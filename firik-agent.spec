@@ -33,6 +33,15 @@ for audio_module, audio_distribution in (("soundfile", "soundfile"), ("webrtcvad
         hiddenimports.append(audio_module)
         datas += copy_metadata(audio_distribution, recursive=True)
 
+# The optional Python driver must travel with a browser-enabled build. Chromium
+# is installed explicitly in Playwright's external cache; it is never silently
+# downloaded by the app or assumed to exist inside the executable.
+if find_spec("playwright") is not None:
+    browser_datas, browser_binaries, browser_hidden = collect_all("playwright")
+    datas += browser_datas + copy_metadata("playwright", recursive=True)
+    binaries += browser_binaries
+    hiddenimports += browser_hidden
+
 
 # CustomTkinter varlıkları (fontlar, JSON tema dosyaları, ikonlar)
 ctk_datas, ctk_binaries, ctk_hidden = collect_all("customtkinter")

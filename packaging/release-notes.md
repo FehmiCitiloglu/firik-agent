@@ -1,3 +1,12 @@
+## v0.2.47 değişiklikleri
+
+- Yerel ajan döngüsüne gerçek Chromium tarayıcı araçları, sohbet ve Kodlama Ajanı için Tarayıcı paneli ve isteğe bağlı canlı önizleme eklendi.
+- Oturum ve köken bazlı tarayıcı izinleri, işlem önizlemesine bağlı onaylar, giriş/MFA için elle kontrol ve özel ekran görüntüsü izinleri eklendi.
+- Kodlama görevlerinde denetimli yerel geliştirme sunucuları ve güncel kaynak durumuna bağlı tarayıcı doğrulama kanıtları eklendi.
+- Tarayıcı gözlemlerinin saklanması, hassas veri temizliği, sağlayıcı görüntü aktarımı ve kesintilerden sonra belirsiz işlemlerin kurtarılması geliştirildi.
+- Masaüstü paketlerine Playwright sürücüsü dahil edildi; yayın akışı paketlenmiş uygulamadan Chromium başlatmayı da doğrular. Chromium ayrıca açıkça kurulmalıdır; uygulama açılışında indirilmez ve tarayıcı varsayılan olarak kapalıdır.
+- Tarayıcı mimarisi, kullanım kılavuzu, yerel doğrulama kanıtları ve isteğe bağlı çapraz platform Chromium test akışı eklendi.
+
 ## v0.2.46 değişiklikleri
 
 - Harici harness oturum başlatma el sıkışması (`get_state`) zaman aşımı sabit 10 saniyeye ayarlanarak, alt-saniye görev zaman aşımlı testlerde ve yavaş macOS koşucularında erken oturum iptali (`startup_timeout`) önlendi.

@@ -1,0 +1,84 @@
+{
+  "mode": "fresh native macOS process per case",
+  "tests": [
+    {
+      "test": "tests/test_ui_browser.py::test_explicit_scope_and_preview_defaults",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_browser.py::test_preview_and_handoff_do_not_capture_authentication",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_browser.py::test_coding_browser_tab_saves_project_grant_without_launch",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_coding_workspace.py::test_scan_omissions_do_not_mask_the_actual_run_error",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_coding_workspace.py::test_model_failure_detail_survives_final_workspace_scan",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_coding_workspace.py::test_phase3_profile_selector_prepares_separate_context_and_inspector",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_coding_workspace.py::test_subagent_opt_in_native_activity_card_and_terminal_isolation",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_coding_workspace.py::test_modes_multiline_cards_approvals_and_project_identity",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_coding_workspace.py::test_panel_preferences_and_long_conversation_are_bounded",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_coding_workspace.py::test_hidden_conversation_renders_latest_text_when_opened",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_coding_workspace.py::test_native_drop_line_references_and_compact_approval_review",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_coding_workspace.py::test_history_export_selects_visible_run_and_preserves_json",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_coding_workspace.py::test_stop_during_context_preparation_prevents_model_start",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_coding_workspace.py::test_native_compaction_stage_is_visible_and_keeps_running",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_chat_workspace.py::test_two_streams_keep_messages_drafts_and_cancellation_separate",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_chat_workspace.py::test_deltas_do_not_write_history_and_hidden_completion_is_marked",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_chat_workspace.py::test_history_search_and_delete_do_not_resurrect_chat",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_chat_workspace.py::test_workspace_toolbar_fits_small_window",
+      "exit_code": 0
+    },
+    {
+      "test": "tests/test_ui_chat_workspace.py::test_sidebar_reports_each_background_chats_actual_phase",
+      "exit_code": 0
+    }
+  ],
+  "passed": 19,
+  "total": 19,
+  "seconds": 46.37
+}

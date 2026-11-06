@@ -46,6 +46,7 @@ from firik_agent.mcp.models import (
 from firik_agent.projects.service import ProjectService
 from firik_agent.projects.workspace import WorkspaceSnapshot, capture_workspace, compare_workspaces
 from firik_agent.ui.coding_bridge import CodingBridge
+from firik_agent.ui.browser_bridge import BrowserBridge
 from firik_agent.ui.improvement_bridge import ImprovementBridge
 from firik_agent.voice.telemetry import VoiceAgentTiming
 
@@ -96,7 +97,7 @@ def turkce_hata_mesaji(hata: Exception) -> str:
     return f"Beklenmeyen bir hata oluştu: {str(hata)}"
 
 
-class FirikService(CodingBridge, ImprovementBridge):
+class FirikService(CodingBridge, ImprovementBridge, BrowserBridge):
     """firik masaüstü uygulaması için merkezi API yöneticisi."""
 
     def __init__(self, dispatch=None, config_path=None) -> None:
@@ -154,6 +155,7 @@ class FirikService(CodingBridge, ImprovementBridge):
 
         # Core runtime, MCP pool & session managers
         self.runtime = AsyncRuntime.get_instance()
+        self._init_browser_bridge()
         self.mcp_manager = MCPConnectionManager()
         self.mcp_manager.load_from_config(self.config.get("mcp_servers", {}))
         self.session_tool_filter = SessionToolFilter(self.mcp_manager.tool_registry, self.mcp_manager)
@@ -433,6 +435,9 @@ class FirikService(CodingBridge, ImprovementBridge):
                     self._stream_futures[sid].cancel()
         if session_id is None and self._active_stream_cancel:
             self._active_stream_cancel.set()
+        if hasattr(self, "browser_manager") and self.runtime.is_running:
+            for sid in ids:
+                self.close_browser_async(sid)
 
     def chat_stream_async(
         self,
@@ -1304,7 +1309,17 @@ class FirikService(CodingBridge, ImprovementBridge):
             await agent.initialize()
             agent.providers.get_active().set_model(session.model)
             self.configure_model_metadata(agent.providers.get_active())
-            tool_filter = SessionToolFilter(agent.tools, self.mcp_manager, self.mcp_manager.tool_registry)
+            browser_adapter = self._chat_browser_adapter(session, cancel_event=cancel_event, on_approval=on_approval)
+            async def external_authorize(name, arguments):
+                definition = (self.mcp_manager.tool_registry.get_tool(name) or agent.tools.get_tool(name))
+                payload = {"session_id": session.session_id, "tool_name": name, "arguments": arguments,
+                    "reason": "Bu sohbet güvenilmeyen tarayıcı içeriği taşıyor. Ayrı araç işlemini inceleyin. "
+                              + "Yürütme sınırı: " + (definition.execution_boundary if definition else "unknown")}
+                allowed = await self._voice_tool_approval(payload, on_approval, cancel_event)
+                return allowed is True and not cancel_event.is_set()
+            tool_filter = SessionToolFilter(agent.tools, self.mcp_manager, self.mcp_manager.tool_registry,
+                browser_adapter=browser_adapter,
+                external_tool_authorize=external_authorize if on_approval is not None else None)
             if voice_request is not None:
                 from firik_agent.voice.execution import VoiceToolFilter
                 tool_filter = VoiceToolFilter(tool_filter, voice_request,
@@ -1385,6 +1400,8 @@ class FirikService(CodingBridge, ImprovementBridge):
                         release_stream()
                     if on_event:
                         self._dispatch(on_event, evt)
+                    if evt.type == AgentEventType.TOOL_CALL_RESULT and evt.tool_name == "browser_request_handoff":
+                        await self._await_browser_handoff(session_id, cancel_event)
                     if evt.type == AgentEventType.DONE:
                         final_text = evt.content or ""
             finally:
@@ -1425,6 +1442,13 @@ class FirikService(CodingBridge, ImprovementBridge):
         for test in audio_tests:
             test.shutdown(timeout=3.0)
         self.cancel_active_stream()
+        try:
+            cleanup = self.runtime.run_sync(self.shutdown_browser_resources(), timeout=30.0)
+            if cleanup.get("retained"):
+                logger.warning("Browser/execution cleanup retained resources requiring reconciliation.")
+        except Exception as error:
+            self._browser_shutdown_cleanup = {"retained": True, "error_type": type(error).__name__}
+            logger.warning("Browser/execution shutdown did not finish before runtime shutdown.")
         try:
             self.runtime.run_sync(self.mcp_manager.shutdown(), timeout=5.0)
         except Exception:

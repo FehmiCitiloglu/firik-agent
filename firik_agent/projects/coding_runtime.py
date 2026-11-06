@@ -39,7 +39,9 @@ MAX_OUTPUT_CHARS = 32_768
 MODES = {"ask", "plan", "approved", "auto", "safe", "assisted", "autonomous", "custom"}
 POLICY_ACTIONS = frozenset({"filesystem.read", "filesystem.write", "filesystem.delete", "shell.safe",
                           "shell.network", "shell.sudo", "network", "git.read", "git.commit", "git.push",
-                          "git.forcePush", "mcp", "secrets", "spawn_agents"})
+                          "git.forcePush", "mcp", "secrets", "spawn_agents", "browser.observe",
+                          "browser.navigate", "browser.interact", "browser.submit", "browser.upload",
+                          "browser.download", "browser.authenticated", "browser.profile", "browser.debug"})
 POLICY_VALUES = {"allow", "ask", "deny"}
 _POLICY_ALIASES = {"filesystem_read": "filesystem.read", "filesystem_write": "filesystem.write",
                    "filesystem_delete": "filesystem.delete", "shell": "shell.safe", "git_read": "git.read",
@@ -315,7 +317,8 @@ class CodingRunControl:
                  on_event: Optional[Callable[[AgentEvent], None]] = None,
                  run_id: Optional[str] = None, policy: Optional[Dict[str, str]] = None,
                  inherited_policy: Optional[Dict[str, str]] = None, excluded_paths: Optional[list[str]] = None,
-                 execution_config: ExecutionConfig | dict | None = None, voice_request=None):
+                 execution_config: ExecutionConfig | dict | None = None, voice_request=None,
+                 browser_grant=None):
         if mode not in MODES:
             raise ValueError("Geçersiz kodlama çalışma modu.")
         self.session_id, self.project_id, self.task_id = session_id, project_id, task_id
@@ -340,13 +343,15 @@ class CodingRunControl:
         self._actor_context: ContextVar[Optional[str]] = ContextVar(f"coding_actor_{self.run_id}", default=None)
         self.permissions = {"allow_reads": True, "allow_edits": True, "allow_deletes": True,
                             "allow_terminal": True, "allow_tests": True, "allow_mcp": False,
-                            "allow_subagents": True}
+                            "allow_subagents": True, "allow_browser": False}
         for key, value in (permissions or {}).items():
             if key in self.permissions:
                 if not isinstance(value, bool):
                     raise ValueError("İşlem izinleri doğru veya yanlış olmalıdır.")
                 self.permissions[key] = value
         self.policy = _clean_policy(policy)
+        from firik_agent.browser.models import BrowserGrant
+        self.browser_grant = browser_grant or BrowserGrant()
         self._inherited_policy = _clean_policy(inherited_policy)
         if excluded_paths is not None and (not isinstance(excluded_paths, list)
                 or not all(isinstance(path, str) and path and "\x00" not in path for path in excluded_paths)):
@@ -475,12 +480,17 @@ class CodingRunControl:
                          "shell.sudo": "deny", "network": "ask", "git.commit": "ask",
                          "git.push": "ask", "git.forcePush": "deny", "mcp": "ask", "secrets": "deny",
                          "spawn_agents": "ask" if self.mode == "safe" else "allow"})
+        defaults.update({"browser.navigate": "ask", "browser.interact": "ask", "browser.submit": "ask",
+                         "browser.authenticated": "ask", "browser.upload": "deny",
+                         "browser.download": "deny", "browser.profile": "deny"})
         decision = self.policy.get(action, defaults[action])
         parent = self._inherited_policy.get(action, "allow")
         decision = max((decision, parent), key=_POLICY_RANK.get)
         permission = {"filesystem.read": "allow_reads", "filesystem.write": "allow_edits",
                       "filesystem.delete": "allow_deletes", "git.read": "allow_reads", "mcp": "allow_mcp", "spawn_agents": "allow_subagents"}.get(action)
         if permission and self.permissions.get(permission) is not True:
+            decision = "deny"
+        if action.startswith("browser.") and self.permissions.get("allow_browser") is not True:
             decision = "deny"
         if action == "spawn_agents" and self.permissions.get("allow_reads") is not True:
             decision = "deny"
@@ -490,11 +500,13 @@ class CodingRunControl:
             decision = "deny"
         if action in {"git.commit", "git.push"} and self.permissions.get("allow_terminal") is not True:
             decision = "deny"
-        if self.mode in {"ask", "plan"} and action not in {"filesystem.read", "git.read", "spawn_agents"}:
+        if self.mode in {"ask", "plan"} and action not in {"filesystem.read", "git.read", "spawn_agents", "browser.observe", "browser.debug"}:
             decision = "deny"
         if action in {"secrets", "shell.sudo", "git.forcePush"}:
             decision = "deny"
         elif action in {"shell.safe", "shell.network", "git.commit", "git.push", "mcp"}:
+            decision = max((decision, "ask"), key=_POLICY_RANK.get)
+        elif action in {"browser.interact", "browser.submit", "browser.authenticated"}:
             decision = max((decision, "ask"), key=_POLICY_RANK.get)
         if self.excluded_paths and action in {"shell.safe", "shell.network", "git.commit", "git.push", "mcp"}:
             # An unrestricted process or external MCP handler could read the
@@ -657,14 +669,14 @@ class CodingToolFilter:
     """Owns an isolated registry. It never inherits unrestricted meta/plugin handlers."""
 
     READ_TOOLS = {"read_file", "list_files", "search_project", "search_symbols", "git_status", "git_diff",
-                  "inspect_execution", "collect_execution_artifacts"}
+                  "inspect_execution", "collect_execution_artifacts", "inspect_dev_server"}
     EDIT_TOOLS = {"edit_file", "write_file", "apply_patch", "delete_file", "undo_change"}
     STATE_TOOLS = {"update_plan", "record_verification", "discover_quality_gates", "run_quality_gate"}
     META_TOOLS = {"discover_tools"}
 
     def __init__(self, root: str | Path, control: CodingRunControl,
                  mcp_registry: Optional[ToolRegistry] = None,
-                 trusted_mcp_tools: Optional[set[str]] = None):
+                 trusted_mcp_tools: Optional[set[str]] = None, browser_manager=None):
         self.root = Path(root).expanduser().resolve(strict=True)
         if not self.root.is_dir():
             raise ValueError("Proje kökü bir klasör olmalıdır.")
@@ -682,6 +694,86 @@ class CodingToolFilter:
         self.before_file_mutation: Optional[Callable[[str], None]] = None
         self._schema_session: Optional[ChatSession] = None
         self._register_tools()
+        self.browser_manager = browser_manager
+        self._browser_adapters = {}
+        self._browser_loaded_versions = {}
+        self.browser_adapter = None
+        self.dev_servers = None
+        if browser_manager is not None:
+            self.browser_adapter = self._browser_adapter()
+            from firik_agent.projects.dev_servers import DevServerSupervisor
+            self.dev_servers = DevServerSupervisor(self.root, control.execution_config,
+                self.browser_adapter.grant_provider, cancelled=control.cancel_event)
+            for definition in self.browser_adapter.definitions():
+                async def handler(_name=definition.name, **arguments):
+                    # Even a direct run-local registry call crosses live host
+                    # authorization and the ownership-aware browser dispatcher.
+                    return await self._execute_browser(_name, arguments)
+                self.tools.register(definition, handler)
+            self.tools.register(ToolDefinition(name="browser_verify", source="native:browser", execution_boundary="host",
+                description="Verify exact page URL, visible text, or absence of browser errors against the current source revision. Does not complete the plan.",
+                parameters={"type": "object", "properties": {
+                    "kind": {"type": "string", "enum": ["text_contains", "url_equals", "no_console_errors", "no_page_errors", "no_network_errors"]},
+                    "expected": {"type": "string"}, "tab_id": {"type": "string"}},
+                    "required": ["kind"], "additionalProperties": False}), self.browser_verify)
+            self._register("start_dev_server", "Start one supervised development server through approved command execution. Requires an exact granted loopback origin; waits for HTTP readiness.",
+                self.start_dev_server, {"command": {"type": "string"}, "cwd": {"type": "string"},
+                    "origin": {"type": "string"}, "ready_timeout": {"type": "number"}, "lifetime": {"type": "number"}}, ["command", "origin"])
+            self._register("inspect_dev_server", "Inspect the owned supervised server, bounded output, readiness and remaining process state.", self.inspect_dev_server, {}, [])
+            self._register("stop_dev_server", "Stop the owned development server and clean up its process group.", self.stop_dev_server, {}, [])
+
+    async def _execute_browser(self, name, arguments):
+        adapter = self._browser_adapter()
+        before = await asyncio.to_thread(self._workspace_version) if name in {"browser_navigate", "browser_reload"} else None
+        identifier = "browser_" + uuid4().hex
+        try:
+            result = await adapter.execute(ToolCall(id=identifier, function={
+                "name": name, "arguments": json.dumps(arguments)}))
+        except asyncio.CancelledError:
+            from firik_agent.browser.tool_adapter import READ_TOOLS as BROWSER_READ_TOOLS
+            if name not in BROWSER_READ_TOOLS and adapter.executions.get(identifier, {}).get("dispatched"):
+                self.control.unresolved_operations.append({"tool_call_id": identifier, "tool_name": name,
+                    "request_phase": "tool_dispatched", "failure_kind": "tool_outcome_unknown",
+                    "requires_reconciliation": True, "retry_eligible": False})
+            raise
+        if before is not None and not result.is_error:
+            after = await asyncio.to_thread(self._workspace_version)
+            data = json.loads(result.content)
+            key = (adapter.identity.actor_id, data.get("tab_id"))
+            self._browser_loaded_versions.pop(key, None)
+            if (before["complete"] and after["complete"] and before["digest"] == after["digest"]
+                    and data.get("http_status") is not None and data["http_status"] < 400
+                    and data.get("url", "").startswith(("http://", "https://"))):
+                self._browser_loaded_versions[key] = {"digest": after["digest"], "url": data["url"]}
+        return result
+
+    def _browser_adapter(self):
+        from firik_agent.browser.models import BrowserIdentity, BrowserGrant
+        from firik_agent.browser.tool_adapter import BrowserToolAdapter
+        actor = self.control.actor_metadata().get("agent_id", "parent")
+        if actor not in self._browser_adapters:
+            identity = BrowserIdentity(conversation_id=self.control.session_id,
+                project_id=self.control.project_id, run_id=self.control.run_id,
+                actor_id=actor, parent_agent_id=self.control.run_id if actor != "parent" else "")
+            def grant():
+                configured = self.control.browser_grant
+                if self.control.permissions.get("allow_browser") is not True:
+                    return BrowserGrant()
+                parent = getattr(self.control, "parent", None)
+                if parent is not None:
+                    live = parent.browser_grant
+                    return BrowserGrant(enabled=configured.enabled and live.enabled
+                        and parent.permissions.get("allow_browser") is True,
+                        origins=tuple(value for value in configured.origins if value in live.origins),
+                        allow_private_origins=tuple(value for value in configured.allow_private_origins if value in live.allow_private_origins),
+                        allow_screenshots=configured.allow_screenshots and live.allow_screenshots)
+                return configured
+            async def authorize(action, name, preview):
+                await self.control.authorize(action, name, preview,
+                    "Tarayıcı işlemi yerel Chromium içinde çalışır. Hedefi, formu ve beklenen etkiyi inceleyin.")
+            self._browser_adapters[actor] = BrowserToolAdapter(self.browser_manager, identity,
+                grant, authorize=authorize, cancelled=self.control.cancel_event)
+        return self._browser_adapters[actor]
 
     def _resolve(self, raw: str, *, must_exist: bool = True) -> Path:
         if not isinstance(raw, str) or not raw or "\x00" in raw:
@@ -863,6 +955,14 @@ class CodingToolFilter:
 
     @staticmethod
     def _tool_policy(name: str) -> str | None:
+        if name == "browser_verify":
+            return "browser.observe"
+        if name.startswith("browser_"):
+            from firik_agent.browser.tool_adapter import browser_action
+            try:
+                return browser_action(name)
+            except KeyError:
+                return None
         if name in {"git_status", "git_diff"}:
             return "git.read"
         if name in CodingToolFilter.READ_TOOLS or name == "discover_quality_gates":
@@ -878,6 +978,21 @@ class CodingToolFilter:
     def is_tool_allowed(self, name: str, session: ChatSession) -> bool:
         if session.session_id != self.control.session_id:
             return False
+        if name in {"start_dev_server", "inspect_dev_server", "stop_dev_server"}:
+            if self.dev_servers is None:
+                return False
+            if name == "stop_dev_server":
+                return True  # Cleanup remains available after permission revocation.
+            return bool(self.control.permissions.get("allow_browser") is True
+                and self.control.browser_grant.enabled and self.control.permissions.get("allow_reads") is True
+                and (name == "inspect_dev_server" or (self.control.permissions.get("allow_terminal") is True
+                    and self.control.mode not in {"ask", "plan"}
+                    and all(self.control.permission_decision(action) != "deny"
+                        for action in ("shell.safe", "network", "browser.navigate")))))
+        if name.startswith("browser_"):
+            return bool(self.browser_manager is not None and self._browser_adapter().is_tool_allowed(
+                            "browser_snapshot" if name == "browser_verify" else name)
+                        and self.control.permission_decision(self._tool_policy(name)) != "deny")
         if self.tools.get_tool(name):
             if name in self.READ_TOOLS | {"discover_quality_gates"} and not self.control.permissions["allow_reads"]:
                 return False
@@ -949,11 +1064,12 @@ class CodingToolFilter:
         if self.control.execution_journal is None or self.control._durable_tool.get():
             return await self._execute_unjournaled(tool_call, session)
         from firik_agent.core.recovery import tool_semantics, SideEffectRisk
+        from firik_agent.projects.coding_sessions import redact_browser_arguments
         name = tool_call.function.name
         registry = self.tools if self.tools.get_tool(name) else self.mcp_registry
         risk = tool_semantics(name, registry.get_tool(name) if registry else None)
         intent = self.control.durable_begin("tool:" + name, step_id="tool_" + tool_call.id,
-            input_data=tool_call.function.arguments, side_effect=risk.value,
+            input_data=redact_browser_arguments(name, tool_call.function.arguments), side_effect=risk.value,
             metadata={"kind": "tool", "tool_name": name, "manual": True})
         identifier = intent["attempt_id"]
         self.control.durable_transition(identifier, "dispatching")
@@ -975,7 +1091,8 @@ class CodingToolFilter:
         dispatched = False
         try:
             await self.control.checkpoint()
-            if self.control.unresolved_operations and name not in self.READ_TOOLS | self.META_TOOLS | {"discover_quality_gates"}:
+            from firik_agent.browser.tool_adapter import READ_TOOLS as BROWSER_READ_TOOLS
+            if self.control.unresolved_operations and name not in self.READ_TOOLS | self.META_TOOLS | BROWSER_READ_TOOLS | {"discover_quality_gates", "browser_verify"}:
                 raise PermissionError("Sonucu bilinmeyen işlem var; uzlaştırma tamamlanmadan yeni yan etki başlatılamaz.")
             if self.control.failures.get(failure_key, 0) >= 3:
                 raise ValueError("Aynı işlem üç kez başarısız oldu; yöntem veya parametre değiştirin.")
@@ -1064,13 +1181,13 @@ class CodingToolFilter:
                 result.content = safe_serialized_text(result.content)
             definition = registry.get_tool(name)
             result.metadata["execution_boundary"] = definition.execution_boundary if definition else "unknown"
-            if name in {"run_command", "run_tests", "run_quality_gate"}:
+            if name in {"run_command", "run_tests", "run_quality_gate", "start_dev_server", "inspect_dev_server", "stop_dev_server"}:
                 try:
                     command_result = json.loads(result.content)
                 except (ValueError, TypeError):
                     command_result = {}
                 if (command_result.get("timed_out") or command_result.get("status") == "uncertain"
-                        or command_result.get("cleanup_error")):
+                        or command_result.get("cleanup_error") or command_result.get("requires_reconciliation")):
                     result.metadata.update(failure_kind="tool_outcome_unknown", request_phase="tool_dispatched",
                                            requires_reconciliation=True, retry_eligible=False)
             if result.metadata.get("requires_reconciliation"):
@@ -1427,6 +1544,20 @@ class CodingToolFilter:
                 "artifacts": [asdict(item) for item in artifacts], "integrated": False}
 
     async def close_execution(self):
+        cleanup = {}
+        if self.dev_servers is not None:
+            try:
+                result = await self.dev_servers.close()
+                if result.get("requires_reconciliation"):
+                    cleanup["dev_server"] = result
+            except Exception as error:
+                cleanup["dev_server"] = {"retained": True, "reason": safe_text(str(error))}
+        if self.browser_manager is not None:
+            for adapter in self._browser_adapters.values():
+                try:
+                    await self.browser_manager.close_owner(adapter.identity)
+                except Exception as error:
+                    cleanup[adapter.identity.actor_id] = {"retained": True, "reason": safe_text(str(error))}
         if self.execution_workspace is not None:
             try:
                 await self.execution_backend.destroy_workspace(self.execution_workspace)
@@ -1435,7 +1566,102 @@ class CodingToolFilter:
                 return {"retained": True, "workspace_path": str(self.execution_workspace.root),
                         "reason": safe_text(str(error))}
             self.control.execution_status.update(state="closed", running_processes=[])
-            return {"retained": False}
+            return {"retained": bool(cleanup), "cleanup": cleanup}
+        return {"retained": bool(cleanup), "cleanup": cleanup}
+
+    async def start_dev_server(self, command: str, origin: str, cwd: str = ".",
+                               ready_timeout: float = 15, lifetime: float = 120):
+        if self.dev_servers is None or not self.is_tool_allowed("start_dev_server", ChatSession(session_id=self.control.session_id)):
+            raise PermissionError("Supervised development server is disabled for this run.")
+        self._resolve(cwd)
+        if not isinstance(command, str) or not command.strip() or len(command) > 8000:
+            raise ValueError("Development command must be nonempty and reviewable.")
+        if re.search(r"(?i)(?:^|[\s;&|])(?:sudo|su)(?:\s|$)", command):
+            raise PermissionError("Elevated commands are not permitted.")
+        if re.search(r"(?i)\bgit\b.*\bpush\b.*(?:--force(?:-with-lease)?\b|\s-f\b)", command):
+            raise PermissionError("Force push is not permitted.")
+        arguments = {"command": command, "origin": origin, "cwd": cwd,
+                     "ready_timeout": ready_timeout, "lifetime": lifetime}
+        for action in ("shell.safe", "network", "browser.navigate"):
+            await self.control.authorize(action, "start_dev_server", arguments,
+                "Geliştirme sunucusu yerel kullanıcı yetkileriyle çalışır; komutu, kökeni ve süre sınırını inceleyin.")
+        if not self.is_tool_allowed("start_dev_server", ChatSession(session_id=self.control.session_id)):
+            raise PermissionError("Development server permission was revoked before dispatch.")
+        return await self.dev_servers.start(command, cwd, origin=origin, ready_timeout=ready_timeout, lifetime=lifetime)
+
+    async def inspect_dev_server(self):
+        if self.dev_servers is None or not self.is_tool_allowed("inspect_dev_server", ChatSession(session_id=self.control.session_id)):
+            raise PermissionError("Development server inspection is disabled.")
+        data = await self.dev_servers.status()
+        return ToolResult(tool_call_id="", name="inspect_dev_server", content=json.dumps(data, ensure_ascii=False),
+            metadata={"requires_reconciliation": True} if data.get("requires_reconciliation") else {})
+
+    async def stop_dev_server(self):
+        if self.dev_servers is None:
+            return {"state": "closed", "running": False}
+        return await self.dev_servers.stop()
+
+    async def browser_verify(self, kind: str, expected: str = "", tab_id: str = "") -> ToolResult:
+        """Evidence is an actual read assertion bound to a complete source digest."""
+        if kind not in {"text_contains", "url_equals", "no_console_errors", "no_page_errors", "no_network_errors"}:
+            raise ValueError("Unsupported browser assertion.")
+        if kind in {"text_contains", "url_equals"} and (not expected.strip() or len(expected) > 4000):
+            raise ValueError("Browser verification requires a bounded, nonempty expected value.")
+        before = await asyncio.to_thread(self._workspace_version)
+        revision = self.control.workspace_revision
+        adapter = self._browser_adapter()
+        status = await adapter.execute(ToolCall(id="verify_status", function={"name": "browser_status", "arguments": "{}"}))
+        if status.is_error:
+            return status
+        tab_id = tab_id or json.loads(status.content).get("active_tab_id", "")
+        loaded = self._browser_loaded_versions.get((adapter.identity.actor_id, tab_id))
+        if not loaded or not before["complete"] or loaded["digest"] != before["digest"]:
+            raise ValueError("Navigate or reload this tab against the current source revision before recording browser verification.")
+        current = await adapter.execute(ToolCall(id="verify_page", function={
+            "name": "browser_snapshot", "arguments": json.dumps({"tab_id": tab_id})}))
+        if current.is_error:
+            return current
+        current_page = json.loads(current.content)
+        if current_page.get("url") != loaded["url"]:
+            raise ValueError("The tab navigated after its source-bound load; authorize a fresh navigation before verification.")
+        operation = {"text_contains": "extract_text", "url_equals": "snapshot", "no_console_errors": "get_console",
+                     "no_page_errors": "get_page_errors", "no_network_errors": "get_network_errors"}[kind]
+        result = current if kind == "url_equals" else await adapter.execute(ToolCall(id="verify_" + uuid4().hex, function={
+            "name": "browser_" + operation, "arguments": json.dumps({"tab_id": tab_id} if tab_id else {})}))
+        if result.is_error:
+            return result
+        observation = json.loads(result.content)
+        if observation.get("revision") != current_page.get("revision"):
+            raise ValueError("The tab navigated during verification; obtain a fresh source-bound observation.")
+        if kind == "text_contains":
+            passed = expected in str(observation.get("text", observation.get("content", "")))
+        elif kind == "url_equals":
+            passed = observation.get("url") == expected
+        else:
+            if not isinstance(observation.get("entries"), list):
+                raise ValueError("Browser diagnostics did not return a verifiable observation.")
+            entries = observation["entries"]
+            if kind == "no_console_errors":
+                entries = [entry for entry in entries if entry.get("type", entry.get("level")) == "error"]
+            passed = not entries and not observation.get("truncated", False)
+        after = await asyncio.to_thread(self._workspace_version)
+        fresh = bool(before["complete"] and after["complete"] and before["digest"] == after["digest"]
+                     and revision == self.control.workspace_revision)
+        evidence = {"kind": "test", "verification_type": "browser", "execution_backend": "managed_chromium",
+            "command": "browser:" + kind + ":" + _digest(expected.encode()), "cwd": ".", "executed": True,
+            "passed": passed and fresh, "fresh": fresh, "exit_code": 0 if passed and fresh else 1,
+            "status": "passed" if passed and fresh else "failed", "evidence_id": "browser_verify_" + uuid4().hex,
+            "workspace_revision": revision, "workspace_hash": after["digest"], "scenario": kind,
+            "expected": safe_text(expected), "observation": safe_payload(observation),
+            "created_at": datetime.now(timezone.utc).isoformat(), "run_id": self.control.run_id,
+            **self.control.actor_metadata()}
+        self.control.verifications.append(evidence)
+        self._evidence_versions[evidence["evidence_id"]] = after
+        if evidence["passed"]:
+            self._verified_evidence.add(evidence["evidence_id"])
+        self.control.emit(AgentEventType.VERIFICATION, "Tarayıcı doğrulaması kaydedildi.", **evidence)
+        return ToolResult(tool_call_id="", name="browser_verify", content=json.dumps(evidence, ensure_ascii=False),
+                          is_error=not evidence["passed"])
 
     async def run_tests(self, command: str, cwd: str = ".", timeout: float = 60) -> ToolResult:
         revision = self.control.workspace_revision

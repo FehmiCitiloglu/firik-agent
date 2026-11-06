@@ -317,6 +317,9 @@ class ChatView(ctk.CTkFrame):
             command=self._open_mcp_selector,
         )
         self.mcp_btn.pack(side="left", padx=6, pady=10)
+        self.browser_btn = ctk.CTkButton(model_bar, text="Tarayıcı", width=78, height=28,
+            fg_color="transparent", border_width=1, command=self._open_browser)
+        self.browser_btn.pack(side="left", padx=4, pady=10)
 
         # Ayarları Göster / Gizle Butonu
         self.toggle_params_btn = ctk.CTkButton(
@@ -616,6 +619,17 @@ class ChatView(ctk.CTkFrame):
 
     def _open_mcp_selector(self) -> None:
         MCPChatSelectorDialog(self, service=self.service, session=self.session, on_changed=self._update_mcp_chips)
+
+    def _open_browser(self) -> None:
+        window = getattr(self, "_browser_window", None)
+        if window is not None and window.winfo_exists():
+            window.lift()
+            return
+        from firik_agent.ui.components.browser_preview import BrowserPanel
+        window = self._browser_window = ctk.CTkToplevel(self)
+        window.title("Sohbet Tarayıcısı")
+        window.geometry("1050x800")
+        BrowserPanel(window, self.service, self.session.session_id).pack(fill="both", expand=True)
 
     def _remove_mcp_from_session(self, server_name: str) -> None:
         self.service.set_session_mcp(self.session.session_id, server_name, False)
@@ -1091,7 +1105,7 @@ class ChatView(ctk.CTkFrame):
         def on_error(err_msg: str):
             complete(error=err_msg)
 
-        voice_options = ({"voice_request": voice_request, "on_approval": self._show_voice_tool_approval}
+        voice_options = ({"voice_request": voice_request}
                          if voice_request is not None else {})
         try:
             self.service.chat_agent_stream_async(
@@ -1101,6 +1115,7 @@ class ChatView(ctk.CTkFrame):
                 on_event=lambda evt: self.after(0, lambda: on_event(evt)),
                 on_done=lambda t: self.after(0, lambda: on_done(t)),
                 on_error=lambda e: self.after(0, lambda: on_error(e)),
+                on_approval=self._show_voice_tool_approval,
                 **voice_options,
             )
         except Exception as error:

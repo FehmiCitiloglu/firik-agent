@@ -63,6 +63,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
             },
         },
         "mcp_servers": {},
+        "browser": {"enabled": False},
         "skills": {
             "directory": "skills",
             "autoload_builtins": True,
@@ -70,6 +71,12 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         },
         "plugins": {"directory": "plugins", "autoload_builtins": True},
     }
+
+
+def load_browser_config(config_data: Dict[str, Any]):
+    """Validate the optional browser section without importing Playwright."""
+    from firik_agent.browser.config import BrowserConfig
+    return BrowserConfig.model_validate(config_data.get("browser", {}))
 
 
 def save_config(config_data: Dict[str, Any], config_path: Optional[str] = None) -> Path:

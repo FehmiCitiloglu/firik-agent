@@ -1,0 +1,135 @@
+33 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.7
+33 INFO: Python: 3.13.2
+42 INFO: Platform: macOS-27.2-arm64-arm-64bit-Mach-O
+42 INFO: Python environment: /Users/alien/Development/evren/.venv
+1086 INFO: Module search paths (PYTHONPATH):
+['/Users/alien/Development/evren',
+ '/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python313.zip',
+ '/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13',
+ '/Users/alien/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/lib-dynload',
+ '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages',
+ '__editable__.firik_agent-0.2.46.finder.__path_hook__',
+ '/Users/alien/Development/evren']
+1183 INFO: Appending 'binaries' from .spec
+1183 INFO: Appending 'datas' from .spec
+1195 INFO: checking Analysis
+1212 INFO: Building because excludes changed
+1212 INFO: Looking for Python shared library...
+1214 INFO: Using Python shared library: /Users/alien/.local/share/uv/python/cpython-3.13.2-macos-aarch64-none/lib/libpython3.13.dylib
+1214 INFO: Running Analysis Analysis-00.toc
+1214 INFO: Target bytecode optimization level: 0
+1214 INFO: Initializing module dependency graph...
+1215 INFO: Initializing module graph hook caches...
+1219 INFO: Analyzing modules for base_library.zip ...
+1619 INFO: Processing standard module hook 'hook-heapq.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+1679 INFO: Processing standard module hook 'hook-encodings.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+1995 INFO: Processing standard module hook 'hook-math.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+2747 INFO: Processing standard module hook 'hook-pickle.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+3548 INFO: Caching module dependency graph...
+3568 INFO: Analyzing /Users/alien/Development/evren/firik_agent/ui/__main__.py
+3740 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+3838 INFO: Processing standard module hook 'hook-xml.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+3988 INFO: Processing standard module hook 'hook-_ctypes.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+4240 INFO: Processing standard module hook 'hook-platform.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+4280 INFO: Processing standard module hook 'hook-pydantic.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+4411 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+4412 INFO: SetuptoolsInfo: initializing cached setuptools info...
+4838 INFO: Processing standard module hook 'hook-rich.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+5169 INFO: Processing standard module hook 'hook-pygments.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+6165 INFO: Processing standard module hook 'hook-sysconfig.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+6174 INFO: Processing standard module hook 'hook-_osx_support.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+6244 INFO: Processing standard module hook 'hook-webbrowser.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+6398 INFO: Processing standard module hook 'hook-zoneinfo.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+7164 INFO: Processing standard module hook 'hook-sqlite3.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+7436 INFO: Processing standard module hook 'hook-difflib.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+7943 INFO: Processing standard module hook 'hook-certifi.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+8006 INFO: Processing standard module hook 'hook-anyio.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+8594 INFO: Processing standard module hook 'hook-keyring.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+8793 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+8794 INFO: Setuptools: 'jaraco' appears to be a partial setuptools-vendored copy - extending search paths to ['/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/jaraco', '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/setuptools/_vendor/jaraco']!
+8794 INFO: Processing pre-safe-import-module hook 'hook-jaraco.context.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+8800 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+8800 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+8804 INFO: Processing standard module hook 'hook-setuptools.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+8812 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+8830 INFO: Processing pre-safe-import-module hook 'hook-jaraco.functools.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+8837 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+8977 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+9146 INFO: Processing pre-safe-import-module hook 'hook-jaraco.text.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+9146 INFO: Setuptools: 'jaraco.text' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco.text'!
+9153 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+9153 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+9465 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+9465 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+9786 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+9786 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+9859 INFO: Processing pre-safe-import-module hook 'hook-importlib_metadata.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+9859 INFO: Setuptools: 'importlib_metadata' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.importlib_metadata'!
+9874 INFO: Processing standard module hook 'hook-setuptools._vendor.importlib_metadata.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+9885 INFO: Processing pre-safe-import-module hook 'hook-zipp.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+9885 INFO: Setuptools: 'zipp' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.zipp'!
+9918 INFO: Processing standard module hook 'hook-PIL.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+9989 INFO: Processing standard module hook 'hook-PIL.Image.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+10147 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+10248 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+10830 INFO: Processing standard module hook 'hook-playwright.async_api.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/playwright/_impl/__pyinstaller'
+11643 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_find_module_path'
+11643 INFO: TclTkInfo: initializing cached Tcl/Tk info...
+11770 INFO: Processing standard module hook 'hook-_tkinter.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+11785 INFO: Processing standard module hook 'hook-customtkinter.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+12713 INFO: Processing standard module hook 'hook-tkinterdnd2.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+13293 INFO: Processing standard module hook 'hook-wcwidth.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+13764 INFO: Processing standard module hook 'hook-xml.dom.domreg.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+14014 INFO: Processing standard module hook 'hook-playwright.sync_api.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/playwright/_impl/__pyinstaller'
+14358 INFO: Analyzing hidden import 'keyring.backends.chainer'
+14360 INFO: Analyzing hidden import 'PIL._tkinter_finder'
+14360 INFO: Analyzing hidden import 'keyring.backends.macOS'
+14365 INFO: Analyzing hidden import 'sounddevice'
+14392 INFO: Processing standard module hook 'hook-sounddevice.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+14394 INFO: Analyzing hidden import 'playwright.__main__'
+14395 INFO: Analyzing hidden import 'playwright._impl.__pyinstaller'
+14395 INFO: Analyzing hidden import 'playwright._impl._path_utils'
+14395 INFO: Analyzing hidden import 'certifi.__main__'
+14396 INFO: Analyzing hidden import 'certifi.tests'
+14396 INFO: Analyzing hidden import 'certifi.tests.test_certify'
+14460 INFO: Analyzing hidden import 'firik_agent.benchmarks.__main__'
+14460 INFO: Analyzing hidden import 'firik_agent.benchmarks.learning'
+14462 INFO: Analyzing hidden import 'firik_agent.harness.base'
+14463 INFO: Analyzing hidden import 'firik_agent.projects.lsp'
+14475 INFO: Analyzing hidden import 'firik_agent.ui.__main__'
+14476 INFO: Processing module hooks (post-graph stage)...
+14717 INFO: Processing standard module hook 'hook-_tkinter.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+14730 INFO: Processing pre-safe-import-module hook 'hook-gi.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/pre_safe_import_module'
+15041 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks'
+16271 INFO: Performing binary vs. data reclassification (1020 entries)
+16327 INFO: Looking for ctypes DLLs
+16345 WARNING: Ignoring /System/Library/Frameworks/ApplicationServices.framework/ApplicationServices imported from /Users/alien/Development/evren/firik_agent/computer_use/permissions.py - only basenames are supported with ctypes imports!
+16347 WARNING: Ignoring /System/Library/Frameworks/CoreGraphics.framework/CoreGraphics imported from /Users/alien/Development/evren/firik_agent/computer_use/backends/macos.py - only basenames are supported with ctypes imports!
+16347 WARNING: Ignoring /System/Library/Frameworks/ApplicationServices.framework/ApplicationServices imported from /Users/alien/Development/evren/firik_agent/computer_use/backends/macos.py - only basenames are supported with ctypes imports!
+16353 WARNING: Ignoring AppKit.framework/AppKit imported from /Users/alien/Development/evren/.venv/lib/python3.13/site-packages/darkdetect/_mac_detect.py - only basenames are supported with ctypes imports!
+16382 INFO: Analyzing run-time hooks ...
+16387 INFO: Including run-time hook 'pyi_rth_inspect.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/rthooks'
+16389 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/rthooks'
+16390 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/rthooks'
+16391 INFO: Including run-time hook 'pyi_rth__tkinter.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/rthooks'
+16392 INFO: Including run-time hook 'pyi_rth_setuptools.py' from '/Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/hooks/rthooks'
+16415 INFO: Creating base_library.zip...
+16427 INFO: Looking for dynamic libraries
+16503 INFO: Warnings written to /private/tmp/firik-browser-20261106-build/firik-agent/warn-firik-agent.txt
+16539 INFO: Graph cross-reference written to /private/tmp/firik-browser-20261106-build/firik-agent/xref-firik-agent.html
+16607 INFO: checking PYZ
+16622 INFO: EXE target arch: arm64
+16622 INFO: Code signing identity: None
+16623 INFO: checking PKG
+16624 INFO: Bootloader /Users/alien/Development/evren/.venv/lib/python3.13/site-packages/PyInstaller/bootloader/Darwin-64bit/runw
+16624 INFO: checking EXE
+16628 INFO: checking COLLECT
+16632 INFO: Removing dir /private/tmp/firik-browser-20261106-dist/firik-agent
+16699 INFO: Building COLLECT COLLECT-00.toc
+17042 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+17055 INFO: checking BUNDLE
+17060 INFO: Removing dir /private/tmp/firik-browser-20261106-dist/firik-agent.app
+17139 INFO: Building BUNDLE BUNDLE-00.toc
+17569 INFO: Signing the BUNDLE...
+17792 INFO: Building BUNDLE BUNDLE-00.toc completed successfully.
+17801 INFO: Build complete! The results are available in: /private/tmp/firik-browser-20261106-dist

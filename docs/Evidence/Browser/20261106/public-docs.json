@@ -1,0 +1,26 @@
+{
+  "command": "firik-agent browser start --origin https://playwright.dev --url https://playwright.dev/python/docs/intro",
+  "navigation": {
+    "requested_url": "https://playwright.dev/python/docs/intro",
+    "url": "https://playwright.dev/python/docs/intro",
+    "title": "Installation | Playwright Python",
+    "http_status": 200,
+    "redirected": false,
+    "outcome": "navigation_observed",
+    "task_completion_verified": false,
+    "session_id": "browser_bb7134ff03994cc4",
+    "tab_id": "tab_42e7889efa96455f",
+    "revision": 2,
+    "duration_seconds": 1.2371
+  },
+  "snapshot": {
+    "type": "aria",
+    "url": "https://playwright.dev/python/docs/intro",
+    "characters": 16000,
+    "truncated": true,
+    "reference_count": 204,
+    "installation_heading_present": true,
+    "revision": 3
+  },
+  "lifecycle": "owned context closed on command exit"
+}

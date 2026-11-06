@@ -51,28 +51,8 @@ class OpenAIProvider(BaseProvider):
         stream: bool = False,
     ) -> Dict[str, Any]:
         supports_vision = self._is_vision_model()
-        formatted_messages = []
-        for m in messages:
-            msg_dict = m.to_dict()
-            if supports_vision and m.parts:
-                parts_content: List[Dict[str, Any]] = []
-                if m.content:
-                    parts_content.append({"type": "text", "text": m.content})
-                for p in m.parts:
-                    if p.type == "text" and p.text:
-                        parts_content.append({"type": "text", "text": p.text})
-                    elif p.type == "image" and p.data:
-                        mime = p.mime_type or "image/png"
-                        parts_content.append({
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime};base64,{p.data}"},
-                        })
-                msg_dict["content"] = parts_content
-            else:
-                if msg_dict.get("content") is None and not msg_dict.get("tool_calls"):
-                    msg_dict["content"] = ""
-            formatted_messages.append(msg_dict)
-
+        from firik_agent.providers._chat import format_messages
+        formatted_messages = format_messages(self, messages, legacy_vision=supports_vision)
 
         payload: Dict[str, Any] = {
             "model": self.current_model,

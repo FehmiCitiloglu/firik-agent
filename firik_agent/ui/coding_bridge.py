@@ -373,7 +373,7 @@ class CodingBridge(CodingActions):
                 for old, capabilities in {
                     "read_files": ("allow_reads",), "write_files": ("allow_edits",),
                     "delete_files": ("allow_deletes",), "terminal": ("allow_terminal", "allow_tests"),
-                    "network_access": ("allow_terminal", "allow_tests", "allow_mcp"),
+                    "network_access": ("allow_terminal", "allow_tests", "allow_mcp", "allow_browser"),
                     "install_packages": ("allow_terminal", "allow_tests"),
                 }.items():
                     if legacy.get(old) in denied:
@@ -383,6 +383,14 @@ class CodingBridge(CodingActions):
                                            run_id=run_id, policy=options.get("policy"),
                                            excluded_paths=options.get("excluded_paths", []),
                                            execution_config=options.get("execution_config"), voice_request=voice_request)
+                from firik_agent.browser.models import BrowserGrant
+                from firik_agent.ui.browser_bridge import browser_origins
+                control.browser_grant = BrowserGrant(enabled=control.permissions.get("allow_browser", False),
+                    origins=browser_origins(options.get("browser_origins", [])),
+                    allow_private_origins=browser_origins(options.get("browser_private_origins", [])),
+                    allow_screenshots=options.get("browser_screenshots") is True)
+                if control.browser_grant.enabled:
+                    self.browser_manager.config.enabled = True
                 control.capabilities = dict(options.get("capabilities", {}))
                 from firik_agent.harness.config import resolve_harness_configuration
                 harness_settings = resolve_harness_configuration(self.config,
@@ -510,7 +518,7 @@ class CodingBridge(CodingActions):
                 session.active_mcp_servers = connected
                 allowed = {name for name in allowed if gate.is_tool_allowed(name, session)}
                 tool_filter = CodingToolFilter(cwd, control, mcp_registry=policy_registry,
-                                               trusted_mcp_tools=allowed)
+                                               trusted_mcp_tools=allowed, browser_manager=self.browser_manager)
                 self._coding_filters[session_id] = tool_filter
                 control.emit(AgentEventType.TASK_STATE, "Yürütme arka ucu yapılandırıldı.",
                              execution=await tool_filter.inspect_execution())
@@ -580,6 +588,8 @@ class CodingBridge(CodingActions):
                                                      session_tool_filter=stream_filter,
                                                      cancel_event=cancel_event, run_control=control, cwd=cwd):
                     receive(event)
+                    if event.type == AgentEventType.TOOL_CALL_RESULT and event.tool_name == "browser_request_handoff":
+                        await self._await_browser_handoff(session_id, cancel_event)
                     if voice_timing is not None:
                         voice_timing.observe(event)
                     if event.type == AgentEventType.ERROR:

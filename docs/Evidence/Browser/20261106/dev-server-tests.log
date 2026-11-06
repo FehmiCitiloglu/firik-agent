@@ -1,0 +1,11 @@
+Supervised development server verification — macOS arm64, Python 3.13.2
+
+Command: .venv/bin/python -m pytest -q tests/test_dev_servers.py tests/test_browser_coding.py
+........sss...................                                           [100%]
+27 passed, 3 skipped in 0.83s
+
+Command (authorized local process/socket execution): FIRIK_BROWSER_INTEGRATION=1 .venv/bin/python -m pytest -q tests/test_dev_servers.py
+.............                                                            [100%]
+13 passed in 2.58s
+
+The three real-server tests subsequently adopted the shared platform-aware python_command quoting fixture; final collective test logs supersede this checkpoint. No Windows/Linux execution was performed for this checkpoint.

@@ -119,6 +119,7 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                 "permissions": {"allow_reads": True, "allow_deletes": True, "allow_edits": True,
                                 "allow_terminal": True, "allow_tests": True, "allow_mcp": False,
                                 "allow_subagents": True,
+                                "allow_browser": False,
                                 **prefs.get("permissions", {})},
                 "context_paths": prefs.get("context_paths", []), "documents": [], "plan": [],
                 "context_report": [], "capabilities": {}, "usage": {}, "task_id": None,
@@ -212,6 +213,26 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
             tab = self.coding_tabs.add(name)
             tab.grid_columnconfigure(0, weight=1)
             tab.grid_rowconfigure(0, weight=1)
+        from firik_agent.ui.components.browser_preview import BrowserPanel
+        browser_settings = {"enabled": state["permissions"].get("allow_browser", False),
+            "origins": prefs.get("browser_origins", []), "private_origins": prefs.get("browser_private_origins", []),
+            "screenshots": prefs.get("browser_screenshots", False)}
+        def configure_browser(options):
+            if state["busy"]:
+                raise ValueError("Tarayıcı izinlerini değiştirmek için önce çalışmayı durdurun.")
+            from firik_agent.ui.browser_bridge import browser_origins
+            origins = browser_origins(options["origins"])
+            private = browser_origins(options["private_origins"])
+            if not set(private).issubset(origins):
+                raise ValueError("Yerel/özel kökenleri izin verilen köken listesine de ekleyin.")
+            state["permissions"]["allow_browser"] = options["enabled"]
+            if options["enabled"]:
+                self.service.browser_manager.config.enabled = True
+            self._save_coding_preferences({"permissions": state["permissions"], "browser_origins": list(origins),
+                "browser_private_origins": list(private), "browser_screenshots": options["screenshots"]})
+        self.coding_browser_panel = BrowserPanel(self.coding_tabs.tab("Tarayıcı"), self.service,
+            state["session"].session_id, settings=browser_settings, on_configure=configure_browser)
+        self.coding_browser_panel.grid(row=0, column=0, sticky="nsew")
         self.coding_chat_box = CodingConversation(self.coding_tabs.tab("Sohbet"), on_edit=self._edit_coding_message,
             on_context=self._add_coding_snippet, on_file=self._open_coding_reference,
             font_size=prefs.get("font_size", 13))
@@ -908,6 +929,9 @@ class CodingWorkspaceMixin(CodingHistoryMixin):
                        "policy": dict(state.get("policy", {})),
                        "mcp_servers": state["preferences"].get("mcp_servers", []),
                        "mcp_tools": state["preferences"].get("mcp_tools", []),
+                       "browser_origins": state["preferences"].get("browser_origins", []),
+                       "browser_private_origins": state["preferences"].get("browser_private_origins", []),
+                       "browser_screenshots": state["preferences"].get("browser_screenshots", False),
                        "capabilities": state["capabilities"]}
             if voice_request is not None:
                 options["voice_request"] = voice_request

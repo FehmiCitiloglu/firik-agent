@@ -102,7 +102,7 @@ def main():
     arch = {"arm64": "arm64", "x86_64": "x64"}.get(architecture)
     if not arch:
         raise RuntimeError(f"Unsupported release architecture: {architecture}")
-    run(sys.executable, "scripts/smoke_desktop.py")
+    run(sys.executable, "scripts/smoke_desktop.py", "--browser")
     upload = LOGS / f"firik-agent-{app_version}-{arch}-notary.zip"
     run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", APP, upload)
     notarize(upload, args.profile)

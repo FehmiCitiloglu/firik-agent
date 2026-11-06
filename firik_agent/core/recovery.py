@@ -248,6 +248,25 @@ def tool_semantics(name: str, definition: Any = None) -> SideEffectRisk:
     source = getattr(definition, "source", "")
     if source.startswith(("mcp", "plugin", "skill")):
         return SideEffectRisk.UNKNOWN
+    if name.startswith("browser_"):
+        # Only this finite inventory is known to inspect existing browser state.
+        # Navigation (including GET), key presses and clicks may cause external
+        # effects. An unrecognized browser operation cannot establish safety.
+        if source != "native:browser":
+            return SideEffectRisk.UNKNOWN
+        if name in {"browser_status", "browser_list_tabs", "browser_snapshot", "browser_verify",
+                    "browser_extract_text", "browser_get_links", "browser_get_forms",
+                    "browser_get_console", "browser_get_page_errors", "browser_get_network_errors",
+                    "browser_wait_for"}:
+            return SideEffectRisk.STATE_INSPECTION
+        if name == "browser_screenshot":
+            return SideEffectRisk.STATE_INSPECTION
+        if name in {"browser_navigate", "browser_back", "browser_forward", "browser_reload",
+                    "browser_click", "browser_fill", "browser_type", "browser_press",
+                    "browser_select", "browser_check", "browser_hover", "browser_scroll",
+                    "browser_upload", "browser_download", "browser_submit"}:
+            return SideEffectRisk.EXTERNAL
+        return SideEffectRisk.UNKNOWN
     if name in {"read_file", "list_files", "search_project", "search_symbols", "get_environment_info", "calculate"}:
         return SideEffectRisk.PURE_READ
     if name in {"git_status", "git_diff", "git_inspect", "discover_quality_gates"}:

@@ -602,6 +602,19 @@ class FirikApp(ctk.CTk):
 def main() -> int:
     """firik-agent masaüstü uygulamasını başlatır."""
     if "--smoke-test" in sys.argv:
+        if "--check-browser-backend" in sys.argv:
+            # A frozen driver probe never reads user configuration, history,
+            # credentials or MCP settings and never downloads browser binaries.
+            import asyncio
+            import json
+            from firik_agent.browser.cli import _launch_probe
+            try:
+                result = asyncio.run(_launch_probe("--headful" in sys.argv))
+                print(json.dumps(result, ensure_ascii=False))
+                return 0
+            except Exception as error:
+                print(f"Packaged browser launch failed: {error}", file=sys.stderr)
+                return 1
         if "--check-voice-backend" in sys.argv:
             from firik_agent.voice.audio_devices import AudioDeviceCatalog
             from firik_agent.voice.errors import VoiceAudioError

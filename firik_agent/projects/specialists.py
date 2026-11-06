@@ -31,11 +31,14 @@ class SpecialistRole(str, Enum):
 
 READ_TOOLS = frozenset({"read_file", "list_files", "search_project", "search_symbols", "git_status", "git_diff", "discover_quality_gates"})
 EDIT_TOOLS = frozenset({"edit_file", "write_file", "apply_patch", "delete_file"})
+from firik_agent.browser.tool_adapter import READ_TOOLS as BROWSER_READ_TOOLS, INTERACTION_TOOLS
+_BROWSER_READ = BROWSER_READ_TOOLS | {"browser_verify"}
+_BROWSER_TEST = _BROWSER_READ | INTERACTION_TOOLS | {"browser_navigate", "browser_back", "browser_forward", "browser_reload", "browser_new_tab"}
 ROLE_TOOLS = {
-    SpecialistRole.PLANNING: READ_TOOLS | {"update_plan"},
-    SpecialistRole.CODING: READ_TOOLS | EDIT_TOOLS | {"update_plan", "run_command", "run_tests", "run_quality_gate", "record_verification"},
-    SpecialistRole.TESTING: READ_TOOLS | {"run_tests", "run_quality_gate", "record_verification"},
-    SpecialistRole.REVIEW: READ_TOOLS | {"record_verification"},
+    SpecialistRole.PLANNING: READ_TOOLS | _BROWSER_READ | {"update_plan"},
+    SpecialistRole.CODING: READ_TOOLS | EDIT_TOOLS | _BROWSER_TEST | {"update_plan", "run_command", "run_tests", "run_quality_gate", "record_verification"},
+    SpecialistRole.TESTING: READ_TOOLS | _BROWSER_TEST | {"run_tests", "run_quality_gate", "record_verification"},
+    SpecialistRole.REVIEW: READ_TOOLS | _BROWSER_READ | {"record_verification"},
     SpecialistRole.DOCUMENTATION: READ_TOOLS | {"edit_file", "write_file", "apply_patch"},
 }
 
@@ -125,7 +128,7 @@ class SpecialistToolFilter:
         if name not in self.assignment.allowed_tools:
             return False
         permission = ("allow_reads" if name in READ_TOOLS else "allow_edits" if name in EDIT_TOOLS else "allow_tests" if name in {"run_tests", "run_quality_gate"}
-                      else "allow_terminal" if name == "run_command" else None)
+                      else "allow_terminal" if name == "run_command" else "allow_browser" if name.startswith("browser_") else None)
         if permission and self.assignment.permissions.get(permission) is not True:
             return False
         if name == "delete_file" and self.assignment.permissions.get("allow_deletes") is not True:

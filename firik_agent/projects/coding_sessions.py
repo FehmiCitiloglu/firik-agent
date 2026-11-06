@@ -49,6 +49,10 @@ _TEXT_PATTERNS = (
     re.compile(r"(?i)\bAKIA[A-Z0-9]{16}\b"),
     re.compile(r"(?i)(https?://)[^/\s:@]+:[^/\s@]+@"),
 )
+_BROWSER_SECRET_FIELD = re.compile(
+    r"password|passwd|passcode|one.?time|(?:^|[^a-z0-9])(?:otp|mfa|pin)(?:$|[^a-z0-9])|verification.?code|security.?code|credit.?card|cc-|secret|token",
+    re.I,
+)
 
 _LIVE_OWNER_TOKENS: set[str] = set()
 _OWNER_LOCK = threading.Lock()
@@ -126,12 +130,52 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def redact_browser_arguments(tool_name: str, arguments: Any) -> Any:
+    """Create a display/storage copy; never substitute it for executable input.
+
+    Fill/type values can be private without matching a credential pattern.
+    Sensitive semantic targets and form-field descriptors also reveal context
+    that generic key-based redaction cannot infer from a key named ``value``.
+    """
+    original = arguments
+    encoded = isinstance(arguments, str)
+    if encoded:
+        try:
+            arguments = json.loads(arguments)
+        except (TypeError, ValueError):
+            return "[browser input omitted]" if tool_name in {"browser_fill", "browser_type"} else arguments
+    if not isinstance(arguments, Mapping):
+        return original
+    clean = dict(arguments)
+    target = clean.get("target")
+    target_sensitive = (isinstance(target, Mapping) and any(
+        _BROWSER_SECRET_FIELD.search(str(target.get(key, "")))
+        for key in ("label", "name", "test_id", "text")))
+    # A form descriptor can be nested under a preview without the tool name.
+    field_sensitive = "value" in clean and any(
+        _BROWSER_SECRET_FIELD.search(str(clean.get(key, "")))
+        for key in ("name", "label", "type", "autocomplete"))
+    if tool_name in {"browser_fill", "browser_type"} or target_sensitive or field_sensitive:
+        for key in ("value", "values", "key"):
+            if key in clean:
+                clean[key] = REDACTED
+    return (json.dumps(clean, ensure_ascii=False) if clean != arguments else original) if encoded else clean
+
+
 def redact_sensitive(value: Any, known_secrets: tuple[str, ...] = ()) -> Any:
     """Return a JSON-compatible copy with credentials removed before storage."""
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, str):
         text = value
+        if text.lstrip().startswith(("{", "[")):
+            try:
+                parsed = json.loads(text)
+                safe = redact_sensitive(parsed, known_secrets)
+                if safe != parsed:
+                    text = json.dumps(safe, ensure_ascii=False)
+            except (TypeError, ValueError, RecursionError):
+                pass
         # Exact configured secrets supplement patterns without reading the environment.
         for secret in sorted((s for s in known_secrets if len(s) >= 4), key=len, reverse=True):
             text = text.replace(secret, REDACTED)
@@ -139,8 +183,12 @@ def redact_sensitive(value: Any, known_secrets: tuple[str, ...] = ()) -> Any:
             text = pattern.sub(REDACTED, text)
         return sanitize_secrets(text)
     if isinstance(value, Mapping):
+        clean = redact_browser_arguments("", value)
+        name = clean.get("tool_name") or clean.get("name") or clean.get("operation")
+        if isinstance(name, str) and name.startswith("browser_") and "arguments" in clean:
+            clean["arguments"] = redact_browser_arguments(name, clean["arguments"])
         return {str(key): REDACTED if _SECRET_KEY.fullmatch(str(key)) else redact_sensitive(item, known_secrets)
-                for key, item in value.items()}
+                for key, item in clean.items()}
     if isinstance(value, (list, tuple)):
         return [redact_sensitive(item, known_secrets) for item in value]
     if hasattr(value, "model_dump"):

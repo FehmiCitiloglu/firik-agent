@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "firik-agent"
-version = "0.2.46"
+version = "0.2.47"
 
 description = "Firik Agent: desktop and CLI AI assistant with MCP, Skills, Plugins and FIRIK API support"
 readme = "README.md"
@@ -25,6 +25,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+browser = [
+    "playwright>=1.64.1,<1.65",
+]
 voice = [
     "sounddevice>=0.5,<0.6",
 ]
@@ -39,6 +42,7 @@ voice-codecs = [
 desktop-build = [
     "sounddevice>=0.5,<0.6",
     "pyinstaller>=6.16,<7",
+    "playwright>=1.64.1,<1.65",
 ]
 dev = [
     "pytest>=8.0.0",
@@ -57,3 +61,8 @@ firik-gui = "firik_agent.ui.app:main"
 
 [tool.setuptools.packages.find]
 include = ["firik_agent*"]
+
+[tool.pytest.ini_options]
+markers = [
+    "browser_integration: requires installed Chromium and explicit FIRIK_BROWSER_INTEGRATION=1",
+]

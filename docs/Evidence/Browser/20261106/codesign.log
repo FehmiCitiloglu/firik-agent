@@ -1,0 +1,11 @@
+Executable=/private/tmp/firik-browser-20261106-dist/firik-agent.app/Contents/MacOS/firik-agent
+Identifier=ssyz.firik-agent.desktop
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20400 size=26321 flags=0x2(adhoc) hashes=812+7 location=embedded
+Signature=adhoc
+Info.plist entries=12
+TeamIdentifier=not set
+Sealed Resources version=2 rules=13 files=1174
+Internal requirements count=0 size=12
+Total signatures=1
+Chosen signature=1

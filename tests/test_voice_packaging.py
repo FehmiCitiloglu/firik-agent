@@ -33,7 +33,8 @@ def test_frozen_voice_collects_only_the_target_portaudio(monkeypatch, platform, 
     monkeypatch.setattr(sys, "platform", platform)
     monkeypatch.setattr(sysconfig, "get_platform", lambda: build_platform)
     monkeypatch.setattr(importlib.metadata, "version", lambda name: "0.2.34")
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object() if audio_installed else None)
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object()
+                        if audio_installed and name in {"sounddevice", "soundfile", "webrtcvad"} else None)
     hooks = ModuleType("PyInstaller.utils.hooks")
     hooks.collect_all = lambda name: ([], [], [])
     metadata_calls = []

@@ -1,0 +1,23 @@
+{
+  "broad_regression": {
+    "passed": 2224,
+    "skipped": 23,
+    "deselected": 446
+  },
+  "focused_regression": {
+    "passed": 230,
+    "skipped": 3
+  },
+  "chromium_server_suite": {
+    "passed": 34
+  },
+  "final_server_cleanup_coding": {
+    "passed": 15
+  },
+  "native_ui": 19,
+  "frozen_ui_browser_signature": "passed",
+  "application_version": "0.2.46",
+  "live_model_inference": false,
+  "remote_ci_run": false,
+  "release_published": false
+}
