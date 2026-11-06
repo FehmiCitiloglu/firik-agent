@@ -1,0 +1,36 @@
+name: Desktop regression checks
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/desktop-regressions.yml'
+      - 'firik_agent/ui/components/voice_*.py'
+      - 'tests/test_ui_voice_assistant.py'
+      - 'tests/benchmarks/test_runner.py'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-regressions:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: python -m pip install -e '.[dev,desktop-build]'
+      - name: Concurrent benchmark replay
+        run: python -m pytest -q tests/benchmarks/test_runner.py::test_replay_and_git_revisions_stable_across_concurrent_trials
+      - name: Light console
+        if: always()
+        run: python -m pytest -q 'tests/test_ui_voice_assistant.py::test_console_orb_tracks_input_and_stops_animation_when_hidden_or_reduced[Light]'
+      - name: Dark console
+        if: always()
+        run: python -m pytest -q 'tests/test_ui_voice_assistant.py::test_console_orb_tracks_input_and_stops_animation_when_hidden_or_reduced[Dark]'
+      - name: Settings keyboard navigation
+        if: always()
+        run: python -m pytest -q tests/test_ui_voice_settings_section.py::test_settings_canvas_controls_support_keyboard_focus_activation_and_menu_selection

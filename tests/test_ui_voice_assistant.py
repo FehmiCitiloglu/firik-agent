@@ -234,7 +234,15 @@ def test_console_orb_tracks_input_and_stops_animation_when_hidden_or_reduced(wor
     until(app, lambda: app.state() in {'normal', 'zoomed'} and app.winfo_viewable())
     panel.start_conversation()
     surface = panel._voice_surface
-    until(app, lambda: len(capture.windows) == 1 and surface.orb._job is not None)
+    try:
+        until(app, lambda: len(capture.windows) == 1 and surface.orb._job is not None)
+    except AssertionError:
+        pytest.fail(str({'captures': len(capture.windows), 'window': surface.state(),
+            'mapped': surface.winfo_ismapped(), 'orb_mapped': surface.orb.winfo_ismapped(),
+            'canvas_mapped': surface.orb.canvas.winfo_ismapped(), 'orb_state': surface.orb.state,
+            'controller_state': str(controller.state_id), 'panel_state': panel._last_state,
+            'paused': controller.paused, 'active': controller.conversation_active,
+            'motion': surface.orb._motion, 'level': panel.input_level.get()}))
     until(app, lambda: surface.orb.level == .63)
     panel._on_level(.82)
     count = len(surface.orb.canvas.find_all())

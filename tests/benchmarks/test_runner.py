@@ -46,7 +46,9 @@ async def test_expanded_offline_faults_have_objective_native_evaluators():
 async def test_replay_and_git_revisions_stable_across_concurrent_trials():
     manifest = next(task for task in offline_tasks() if task.id == "guarded-edit")
     a, b = await asyncio.gather(run_trial(manifest, 1), run_trial(manifest, 2))
-    assert a["fixture_passed"] and b["fixture_passed"]
+    assert a["fixture_passed"] and b["fixture_passed"], [
+        {key: row.get(key) for key in ('runtime_status', 'failure_reason', 'terminal_outcome', 'verification', 'persistence_verified')}
+        for row in (a, b)]
     assert a["run_id"] != b["run_id"]
     assert a["provenance"]["workspace_id"] != b["provenance"]["workspace_id"]
     assert a["fixture_revision"] == b["fixture_revision"] == fixture_revision(manifest.files)
