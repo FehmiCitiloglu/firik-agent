@@ -323,7 +323,7 @@ def test_native_titlebar_refresh_defers_hidden_capture_check_but_real_hide_pause
     assert not controller.paused
     app._voice_native_theme_refresh = False
     panel._stop_hidden_capture()
-    assert controller.paused
+    until(app, lambda: controller.paused)
 
 
 def test_console_construction_cannot_pause_capture_before_surface_is_assigned(workspace, monkeypatch):
