@@ -1,3 +1,9 @@
+## v0.2.44 değişiklikleri
+
+- Windows ortamında metin düzenleme kısayol testleri (`Control` değiştirici tuşu ve Tk Text `\n` kırpma) platforma uygun hale getirildi.
+- Linux, macOS ve Windows genelinde tüm test ve masaüstü paketleme adımları uyumlu kılındı.
+- v0.2.42 ve v0.2.43 için hazırlanan tüm MCP ve arayüz geliştirmeleri bu yayına dahildir.
+
 ## v0.2.43 değişiklikleri
 
 - Linux X11 ortamlarında yerel Tk tümünü seçme tuş kombinasyonu (`<Control-Key-slash>`) ve pano temizleme regresyonu düzeltildi.

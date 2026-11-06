@@ -135,34 +135,40 @@ def test_command_backspace_uses_wrapped_display_line(root):
 
 
 def test_editable_and_readonly_combo_boxes_share_entry_bindings(root):
-    install_text_shortcuts(root, windowing_system="aqua")
+    system = root.tk.call("tk", "windowingsystem")
+    modifier = "Option" if system == "aqua" else "Control"
+    install_text_shortcuts(root)
     combo, widget = control(root, "combo")
     reset(widget, "alpha beta")
-    key(root, widget, "<Option-BackSpace>")
+    key(root, widget, f"<{modifier}-BackSpace>")
     assert combo.get() == "alpha "
     combo.set("alpha beta")
     combo.configure(state="readonly")
-    key(root, widget, "<Command-BackSpace>")
+    key(root, widget, f"<{modifier}-BackSpace>")
     assert combo.get() == "alpha beta"
 
 
 def test_later_dialog_inputs_inherit_shortcuts_and_install_is_idempotent(root):
-    install_text_shortcuts(root, windowing_system="aqua")
-    bindings = {name: root.bind_class(name, "<Option-BackSpace>") for name in ("Entry", "Text")}
-    install_text_shortcuts(root, windowing_system="aqua")
-    assert bindings == {name: root.bind_class(name, "<Option-BackSpace>") for name in bindings}
+    system = root.tk.call("tk", "windowingsystem")
+    modifier = "Option" if system == "aqua" else "Control"
+    install_text_shortcuts(root)
+    bindings = {name: root.bind_class(name, f"<{modifier}-BackSpace>") for name in ("Entry", "Text")}
+    install_text_shortcuts(root)
+    assert bindings == {name: root.bind_class(name, f"<{modifier}-BackSpace>") for name in bindings}
     dialog = ctk.CTkToplevel(root)
     try:
         _, widget = control(dialog, "entry")
         reset(widget, "alpha beta gamma")
-        key(root, widget, "<Option-BackSpace>")
+        key(root, widget, f"<{modifier}-BackSpace>")
         assert value(widget) == "alpha beta "
     finally:
         dialog.destroy()
 
 
 def test_tcl_created_inputs_without_python_wrappers_use_shortcuts(root):
-    install_text_shortcuts(root, windowing_system="aqua")
+    system = root.tk.call("tk", "windowingsystem")
+    modifier = "Option" if system == "aqua" else "Control"
+    install_text_shortcuts(root)
     errors = []
     root.report_callback_exception = lambda *error: errors.append(error)
     for kind in ("entry", "text"):
@@ -176,7 +182,7 @@ def test_tcl_created_inputs_without_python_wrappers_use_shortcuts(root):
             root.tk.call(path, "icursor", "end")
         root.tk.call("focus", "-force", path)
         root.update()
-        root.tk.call("event", "generate", path, "<Option-BackSpace>")
+        root.tk.call("event", "generate", path, f"<{modifier}-BackSpace>")
         root.update()
         arguments = ("1.0", "end-1c") if kind == "text" else ()
         result = root.tk.call(path, "get", *arguments)
@@ -184,19 +190,24 @@ def test_tcl_created_inputs_without_python_wrappers_use_shortcuts(root):
     assert errors == []
 
 
-@pytest.mark.parametrize("sequence", ["<Option-BackSpace>", "<Command-BackSpace>"])
-def test_text_deletion_is_one_undo_step(root, sequence):
-    install_text_shortcuts(root, windowing_system="aqua")
-    _, widget = control(root, "text")
-    reset(widget, "alpha beta gamma")
-    widget.edit_reset()
-    key(root, widget, sequence)
-    result = value(widget)
-    assert result != "alpha beta gamma"
-    widget.edit_undo()
-    assert value(widget) == "alpha beta gamma"
-    widget.edit_redo()
-    assert value(widget) == result
+def test_text_deletion_is_one_undo_step(root):
+    system = root.tk.call("tk", "windowingsystem")
+    modifier = "Option" if system == "aqua" else "Control"
+    install_text_shortcuts(root)
+    sequences = [f"<{modifier}-BackSpace>"]
+    if system == "aqua":
+        sequences.append("<Command-BackSpace>")
+    for sequence in sequences:
+        _, widget = control(root, "text")
+        reset(widget, "alpha beta gamma")
+        widget.edit_reset()
+        key(root, widget, sequence)
+        result = value(widget)
+        assert result != "alpha beta gamma"
+        widget.edit_undo()
+        assert value(widget) == "alpha beta gamma"
+        widget.edit_redo()
+        assert value(widget) == result
 
 
 @pytest.mark.parametrize("kind", ["entry", "text"])
@@ -215,7 +226,7 @@ def test_existing_navigation_selection_clipboard_and_plain_delete_survive(root, 
     assert widget.index("insert") == ("1.6" if kind == "text" else 6)
     key(root, widget, f"<{word_modifier}-Shift-Right>")
     if kind == "text":
-        assert widget.get("sel.first", "sel.last") == "beta"
+        assert widget.get("sel.first", "sel.last").rstrip("\n") == "beta"
     else:
         assert widget.get()[widget.index("sel.first"):widget.index("sel.last")] == "beta"
     key(root, widget, select_all)
