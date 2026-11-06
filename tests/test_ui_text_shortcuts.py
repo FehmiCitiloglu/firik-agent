@@ -203,9 +203,13 @@ def test_text_deletion_is_one_undo_step(root, sequence):
 def test_existing_navigation_selection_clipboard_and_plain_delete_survive(root, kind):
     install_text_shortcuts(root)
     _, widget = control(root, kind)
-    aqua = root.tk.call("tk", "windowingsystem") == "aqua"
+    system = root.tk.call("tk", "windowingsystem")
+    aqua = system == "aqua"
     word_modifier = "Option" if aqua else "Control"
     app_modifier = "Command" if aqua else "Control"
+    select_all = "<Control-Key-slash>" if system == "x11" else f"<{app_modifier}-Key-a>"
+    root.clipboard_clear()
+    root.update()
     reset(widget, "alpha beta")
     key(root, widget, f"<{word_modifier}-Left>")
     assert widget.index("insert") == ("1.6" if kind == "text" else 6)
@@ -214,7 +218,7 @@ def test_existing_navigation_selection_clipboard_and_plain_delete_survive(root, 
         assert widget.get("sel.first", "sel.last") == "beta"
     else:
         assert widget.get()[widget.index("sel.first"):widget.index("sel.last")] == "beta"
-    key(root, widget, f"<{app_modifier}-Key-a>")
+    key(root, widget, select_all)
     key(root, widget, f"<{app_modifier}-Key-c>")
     assert root.clipboard_get().rstrip("\n") == "alpha beta"
     key(root, widget, f"<{app_modifier}-Key-x>")

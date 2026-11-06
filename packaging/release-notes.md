@@ -1,3 +1,8 @@
+## v0.2.43 değişiklikleri
+
+- Linux X11 ortamlarında yerel Tk tümünü seçme tuş kombinasyonu (`<Control-Key-slash>`) ve pano temizleme regresyonu düzeltildi.
+- v0.2.42 için hazırlanan MCP hata kurtarma, güvenli sentez yanıtı ve yerel metin düzenleme kısayollarının tamamı bu yayına dahildir.
+
 ## v0.2.42 değişiklikleri
 
 - MCP çağrı hataları sonrası sohbetin kesilmeden devam edebilmesi sağlandı; sunucu ve taşıma hataları araç sonucu olarak döndürülür ve model eldeki başarılı sonuçlarla veya bağımsız araçlarla devam eder.
