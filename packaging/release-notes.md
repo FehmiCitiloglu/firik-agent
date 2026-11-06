@@ -1,3 +1,10 @@
+## v0.2.41 değişiklikleri
+
+- Windows'ta ses konsolu kurulurken ve native başlık çubuğu yenilenirken mikrofonun yanlışlıkla duraklatılmasına yol açan olay sırası düzeltildi.
+- Gerçek pencere gizlenmesinde mikrofonun durması korunur; konsolun açılması ve tema yenilenmesi yeni kayıt başlatmaz.
+- Açık/koyu tema, klavye erişimi ve mikrofon yaşam döngüsü için kısa Windows regresyon akışı eklendi; eşzamanlı benchmark testi yavaş CI ortamlarında kararlı hale getirildi.
+- Önceki yayın denemelerinde hazırlanan sesli asistan konsolu ve tüm düzeltmeler bu yayına dahildir.
+
 ## v0.2.40 değişiklikleri
 
 - Windows'ta tema yenilenirken açılan ses konsolunun geçici gizli pencere durumunu devralması düzeltildi.
