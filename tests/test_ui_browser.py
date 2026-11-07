@@ -119,6 +119,10 @@ def test_click_coordinates_exclude_letterbox_and_map_to_page(panel):
 
 def test_native_preview_bindings_send_click_and_keyboard_only_after_takeover(panel):
     root, view, service, events = panel
+    # Synthetic clicks do not activate an unfocused native window. Establish
+    # desktop focus before testing the preview's own click-to-focus binding.
+    root.focus_force()
+    settle(root)
     view._command("browser_start")
     root.update()
     label = view.preview._label
@@ -129,6 +133,7 @@ def test_native_preview_bindings_send_click_and_keyboard_only_after_takeover(pan
     label.event_generate("<Button-1>", x=label.winfo_width()//2, y=label.winfo_height()//2)
     root.update()
     assert any(operation == "click" for _, operation, _ in events)
+    assert root.focus_get() is label
     label.event_generate("<KeyPress>", keysym="a")
     root.update()
     assert any(operation == "text" and arguments == {"text": "a"} for _, operation, arguments in events)
