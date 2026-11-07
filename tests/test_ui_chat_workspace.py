@@ -99,6 +99,9 @@ def test_workspace_toolbar_fits_small_window(workspace):
 
 def test_browser_reclaims_history_space_and_wraps_controls_at_default_app_width(workspace):
     root, view, service = workspace
+    # Hosted desktops can report a screen narrower than the wide-layout case.
+    # Allow the test window to reach that size instead of Tk clamping it.
+    root.maxsize(2000, 1200)
     service.session_browser_settings = lambda sid: {"enabled": False, "screenshots": False}
     service.browser_command_async = lambda *args, **kwargs: None
     # Reproduce the 1120 px application with its 220 px outer navigation.

@@ -1,3 +1,9 @@
+## v0.2.50 değişiklikleri
+
+- Gömülü tarayıcının klavye girdi testi, sentetik tıklama öncesinde yerel pencereyi etkinleştirecek şekilde düzeltildi.
+- Geniş pencere yerleşimi testi, küçük CI ekranlarında Tk pencere boyutu sınırının testi yanlışlıkla dar yerleşimde tutmasını önleyecek şekilde güncellendi.
+- v0.2.49 için hazırlanan gömülü tarayıcı, genel HTTPS izinleri ve araç hatası sonrası sohbet devamı iyileştirmelerinin tamamı bu yayına dahildir.
+
 ## v0.2.49 değişiklikleri
 
 - Sohbet ve kodlama panellerine gömülü Chromium görünümü, gezinme kontrolleri ve tarayıcı girdisi eklendi; dar pencere yerleşimi ve elle kontrol akışı geliştirildi.
