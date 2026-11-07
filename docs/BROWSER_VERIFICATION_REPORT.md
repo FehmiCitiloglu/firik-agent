@@ -1,5 +1,8 @@
 # Native Browser implementation and verification
 
+The 7 November follow-up replaces the desktop's separate browser window and
+domain-list workflow: see [inline browser verification](BROWSER_INLINE_VERIFICATION_20261107.md).
+
 Date: 6 November 2026. Starting checkout: clean `main`, commit
 `2c184cacf713b2e7fac3adbf848ab07919b48bf6`, application version 0.2.46.
 Changes are in the working tree; this task does not publish a release.

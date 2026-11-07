@@ -67,7 +67,11 @@ class BrowserSecurityPolicy:
         origin = origin_of(url)
         allowed = {origin_of(item) for item in grant.origins}
         private_allowed = {origin_of(item) for item in grant.allow_private_origins}
-        if origin not in allowed:
+        scheme = urlsplit(origin).scheme
+        public_https = grant.allow_public_https and scheme == "https"
+        if scheme == "http" and origin not in allowed and grant.allow_public_https:
+            raise BrowserError("insecure_http_denied", "Use an HTTPS address. HTTP is only available for explicitly authorized local development sites.")
+        if origin not in allowed and not public_https:
             raise BrowserError("origin_denied", "The destination origin has not been authorized.")
         hostname = urlsplit(origin).hostname
         try:
@@ -83,4 +87,6 @@ class BrowserSecurityPolicy:
             raise BrowserError("dns_failed", "Destination has no resolved addresses.")
         if any(not address.is_global for address in addresses) and origin not in private_allowed:
             raise BrowserError("private_network_denied", "Private network access requires an exact origin grant.")
+        if scheme == "http" and any(address.is_global for address in addresses):
+            raise BrowserError("insecure_http_denied", "Public websites require HTTPS; unencrypted HTTP connections are blocked.")
         return origin

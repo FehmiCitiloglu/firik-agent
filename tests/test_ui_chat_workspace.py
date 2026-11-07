@@ -97,6 +97,56 @@ def test_workspace_toolbar_fits_small_window(workspace):
         assert widget.winfo_rootx() + widget.winfo_width() <= root.winfo_rootx() + root.winfo_width()
 
 
+def test_browser_reclaims_history_space_and_wraps_controls_at_default_app_width(workspace):
+    root, view, service = workspace
+    service.session_browser_settings = lambda sid: {"enabled": False, "screenshots": False}
+    service.browser_command_async = lambda *args, **kwargs: None
+    # Reproduce the 1120 px application with its 220 px outer navigation.
+    view.pack_configure(padx=(220, 0))
+    pump(root, 0.1)
+    assert view.sidebar.winfo_ismapped()
+    page = view.current
+    page._open_browser()
+    pump(root, 0.15)
+    assert view._history_collapsed and not view.sidebar.winfo_ismapped()
+    assert page._compact_toolbar
+    body_left = page._chat_body.winfo_rootx()
+    body_right = body_left + page._chat_body.winfo_width()
+    for widget in (page.model_combo, page.mcp_btn, page.browser_btn, page.toggle_params_btn,
+                   page.effort_selector, page._export_button, page._delete_button, page.send_btn):
+        assert widget.winfo_ismapped()
+        assert widget.winfo_rootx() >= body_left
+        assert widget.winfo_rootx() + widget.winfo_width() <= body_right
+    assert page.model_combo.winfo_rooty() + page.model_combo.winfo_height() <= page.browser_btn.winfo_rooty()
+    panel = page._browser_panel
+    panel_right = panel.winfo_rootx() + panel.winfo_width()
+    for widget in (panel.url, panel.go_button, panel.tab_selector, panel.control_button):
+        assert widget.winfo_rootx() >= panel.winfo_rootx()
+        assert widget.winfo_rootx() + widget.winfo_width() <= panel_right
+    assert panel_right <= root.winfo_rootx() + root.winfo_width()
+    root.geometry("940x760")  # The application minimum leaves 720 px here.
+    pump(root, 0.1)
+    assert not view.sidebar.winfo_ismapped()
+    for widget in (page.model_combo, page.mcp_btn, page.browser_btn, page.toggle_params_btn, page.send_btn):
+        assert widget.winfo_rootx() + widget.winfo_width() <= page._chat_body.winfo_rootx() + page._chat_body.winfo_width()
+    for widget in (panel.url, panel.go_button, panel.tab_selector, panel.control_button):
+        assert widget.winfo_rootx() + widget.winfo_width() <= root.winfo_rootx() + root.winfo_width()
+    assert panel.winfo_rootx() + panel.winfo_width() <= root.winfo_rootx() + root.winfo_width()
+    panel._result("browser_request_handoff", {"state": "manual_control"})
+    pump(root)
+    assert panel.mode.cget("text") == "Ajan duraklatıldı"
+    assert panel.mode.winfo_rootx() + panel.mode.winfo_width() <= root.winfo_rootx() + root.winfo_width()
+    root.geometry("1700x760")
+    pump(root, 0.1)
+    assert view.sidebar.winfo_ismapped()
+    root.geometry("1120x760")
+    pump(root, 0.1)
+    assert not view.sidebar.winfo_ismapped()
+    page._close_browser_panel()
+    pump(root, 0.1)
+    assert view.sidebar.winfo_ismapped() and not view._history_collapsed
+
+
 def test_sidebar_reports_each_background_chats_actual_phase(workspace):
     root, view, service = workspace
     first = view.current

@@ -58,7 +58,7 @@ def select_tool_schemas(schemas: Sequence[Mapping[str, Any]], *, task: str = "",
     if profile.get("name") in {"minimal", "local-efficient"}:
         # Keep one editing route; other allowed routes are explicitly discoverable.
         allowed -= {"apply_patch", "write_file", "undo_change", "run_quality_gate", "git_status", "list_files"}
-    if re.search(r"(?i)browser|chromium|playwright|https?://|localhost|frontend|front.end|web\s?app|website|responsive|form|tarayıcı|arayüz|sayfa|mobile.*menu", task):
+    if re.search(r"(?i)browser|chromium|playwright|https?://|localhost|frontend|front.end|web\s?app|website|responsive|form|tarayıcı|arayüz|sayfa|\bsite(?:yi|ye|de|den|nin|sini|sine)?\s+(?:aç|incele|ziyaret|git)|mobile.*menu", task):
         allowed |= _BROWSER_INITIAL
     if re.search(r"(?i)click|fill|select|form|tıkla|doldur|button|menu|menü", task):
         allowed |= {"browser_click", "browser_fill", "browser_select", "browser_check", "browser_get_forms"}

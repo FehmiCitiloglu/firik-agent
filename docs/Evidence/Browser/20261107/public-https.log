@@ -1,0 +1,143 @@
+{
+  "domain_allowlist": [],
+  "pages": [
+    {
+      "requested_url": "https://example.com",
+      "result": {
+        "requested_url": "https://example.com",
+        "url": "https://example.com/",
+        "title": "Example Domain",
+        "http_status": 200,
+        "redirected": false,
+        "outcome": "navigation_observed",
+        "task_completion_verified": false,
+        "session_id": "browser_99635e61d4ae48a2",
+        "tab_id": "tab_ce85b22262f44daf",
+        "revision": 2,
+        "duration_seconds": 0.4755
+      },
+      "tabs": [
+        {
+          "tab_id": "tab_ce85b22262f44daf",
+          "url": "https://example.com/",
+          "title": "Example Domain",
+          "active": true
+        }
+      ],
+      "preview_bytes": 80922
+    },
+    {
+      "requested_url": "https://playwright.dev/python",
+      "result": {
+        "requested_url": "https://playwright.dev/python",
+        "url": "https://playwright.dev/python/",
+        "title": "Fast and reliable end-to-end testing for modern web apps | Playwright Python",
+        "http_status": 200,
+        "redirected": true,
+        "outcome": "navigation_observed",
+        "task_completion_verified": false,
+        "session_id": "browser_99635e61d4ae48a2",
+        "tab_id": "tab_ce85b22262f44daf",
+        "revision": 4,
+        "duration_seconds": 1.389
+      },
+      "tabs": [
+        {
+          "tab_id": "tab_ce85b22262f44daf",
+          "url": "https://playwright.dev/python/",
+          "title": "Fast and reliable end-to-end testing for modern web apps | Playwright Python",
+          "active": true
+        }
+      ],
+      "preview_bytes": 343912
+    },
+    {
+      "requested_url": "https://www.linkedin.com",
+      "result": {
+        "requested_url": "https://www.linkedin.com",
+        "url": "https://www.linkedin.com/",
+        "title": "LinkedIn: Log In or Sign Up",
+        "http_status": 200,
+        "redirected": false,
+        "outcome": "navigation_observed",
+        "task_completion_verified": false,
+        "session_id": "browser_99635e61d4ae48a2",
+        "tab_id": "tab_ce85b22262f44daf",
+        "revision": 6,
+        "duration_seconds": 0.5113
+      },
+      "tabs": [
+        {
+          "tab_id": "tab_ce85b22262f44daf",
+          "url": "https://www.linkedin.com/",
+          "title": "LinkedIn: Log In or Sign Up",
+          "active": true
+        }
+      ],
+      "preview_bytes": 104910
+    }
+  ],
+  "start": {
+    "session_id": "browser_99635e61d4ae48a2",
+    "context_id": "context_6b0c105e6e3a415b",
+    "state": "ready",
+    "conversation_id": "public-https-acceptance",
+    "project_id": "",
+    "run_id": "",
+    "actor_id": "parent",
+    "active_tab_id": "tab_ce85b22262f44daf",
+    "tab_count": 1,
+    "headless": true,
+    "created_at": 1794033385.837901,
+    "last_activity": 1794033385.837901,
+    "browser_version": "156.0.8078.4",
+    "actions": 0,
+    "max_actions": 100,
+    "network_boundary": "host_request_policy; not OS isolation",
+    "websockets": "blocked",
+    "service_workers": "blocked",
+    "tabs": [
+      {
+        "tab_id": "tab_ce85b22262f44daf",
+        "url": "about:blank",
+        "title": "",
+        "active": true
+      }
+    ]
+  },
+  "public_http": "insecure_http_denied",
+  "manual_preview_bytes": 113371,
+  "manual_agent_observation": "manual_control",
+  "resume": {
+    "session_id": "browser_99635e61d4ae48a2",
+    "context_id": "context_6b0c105e6e3a415b",
+    "state": "ready",
+    "conversation_id": "public-https-acceptance",
+    "project_id": "",
+    "run_id": "",
+    "actor_id": "parent",
+    "active_tab_id": "tab_ce85b22262f44daf",
+    "tab_count": 1,
+    "headless": true,
+    "created_at": 1794033385.837901,
+    "last_activity": 1794033390.262317,
+    "browser_version": "156.0.8078.4",
+    "actions": 7,
+    "max_actions": 100,
+    "network_boundary": "host_request_policy; not OS isolation",
+    "websockets": "blocked",
+    "service_workers": "blocked",
+    "tabs": [
+      {
+        "tab_id": "tab_ce85b22262f44daf",
+        "url": "https://www.linkedin.com/",
+        "title": "LinkedIn: Log In or Sign Up",
+        "active": true
+      }
+    ],
+    "observation_pending": true,
+    "requires_fresh_snapshot": true,
+    "resumed_by_host": true
+  },
+  "owned_sessions_after_close": []
+}

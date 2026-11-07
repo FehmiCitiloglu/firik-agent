@@ -2,12 +2,14 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 import datetime
+from dataclasses import dataclass
 import logging
+import re
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from firik_agent.core.tools import ToolRegistry
-from firik_agent.core.types import ToolDefinition
+from firik_agent.core.types import ToolDefinition, ToolResult
 from firik_agent.mcp.client import MCPClient
 from firik_agent.mcp.models import (
     MCPLogEntry,
@@ -15,6 +17,7 @@ from firik_agent.mcp.models import (
     MCPStatus,
     MCPTestResult,
     MCPTransport,
+    ToolPolicyMode,
     delete_all_mcp_secrets,
     redact_secrets,
     resolve_server_env,
@@ -23,6 +26,36 @@ from firik_agent.mcp.protocol import MCPCallToolResult, MCPToolSchema
 from firik_agent.mcp.results import tool_result_from_mcp
 
 logger = logging.getLogger(__name__)
+
+
+def _builtin_public_web_result(result: MCPCallToolResult, name: str):
+    """Keep safe reader failures actionable without remote-mutation claims."""
+    if not result.isError:
+        return tool_result_from_mcp(result, name)
+    from firik_agent.projects.indexer import sanitize_secrets
+    text = "\n".join(item.text for item in result.content[:4]
+                     if item.type == "text" and item.text)[:32000]
+    # Native HTTP diagnostics can contain the complete URL, query credentials
+    # and fragments. None is needed to explain HTTPS/private-network denial.
+    text = re.sub(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s<>\"']+", "[URL omitted]", text)
+    text = sanitize_secrets(text).strip()[:2000]
+    return ToolResult(tool_call_id="", name=name, is_error=True,
+        content=text or "Public Web request failed under the active network policy.",
+        metadata={"failure_kind": "web_request_failed", "request_phase": "tool_completed",
+                  "requires_reconciliation": False, "retry_eligible": False})
+
+
+@dataclass(frozen=True)
+class _BuiltinPublicWebBinding:
+    """Registration-owned provenance, never supplied by a remote MCP server."""
+    server_name: str
+    raw_tool_name: str
+    connection: Any
+    client: MCPClient
+    server: Any
+    definition: ToolDefinition
+    definition_state: dict
+    handler: Callable
 
 
 class MCPConnection:
@@ -241,6 +274,7 @@ class MCPConnectionManager:
         self.tool_registry = tool_registry or ToolRegistry()
         self.connections: Dict[str, MCPConnection] = {}
         self._listeners: List[Callable[[str, MCPStatus], None]] = []
+        self._public_web_bindings: Dict[str, _BuiltinPublicWebBinding] = {}
 
     def add_listener(self, callback: Callable[[str, MCPStatus], None]) -> None:
         self._listeners.append(callback)
@@ -377,10 +411,60 @@ class MCPConnectionManager:
         for conn in self.connections.values():
             conn.used_by_sessions.discard(session_id)
 
+    @staticmethod
+    def _builtin_public_web_client(conn: MCPConnection) -> bool:
+        """Identify Firik's fixed in-process Web implementation, not its name."""
+        from firik_agent.mcp.web_server import WebMCPServer
+        client = conn.client
+        return bool(type(conn) is MCPConnection and conn.config.enabled
+                    and conn.config.transport == MCPTransport.STDIO
+                    and conn.config.command == "builtin:web"
+                    and conn.status == MCPStatus.CONNECTED
+                    and type(client) is MCPClient and client.is_connected
+                    and client.command == "builtin:web"
+                    and type(client._builtin_server) is WebMCPServer)
+
+    def _current_public_web_binding(self, name: str, registry: Optional[ToolRegistry] = None):
+        """Return unchanged registration provenance, regardless of ask policy."""
+        if registry is not None and registry is not self.tool_registry:
+            return None
+        binding = self._public_web_bindings.get(name)
+        if binding is None:
+            return None
+        conn = self.connections.get(binding.server_name)
+        if (conn is not binding.connection or not self._builtin_public_web_client(conn)
+                or conn.config.name != binding.server_name
+                or conn.client is not binding.client
+                or conn.client._builtin_server is not binding.server
+                or self.tool_registry.get_tool(name) is not binding.definition
+                or self.tool_registry._handlers.get(name) is not binding.handler
+                or binding.definition.model_dump(mode="json") != binding.definition_state):
+            return None
+        return binding
+
+    def is_safe_public_web_tool(self, name: str, registry: Optional[ToolRegistry] = None) -> bool:
+        """Recognize only current host-registered public search/read handlers.
+
+        Tool names, descriptions, annotations and MCP handshake metadata cannot
+        grant this exemption. Replacing a connection, handler, definition or the
+        in-process server invalidates the original registration immediately.
+        """
+        binding = self._current_public_web_binding(name, registry)
+        if binding is None:
+            return False
+        policy = binding.connection.config.tool_policy
+        return bool(policy.mode == ToolPolicyMode.ALLOW
+                    and name not in policy.confirm_tools
+                    and binding.raw_tool_name not in policy.confirm_tools
+                    and (not policy.allowed_tools or name in policy.allowed_tools))
+
     def _register_tools_in_registry(self, conn: MCPConnection) -> None:
         """Register all discovered tools from an MCP server into the tool registry."""
         server_name = conn.config.name
         self.tool_registry.unregister_by_source(f"mcp:{server_name}")
+        self._public_web_bindings = {name: binding for name, binding in self._public_web_bindings.items()
+                                     if binding.server_name != server_name}
+        public_web = self._builtin_public_web_client(conn)
 
         for t in conn.cached_tools:
             clean_name = f"mcp_{server_name}_{t.name}" if not t.name.startswith("mcp_") else t.name
@@ -401,8 +485,25 @@ class MCPConnectionManager:
 
                 return handler
 
-            handler = _make_handler(conn, orig_tool_name)
+            def _make_public_web_handler(name: str, client: MCPClient, orig_name: str):
+                async def handler(**kwargs):
+                    binding = self._current_public_web_binding(name)
+                    if binding is None or binding.handler is not handler:
+                        raise PermissionError("Public Web registration changed; reconnect the configured builtin service.")
+                    # Never auto-reconnect through a mutable connection/config
+                    # after the filter admitted this fixed in-process reader.
+                    res = await client.call_tool(orig_name, kwargs)
+                    return _builtin_public_web_result(res, orig_name)
+                return handler
+
+            guarded_public_web = public_web and orig_tool_name in {"web_search", "web_open"}
+            handler = (_make_public_web_handler(clean_name, conn.client, orig_tool_name)
+                       if guarded_public_web else _make_handler(conn, orig_tool_name))
             self.tool_registry.register(tool_def, handler)
+            if guarded_public_web:
+                self._public_web_bindings[clean_name] = _BuiltinPublicWebBinding(
+                    server_name, orig_tool_name, conn, conn.client, conn.client._builtin_server,
+                    tool_def, tool_def.model_dump(mode="json"), handler)
 
     async def autostart_servers(self) -> None:
         """Connect all servers marked with autostart=True."""

@@ -127,11 +127,17 @@ class SessionToolFilter:
             return self.mcp_registry
         return self.tool_registry
 
+    def _safe_public_web_allowed(self, name: str) -> bool:
+        manager = self.connection_manager
+        return bool(isinstance(manager, MCPConnectionManager)
+                    and MCPConnectionManager.is_safe_public_web_tool(manager, name, self._registry_for(name)))
+
     def is_tool_allowed(self, tool_name: str, session: ChatSession) -> bool:
         """Check if a tool is permitted in the context of the given ChatSession."""
         if tool_name.startswith("browser_"):
             return self._browser_allowed(tool_name, session)
-        if session.requires_external_tool_approval() and self.external_tool_authorize is None:
+        if (session.requires_external_tool_approval() and self.external_tool_authorize is None
+                and not self._safe_public_web_allowed(tool_name)):
             return False
         tool_def = self._registry_for(tool_name).get_tool(tool_name)
         if not tool_def:
@@ -207,9 +213,13 @@ class SessionToolFilter:
         if name.startswith("browser_"):
             session.requires_external_tool_approval()
             return await self.browser_adapter.execute(tool_call)
-        if session.requires_external_tool_approval():
+        untrusted_browser_context = session.requires_external_tool_approval()
+        if untrusted_browser_context and not self._safe_public_web_allowed(name):
             return await self._execute_external(tool_call, session)
-        return await self._registry_for(name).execute(tool_call)
+        result = await self._registry_for(name).execute(tool_call)
+        if untrusted_browser_context:
+            result.metadata.update(host_public_web_policy=True, browser_untrusted_context=True)
+        return result
 
     async def _execute_external(self, tool_call: ToolCall, session: ChatSession) -> ToolResult:
         """A page cannot borrow unrelated tools' ambient host authority."""

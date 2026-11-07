@@ -388,7 +388,7 @@ class CodingBridge(CodingActions):
                 control.browser_grant = BrowserGrant(enabled=control.permissions.get("allow_browser", False),
                     origins=browser_origins(options.get("browser_origins", [])),
                     allow_private_origins=browser_origins(options.get("browser_private_origins", [])),
-                    allow_screenshots=options.get("browser_screenshots") is True)
+                    allow_screenshots=options.get("browser_screenshots") is True, allow_public_https=True)
                 if control.browser_grant.enabled:
                     self.browser_manager.config.enabled = True
                 control.capabilities = dict(options.get("capabilities", {}))

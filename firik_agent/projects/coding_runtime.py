@@ -480,7 +480,13 @@ class CodingRunControl:
                          "shell.sudo": "deny", "network": "ask", "git.commit": "ask",
                          "git.push": "ask", "git.forcePush": "deny", "mcp": "ask", "secrets": "deny",
                          "spawn_agents": "ask" if self.mode == "safe" else "allow"})
-        defaults.update({"browser.navigate": "ask", "browser.interact": "ask", "browser.submit": "ask",
+        # Enabling public HTTPS browsing is the host's standing navigation
+        # grant. The browser manager still validates every URL/resource; it
+        # does not need a separate confirmation for each admitted website.
+        # Explicit action policies and inherited limits remain authoritative.
+        public_browsing = self.browser_grant.enabled and self.browser_grant.allow_public_https
+        defaults.update({"browser.navigate": "allow" if public_browsing else "ask",
+                         "browser.interact": "ask", "browser.submit": "ask",
                          "browser.authenticated": "ask", "browser.upload": "deny",
                          "browser.download": "deny", "browser.profile": "deny"})
         decision = self.policy.get(action, defaults[action])
@@ -764,9 +770,15 @@ class CodingToolFilter:
                     live = parent.browser_grant
                     return BrowserGrant(enabled=configured.enabled and live.enabled
                         and parent.permissions.get("allow_browser") is True,
-                        origins=tuple(value for value in configured.origins if value in live.origins),
+                        origins=tuple(dict.fromkeys(
+                            [value for value in configured.origins
+                             if value in live.origins or live.allow_public_https and value.startswith("https://")]
+                            + [value for value in live.origins
+                               if configured.allow_public_https and not live.allow_public_https
+                               and value.startswith("https://")])),
                         allow_private_origins=tuple(value for value in configured.allow_private_origins if value in live.allow_private_origins),
-                        allow_screenshots=configured.allow_screenshots and live.allow_screenshots)
+                        allow_screenshots=configured.allow_screenshots and live.allow_screenshots,
+                        allow_public_https=configured.allow_public_https and live.allow_public_https)
                 return configured
             async def authorize(action, name, preview):
                 await self.control.authorize(action, name, preview,

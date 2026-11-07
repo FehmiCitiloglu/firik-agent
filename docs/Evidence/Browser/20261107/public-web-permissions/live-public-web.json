@@ -1,0 +1,60 @@
+{
+  "approval_requests": [],
+  "requests": [
+    {
+      "tool": "web_search",
+      "arguments": {
+        "query": "interesting interactive websites",
+        "max_results": 3
+      },
+      "is_error": false,
+      "public_web_policy": true,
+      "result": {
+        "provider": "DuckDuckGo",
+        "result_count": 3
+      }
+    },
+    {
+      "tool": "web_open",
+      "arguments": {
+        "url": "https://example.com/"
+      },
+      "is_error": false,
+      "public_web_policy": true,
+      "result": {
+        "url": "https://example.com/",
+        "text_characters": 171
+      }
+    },
+    {
+      "tool": "web_open",
+      "arguments": {
+        "url": "https://playwright.dev/python"
+      },
+      "is_error": false,
+      "public_web_policy": true,
+      "result": {
+        "url": "https://playwright.dev/python/",
+        "text_characters": 3448
+      }
+    },
+    {
+      "tool": "web_open",
+      "arguments": {
+        "url": "http://example.com/"
+      },
+      "is_error": true,
+      "public_web_policy": true,
+      "message": "Web request failed: Use an HTTPS address. HTTP is only available for explicitly authorized local development sites."
+    },
+    {
+      "tool": "web_open",
+      "arguments": {
+        "url": "https://127.0.0.1/"
+      },
+      "is_error": true,
+      "public_web_policy": true,
+      "message": "Web request failed: Private network access requires an exact origin grant."
+    }
+  ]
+}

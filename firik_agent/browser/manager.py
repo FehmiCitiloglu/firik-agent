@@ -14,6 +14,7 @@ import re
 import secrets
 import time
 from typing import Any
+from urllib.parse import urljoin
 
 from firik_agent.browser.artifacts import BrowserArtifacts
 from firik_agent.browser.config import BrowserConfig
@@ -93,6 +94,11 @@ class BrowserManager:
         self._startup_lock = asyncio.Lock()
         self._prepared: dict[str, _Prepared] = {}
         self._grant_providers: dict[BrowserIdentity, Any] = {}
+        self._redirect_tasks: dict[str, asyncio.Task] = {}
+        self._redirect_counts: dict[str, int] = {}
+        # A routed policy refusal otherwise becomes Playwright's generic
+        # ERR_FAILED. Keep the host's reason for the affected main-frame load.
+        self._navigation_errors: dict[str, BrowserError] = {}
         self.metrics = {"calls": 0, "startup_seconds": 0.0, "action_seconds": 0.0, "crashes": 0}
 
     def bind_grant_provider(self, identity: BrowserIdentity, provider) -> None:
@@ -185,8 +191,11 @@ class BrowserManager:
         browser = self._browsers.get(headless)
         if browser is not None:
             if not browser.is_connected():
-                raise BrowserError("browser_crashed", "Chromium disconnected; existing page state cannot be recovered automatically.")
-            return browser
+                # An explicit new start may recover the engine after the old
+                # owned context was closed. Never pretend to recover its page.
+                self._browsers.pop(headless, None)
+            else:
+                return browser
         started = time.monotonic()
         try:
             if self._playwright is None:
@@ -234,8 +243,15 @@ class BrowserManager:
         self._enabled(grant)
         async with self._startup_lock:
             if identity in self._sessions:
-                session = self._session(identity, grant)
-                return self._status(session)
+                previous = self._sessions[identity]
+                if previous.cancelled or previous.state in {"closed", "failed"}:
+                    provider = self._grant_providers.get(identity)
+                    await self.close_owner(identity)
+                    if provider is not None:
+                        self._grant_providers[identity] = provider
+                else:
+                    session = self._session(identity, grant)
+                    return self._status(session)
             if len(self._sessions) >= self.config.max_sessions:
                 raise BrowserError("browser_limit", "Maximum number of concurrent browser sessions reached.")
             headless = args.get("headless", self.config.headless)
@@ -276,31 +292,93 @@ class BrowserManager:
             self._enabled(session.grant)
             checked_grant = session.grant
             await self.policy.validate(route.request.url, checked_grant)
-            # Reject redirect chains at the network layer. A fresh authorized
-            # navigation can follow an observed redirect after explicit review.
-            if route.request.redirected_from is not None:
-                raise BrowserError("redirect_blocked", "Automatic redirects require a fresh destination navigation.")
             current_grant = self._live_grant(session.identity, session.grant)
             self._enabled(current_grant)
             if current_grant != checked_grant:
                 raise BrowserError("permission_changed", "Browser authority changed during destination validation.")
             session.grant = current_grant
-            # Playwright may invoke a route only for the first URL in an HTTP
-            # redirect chain. Fetch without redirects and refuse 3xx responses
-            # before Chromium can follow an unvalidated destination.
+            # Playwright routes only the first URL in an HTTP redirect chain.
+            # Disable automatic following and validate every destination here.
             response = await route.fetch(max_redirects=0, timeout=self.config.navigation_timeout_ms)
             current_grant = self._live_grant(session.identity, session.grant)
             self._enabled(current_grant)
             if current_grant != checked_grant:
                 raise BrowserError("permission_changed", "Browser authority changed during the request; its response was discarded.")
-            if 300 <= response.status < 400 and response.headers.get("location"):
-                raise BrowserError("redirect_blocked", "Automatic HTTP redirects require a fresh reviewed navigation.")
+            redirects = 0
+            destination = route.request.url
+            while response.status in {301, 302, 303, 307, 308} and response.headers.get("location"):
+                destination = urljoin(destination, response.headers["location"])
+                await self.policy.validate(destination, checked_grant)
+                current_grant = self._live_grant(session.identity, session.grant)
+                self._enabled(current_grant)
+                if current_grant != checked_grant:
+                    raise BrowserError("permission_changed", "Browser authority changed during redirect validation.")
+                safe_get_transition = route.request.method == "POST" and response.status in {302, 303}
+                if route.request.method not in {"GET", "HEAD"} and not safe_get_transition:
+                    raise BrowserError("redirect_blocked", "A submitted request is not replayed automatically after a redirect.")
+                redirects += 1
+                if redirects > 10:
+                    raise BrowserError("redirect_limit", "The website redirected too many times.")
+                page = route.request.frame.page
+                tab = next((item for item in session.tabs.values() if item.page is page), None)
+                if route.request.is_navigation_request() and route.request.frame is page.main_frame and tab is not None:
+                    # A new GET navigation keeps Chromium's real URL/origin
+                    # and relative links correct. POST 302/303 follow browser
+                    # semantics with a GET; no submitted body is replayed.
+                    count = self._redirect_counts.get(tab.tab_id, 0) + 1
+                    self._redirect_counts[tab.tab_id] = count
+                    if count > 10:
+                        raise BrowserError("redirect_limit", "The website redirected too many times.")
+                    ready = asyncio.Event()
+                    task = asyncio.create_task(self._follow_redirect(session, tab, destination, ready))
+                    self._redirect_tasks[tab.tab_id] = task
+                    session.pending.add(task)
+                    task.add_done_callback(session.pending.discard)
+                    # Retrieve an exception even when a passive script initiated
+                    # navigation and no foreground command is waiting for it.
+                    task.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
+                    try:
+                        await route.abort("aborted")
+                    finally:
+                        ready.set()
+                    return
+                if safe_get_transition:
+                    raise BrowserError("redirect_blocked", "A submitted resource redirect requires native browser origin handling.")
+                if origin_of(destination) != origin_of(route.request.url):
+                    # Fulfilling a cross-origin response under the original URL
+                    # would bypass Chromium's CORS/origin checks and could also
+                    # forward the source request's Authorization header. Only
+                    # a real top-level navigation can cross origins safely.
+                    raise BrowserError("cross_origin_redirect_blocked", "A redirected resource changed origin and could not be loaded safely.")
+                await response.dispose()
+                response = await route.fetch(url=destination, max_redirects=0,
+                                             timeout=self.config.navigation_timeout_ms)
+            current_grant = self._live_grant(session.identity, session.grant)
+            self._enabled(current_grant)
+            if current_grant != checked_grant:
+                raise BrowserError("permission_changed", "Browser authority changed while loading the response.")
             await route.fulfill(response=response)
         except BrowserError as exc:
             for tab in session.tabs.values():
                 tab.network_errors.append({"url": sanitized_url(route.request.url), "method": route.request.method,
                                            "resource_type": route.request.resource_type, "failure": exc.code})
-            await route.abort("blockedbyclient")
+            request = route.request
+            page = request.frame.page
+            main_navigation = request.is_navigation_request() and request.frame is page.main_frame
+            if main_navigation:
+                tab = next((item for item in session.tabs.values() if item.page is page), None)
+                if tab is not None:
+                    # A POST may already have reached its server before a
+                    # redirect was denied. Never downgrade that uncertainty.
+                    submitted = response is not None and request.method not in {"GET", "HEAD"}
+                    self._navigation_errors[tab.tab_id] = BrowserError(
+                        exc.code, str(exc), dispatched=exc.dispatched or submitted,
+                        requires_reconciliation=exc.requires_reconciliation or submitted)
+            # ERR_BLOCKED_BY_CLIENT schedules an internal chrome-error page
+            # after goto() has already failed. That late commit can interrupt
+            # the next independent site. Abort the main load as a cancellation
+            # instead, preserving the previous document and the exact refusal.
+            await route.abort("aborted" if main_navigation else "blockedbyclient")
         except Exception:
             try:
                 await route.abort("blockedbyclient")
@@ -312,6 +390,19 @@ class BrowserManager:
                     await response.dispose()
                 except Exception:
                     pass
+
+    async def _follow_redirect(self, session, tab, destination, ready):
+        await ready.wait()
+        grant = self._live_grant(session.identity, session.grant)
+        self._enabled(grant)
+        await self.policy.validate(destination, grant)
+        try:
+            return await tab.page.goto(destination, wait_until="domcontentloaded")
+        except Exception:
+            following = self._redirect_tasks.get(tab.tab_id)
+            if following is not None and following is not asyncio.current_task():
+                return await following
+            raise
 
     def _track_page(self, session: BrowserSession, page):
         if any(tab.page is page for tab in session.tabs.values()):
@@ -346,6 +437,11 @@ class BrowserManager:
         self.metrics["crashes"] += 1
 
     def _page_closed(self, session, tab):
+        task = self._redirect_tasks.pop(tab.tab_id, None)
+        if task is not None and not task.done():
+            task.cancel()
+        self._redirect_counts.pop(tab.tab_id, None)
+        self._navigation_errors.pop(tab.tab_id, None)
         session.tabs.pop(tab.tab_id, None)
         if session.active_tab_id == tab.tab_id:
             session.active_tab_id = next(iter(session.tabs), "")
@@ -356,8 +452,8 @@ class BrowserManager:
         tab.revision += 1
         tab.observed_digest = ""
 
-    def _status(self, session: BrowserSession) -> dict:
-        return {"session_id": session.session_id, "context_id": session.context_id, "state": session.state,
+    def _status(self, session: BrowserSession, *, host: bool = False) -> dict:
+        result = {"session_id": session.session_id, "context_id": session.context_id, "state": session.state,
                 "conversation_id": session.identity.conversation_id, "project_id": session.identity.project_id,
                 "run_id": session.identity.run_id, "actor_id": session.identity.actor_id,
                 "active_tab_id": session.active_tab_id, "tab_count": len(session.tabs),
@@ -365,6 +461,11 @@ class BrowserManager:
                 "browser_version": self._browsers[session.headless].version if session.headless in self._browsers else "",
                 "actions": session.actions, "max_actions": self.config.max_actions_per_task,
                 "network_boundary": "host_request_policy; not OS isolation", "websockets": "blocked", "service_workers": "blocked"}
+        if host or session.state != "manual_control":
+            result["tabs"] = [{"tab_id": tab.tab_id, "url": sanitized_url(tab.page.url),
+                               "title": getattr(tab, "title", ""), "active": tab.tab_id == session.active_tab_id}
+                              for tab in session.tabs.values() if not tab.page.is_closed()]
+        return result
 
     def _bounded_items(self, items: list, key: str) -> dict:
         selected = []
@@ -485,8 +586,21 @@ class BrowserManager:
         return await self._dispatch(identity, grant, operation, arguments,
                                     approved_fingerprint=approved_fingerprint)
 
+    async def host_command(self, identity: BrowserIdentity, grant: BrowserGrant,
+                           operation: str, arguments: dict | None = None) -> dict:
+        """Trusted UI navigation. This entry point is never a model tool."""
+        operation = operation.removeprefix("browser_")
+        if operation not in NAVIGATIONS | {"start", "status", "list_tabs", "new_tab", "select_tab", "close_tab", "close", "request_handoff"}:
+            raise BrowserError("unsupported_capability", "Unsupported host browser control.")
+        session = self._sessions.get(identity)
+        if session is not None and operation != "close":
+            async with session.control_lock:
+                return await self._dispatch(identity, grant, operation, arguments, host_control=True)
+        return await self._dispatch(identity, grant, operation, arguments, host_control=True)
+
     async def _dispatch(self, identity: BrowserIdentity, grant: BrowserGrant, operation: str,
-                        arguments: dict | None = None, *, approved_fingerprint: str | None = None) -> dict:
+                        arguments: dict | None = None, *, approved_fingerprint: str | None = None,
+                        host_control: bool = False) -> dict:
         operation, args = self._arguments(operation, arguments)
         grant = self._live_grant(identity, grant)
         self._enabled(grant)
@@ -503,22 +617,21 @@ class BrowserManager:
             return {"state": "closed"}
         session = self._session(identity, grant)
         if operation == "status":
-            return self._status(session)
-        if session.state == "manual_control":
+            return self._status(session, host=host_control)
+        if session.state == "manual_control" and not host_control:
             raise BrowserError("manual_control", "Agent observation and interaction are paused during manual control.")
         if operation == "request_handoff":
-            if session.headless:
-                raise BrowserError("headful_required", "Manual takeover requires a headed browser. Close and explicitly start with headless=false.")
             session.state = "manual_control"
             self._prepared = {k: v for k, v in self._prepared.items() if v.identity != identity}
             for tab in session.tabs.values():
                 async with tab.lock:
                     self._invalidate(tab)
                     tab.console.clear(); tab.page_errors.clear(); tab.network_errors.clear()
-            await self._tab(session, {}).page.bring_to_front()
-            return self._status(session)
+            if not session.headless:
+                await self._tab(session, {}).page.bring_to_front()
+            return self._status(session, host=host_control)
         if operation == "list_tabs":
-            return {"tabs": [{"tab_id": tab.tab_id, "url": sanitized_url(tab.page.url), "active": tab.tab_id == session.active_tab_id}
+            return {"tabs": [{"tab_id": tab.tab_id, "url": sanitized_url(tab.page.url), "title": redact(await tab.page.title()), "active": tab.tab_id == session.active_tab_id}
                              for tab in session.tabs.values() if not tab.page.is_closed()]}
         if operation == "new_tab":
             if len(session.tabs) >= self.config.max_tabs_per_session:
@@ -529,7 +642,7 @@ class BrowserManager:
             tab = next(t for t in session.tabs.values() if t.page is page)
             session.active_tab_id = tab.tab_id
             if args.get("url"):
-                return await self._dispatch(identity, grant, "navigate", {"url": args["url"], "tab_id": tab.tab_id})
+                return await self._dispatch(identity, grant, "navigate", {"url": args["url"], "tab_id": tab.tab_id}, host_control=host_control)
             return {"tab_id": tab.tab_id, "url": "about:blank"}
         tab = self._tab(session, args)
         if operation == "select_tab":
@@ -547,14 +660,18 @@ class BrowserManager:
         dispatched = False
         started = time.monotonic()
         self.metrics["calls"] += 1
+        previous_state = session.state
         try:
             async with tab.lock:
                 session = self._session(identity, grant)
-                if session.state == "manual_control":
+                if session.state == "manual_control" and not host_control:
                     raise BrowserError("manual_control", "The user currently controls this browser.")
-                if session.actions >= self.config.max_actions_per_task:
+                if not host_control and session.actions >= self.config.max_actions_per_task:
                     raise BrowserError("browser_limit", "Browser action budget exhausted.")
-                if tab.page.url != "about:blank":
+                # A failed load can leave Chromium on an internal error page
+                # or a now-denied origin. A new destination must still be
+                # reachable; _execute validates it before any request.
+                if operation != "navigate" and tab.page.url != "about:blank":
                     await self.policy.validate(tab.page.url, grant)
                 if operation in INTERACTIONS:
                     prepared = self._prepared.pop(approved_fingerprint, None) if approved_fingerprint else None
@@ -565,7 +682,8 @@ class BrowserManager:
                     digest, _ = await self._action_state(session, tab, operation, args)
                     if digest != prepared.state_digest:
                         raise BrowserError("approval_invalidated", "The reviewed target or form changed; obtain fresh approval.")
-                session.actions += 1
+                if not host_control:
+                    session.actions += 1
                 session.last_activity = time.time()
                 session.state = "busy"
                 # Mark before awaited browser calls: remote outcome can be uncertain.
@@ -590,26 +708,48 @@ class BrowserManager:
         finally:
             session.pending.discard(task)
             if session.state == "busy":
-                session.state = "ready"
+                session.state = "manual_control" if previous_state == "manual_control" else "ready"
             self.metrics["action_seconds"] += time.monotonic() - started
 
     async def _execute(self, session: BrowserSession, tab: BrowserTab, operation: str, args: dict) -> dict:
         page = tab.page
         if operation in NAVIGATIONS:
             requested = args.get("url", page.url)
-            if operation == "navigate":
-                await self.policy.validate(requested, session.grant)
-                response = await page.goto(requested, wait_until="domcontentloaded")
-            elif operation == "back":
-                response = await page.go_back(wait_until="domcontentloaded")
-            elif operation == "forward":
-                response = await page.go_forward(wait_until="domcontentloaded")
-            else:
-                response = await page.reload(wait_until="domcontentloaded")
+            self._redirect_counts[tab.tab_id] = 0
+            self._navigation_errors.pop(tab.tab_id, None)
+            previous_redirect = self._redirect_tasks.pop(tab.tab_id, None)
+            if previous_redirect is not None and not previous_redirect.done():
+                await previous_redirect
+            try:
+                try:
+                    if operation == "navigate":
+                        await self.policy.validate(requested, session.grant)
+                        response = await page.goto(requested, wait_until="domcontentloaded")
+                    elif operation == "back":
+                        response = await page.go_back(wait_until="domcontentloaded")
+                    elif operation == "forward":
+                        response = await page.go_forward(wait_until="domcontentloaded")
+                    else:
+                        response = await page.reload(wait_until="domcontentloaded")
+                except Exception:
+                    following = self._redirect_tasks.get(tab.tab_id)
+                    if following is None:
+                        raise
+                    response = await following
+            except Exception:
+                self._invalidate(tab)
+                blocked = self._navigation_errors.pop(tab.tab_id, None)
+                if blocked is not None:
+                    raise blocked from None
+                raise
+            finally:
+                self._navigation_errors.pop(tab.tab_id, None)
             self._invalidate(tab)
-            await self.policy.validate(page.url, session.grant)
-            return {"requested_url": sanitized_url(requested), "url": sanitized_url(page.url), "title": redact(await page.title()),
-                    "http_status": response.status if response else None, "redirected": bool(response and response.request.redirected_from),
+            if page.url != "about:blank":
+                await self.policy.validate(page.url, session.grant)
+            tab.title = redact(await page.title())
+            return {"requested_url": sanitized_url(requested), "url": sanitized_url(page.url), "title": tab.title,
+                    "http_status": response.status if response else None, "redirected": bool(self._redirect_counts.get(tab.tab_id) or (response and response.request.redirected_from)),
                     "outcome": "navigation_observed", "task_completion_verified": False}
         if operation == "snapshot":
             before = await self._digest(tab)
@@ -722,6 +862,83 @@ class BrowserManager:
         async with tab.lock:
             return await self._capture(session, tab)
 
+    async def host_preview(self, identity: BrowserIdentity, grant: BrowserGrant) -> bytes:
+        """Display the owned page to its user, never persist or send to a model.
+
+        Manual mode still blocks all agent observations. This separate host
+        surface is what makes inline manual interaction possible.
+        """
+        session = self._session(identity, grant)
+        tab = self._tab(session, {})
+        async with tab.lock:
+            session = self._session(identity, grant)
+            if not session.grant.allow_screenshots:
+                raise BrowserError("permission_denied", "Browser view requires the host preview permission.")
+            checked_grant = session.grant
+            if tab.page.url != "about:blank":
+                await self.policy.validate(tab.page.url, checked_grant)
+            current = self._session(identity, grant)
+            if current is not session or current.grant != checked_grant:
+                raise BrowserError("permission_changed", "Browser preview authority changed during validation.")
+            masks = [frame.locator('input[type="password"], input[autocomplete="one-time-code"], '
+                                    'input[autocomplete^="cc-"], input[name*="otp" i], input[name*="token" i]')
+                     for frame in tab.page.frames]
+            data = await tab.page.screenshot(type="png", mask=masks, animations="disabled",
+                                             timeout=self.config.action_timeout_ms)
+            current = self._session(identity, grant)
+            if not current.grant.allow_screenshots:
+                raise BrowserError("permission_denied", "Browser preview permission was revoked during capture.")
+            if len(data) > self.config.max_screenshot_bytes:
+                raise BrowserError("artifact_limit", "Browser view exceeds the configured image limit.")
+            return data
+
+    async def host_input(self, identity: BrowserIdentity, grant: BrowserGrant, kind: str,
+                         arguments: dict | None = None) -> dict:
+        """Bounded direct user input, isolated from the semantic agent tools."""
+        fields = {"click": {"x", "y"}, "scroll": {"delta_x", "delta_y"},
+                  "key": {"key"}, "text": {"text"}}
+        args = arguments if arguments is not None else {}
+        if kind not in fields or not isinstance(args, dict) or set(args) - fields[kind]:
+            raise BrowserError("invalid_tool_arguments", "Unsupported browser user input.")
+        session = self._session(identity, grant)
+        async with session.control_lock:
+            session = self._session(identity, grant)
+            if session.state != "manual_control":
+                raise BrowserError("host_action_required", "Take manual control before interacting with the browser view.")
+            tab = self._tab(session, {})
+            async with tab.lock:
+                current = self._session(identity, grant)
+                if current is not session or current.state != "manual_control":
+                    raise BrowserError("host_action_required", "Manual browser ownership changed while input was waiting.")
+                checked_grant = current.grant
+                if tab.page.url != "about:blank":
+                    await self.policy.validate(tab.page.url, checked_grant)
+                current = self._session(identity, grant)
+                if current is not session or current.state != "manual_control" or current.grant != checked_grant:
+                    raise BrowserError("permission_changed", "Browser input authority changed during validation.")
+                self._redirect_counts[tab.tab_id] = 0
+                if kind == "click":
+                    viewport = tab.page.viewport_size or {"width": self.config.viewport_width, "height": self.config.viewport_height}
+                    if any(type(args.get(key)) is not int or not 0 <= args[key] < viewport[bound]
+                           for key, bound in (("x", "width"), ("y", "height"))):
+                        raise BrowserError("invalid_tool_arguments", "Click is outside the browser view.")
+                    await tab.page.mouse.click(args["x"], args["y"])
+                elif kind == "scroll":
+                    if "delta_y" not in args or any(type(value) is not int or not -2000 <= value <= 2000 for value in args.values()):
+                        raise BrowserError("invalid_tool_arguments", "Scroll exceeds the supported bounds.")
+                    await tab.page.mouse.wheel(args.get("delta_x", 0), args["delta_y"])
+                elif kind == "key":
+                    if not isinstance(args.get("key"), str) or not 1 <= len(args["key"]) <= 80:
+                        raise BrowserError("invalid_tool_arguments", "Invalid browser key.")
+                    await tab.page.keyboard.press(args["key"])
+                elif kind == "text":
+                    if not isinstance(args.get("text"), str) or len(args["text"]) > 10000:
+                        raise BrowserError("invalid_tool_arguments", "Browser input must be bounded text.")
+                    await tab.page.keyboard.insert_text(args["text"])
+                self._invalidate(tab)
+                session.last_activity = time.time()
+                return self._status(session, host=True)
+
     def artifact_path(self, identity: BrowserIdentity, artifact_id: str):
         return self.artifacts.path(identity, artifact_id)
 
@@ -731,12 +948,34 @@ class BrowserManager:
             raise BrowserError("invalid_state", "The browser is not waiting for manual control.")
         tab = self._tab(session, {})
         async with tab.lock:
-            await self.policy.validate(tab.page.url, grant)
+            current = self._session(identity, grant)
+            if current is not session or current.state != "manual_control":
+                raise BrowserError("invalid_state", "Manual browser ownership changed while resuming.")
+            checked_grant = current.grant
+            if tab.page.url != "about:blank":
+                await self.policy.validate(tab.page.url, checked_grant)
+            current = self._session(identity, grant)
+            if current is not session or current.grant != checked_grant:
+                raise BrowserError("permission_changed", "Browser authority changed while resuming.")
             for current in session.tabs.values():
                 self._invalidate(current)
                 current.console.clear(); current.page_errors.clear(); current.network_errors.clear()
             session.state = "ready"
-        result = await self.dispatch(identity, grant, "snapshot")
+        for attempt in range(3):
+            try:
+                result = await self.dispatch(identity, grant, "snapshot")
+                break
+            except BrowserError as error:
+                if error.code != "stale_observation":
+                    raise
+                if attempt == 2:
+                    # Control has resumed even if an animated page cannot yet
+                    # yield a stable observation. Never report a false failure
+                    # that tempts the user to repeat the transition.
+                    result = self._status(self._session(identity, grant))
+                    result.update(observation_pending=True, requires_fresh_snapshot=True)
+                else:
+                    await asyncio.sleep(0.05)
         result["resumed_by_host"] = True
         return result
 
@@ -747,6 +986,8 @@ class BrowserManager:
             session.state = "failed"
             raise BrowserError("cleanup_unresolved", "Chromium context did not confirm closure; cleanup ownership has been retained.", requires_reconciliation=True) from None
         session.state = "closed"
+        for tab_id in session.tabs:
+            self._navigation_errors.pop(tab_id, None)
         session.tabs.clear()
         self._sessions.pop(session.identity, None)
         self.artifacts.remove_owner(session.identity)
@@ -796,4 +1037,5 @@ class BrowserManager:
                 session.tabs.clear()
         self._prepared.clear()
         self._grant_providers.clear()
+        self._navigation_errors.clear()
         self.artifacts.close()

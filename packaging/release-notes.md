@@ -1,3 +1,11 @@
+## v0.2.49 değişiklikleri
+
+- Sohbet ve kodlama panellerine gömülü Chromium görünümü, gezinme kontrolleri ve tarayıcı girdisi eklendi; dar pencere yerleşimi ve elle kontrol akışı geliştirildi.
+- Genel HTTPS sayfalarında gezinme ve yerleşik web arama/okuma için kapsamı doğrulanan izinler eklendi; HTTP, özel ağ ve güvenli olmayan yönlendirme kısıtları korunur.
+- Tarayıcı gezinme ve gözlem hatalarından sonra sohbetin önceki kanıtlarla ve bağımsız kaynaklarla devam etmesi sağlandı. Sonucu belirsiz işlemlerin tekrar gönderilmesi engellenir.
+- Yerel tarayıcı araçlarının seçimi, oturum durumu ve hata sınıflandırması iyileştirildi; gerçek Chromium, izin, kurtarma ve masaüstü arayüz regresyonları genişletildi.
+- Tarayıcı mimarisi ve kullanım belgeleri ile yerel doğrulama raporları güncellendi.
+
 ## v0.2.48 değişiklikleri
 
 - Windows yayınını engelleyen POSIX kabuk sözdizimli süreç iptal testi, platformun gerçek kabuğunda çalışan Python süreç ağacı ve hazır olma sinyaliyle düzeltildi; hızlı Windows regresyon akışına eklendi.

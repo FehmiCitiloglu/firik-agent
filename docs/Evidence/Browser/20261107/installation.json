@@ -1,0 +1,10 @@
+{
+  "installed": "/Applications/firik-agent.app",
+  "previous_bundle": "/private/tmp/firik-browser-previous-iwk_p3hw/firik-agent.app",
+  "executable_sha256": "46387854886421540bc9b5f0263b87704dc548283037d5dcb334c906be9b08d0",
+  "signing": "local ad hoc; codesign --verify --deep --strict passed",
+  "version": "0.2.48",
+  "original_bundle": "/private/tmp/firik-browser-previous-4kfsuf9q/firik-agent.app",
+  "installed_app_relaunched": true,
+  "packaged_manual_site_navigation": "not verified: native coordinate automation did not activate Tk controls; native UI tests and real browser acceptance recorded separately"
+}

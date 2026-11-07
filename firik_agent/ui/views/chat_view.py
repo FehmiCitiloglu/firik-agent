@@ -244,11 +244,13 @@ class ChatView(ctk.CTkFrame):
 
     def __init__(self, master: Any, service: FirikService, session_id: Optional[str] = None,
                  navigate: Optional[Callable[[Optional[str]], None]] = None,
-                 on_history_change: Optional[Callable[[], None]] = None, **kwargs: Any) -> None:
+                 on_history_change: Optional[Callable[[], None]] = None,
+                 on_browser_changed: Optional[Callable[[bool], None]] = None, **kwargs: Any) -> None:
         super().__init__(master, fg_color="transparent", **kwargs)
         self.service = service
         self._navigate = navigate
         self._on_history_change = on_history_change
+        self._on_browser_changed = on_browser_changed
         self.session: ChatSession = self.service.get_or_create_session()
         self.messages: List[Dict[str, Any]] = []
         self.attached_image_path: Optional[str] = None
@@ -276,19 +278,30 @@ class ChatView(ctk.CTkFrame):
 
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(3, weight=1)  # Mesaj alanı esner; diğer satırlar sabittir
+        self.grid_rowconfigure(0, weight=1)
+        self._split = tk.PanedWindow(self, orient="horizontal", sashwidth=6,
+            background="#334155", borderwidth=0, showhandle=False)
+        self._split.grid(row=0, column=0, sticky="nsew")
+        self._chat_body = ctk.CTkFrame(self._split, fg_color="transparent")
+        self._chat_body.grid_columnconfigure(0, weight=1)
+        self._chat_body.grid_rowconfigure(3, weight=1)
+        self._split.add(self._chat_body, minsize=320, stretch="always")
+        self._browser_panel = None
+        self._browser_host = None
 
         # 1. ÜST PANEL: Model Seçimi, MCP Seçimi, Parametreler ve Aksiyon Butonları
-        top_bar = ctk.CTkFrame(self, fg_color=("gray90", "#1e293b"), corner_radius=10)
+        top_bar = ctk.CTkFrame(self._chat_body, fg_color=("gray90", "#1e293b"), corner_radius=10)
         top_bar.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 6))
-        model_bar = ctk.CTkFrame(top_bar, fg_color="transparent")
+        model_bar = self._model_bar = ctk.CTkFrame(top_bar, fg_color="transparent")
+        model_bar.grid_columnconfigure(1, weight=1)
         model_bar.pack(fill="x")
-        actions_bar = ctk.CTkFrame(top_bar, fg_color="transparent")
+        actions_bar = self._actions_bar = ctk.CTkFrame(top_bar, fg_color="transparent")
+        actions_bar.grid_columnconfigure(0, weight=1)
         actions_bar.pack(fill="x")
 
         # Model Seçici
-        model_lbl = ctk.CTkLabel(model_bar, text="Model:", font=ctk.CTkFont(size=12, weight="bold"))
-        model_lbl.pack(side="left", padx=(12, 4), pady=10)
+        model_lbl = self._model_label = ctk.CTkLabel(model_bar, text="Model:", font=ctk.CTkFont(size=12, weight="bold"))
+        model_lbl.grid(row=0, column=0, padx=(12, 4), pady=6)
 
         self.model_combo = ctk.CTkComboBox(
             model_bar,
@@ -297,10 +310,10 @@ class ChatView(ctk.CTkFrame):
             command=self._on_model_selected,
         )
         self.model_combo.set(self.service.default_model)
-        self.model_combo.pack(side="left", padx=4, pady=10)
+        self.model_combo.grid(row=0, column=1, sticky="ew", padx=4, pady=6)
 
         self.effort_selector = EffortSelector(actions_bar, self.service, self._on_effort_selected)
-        self.effort_selector.pack(side="left", padx=6, pady=4)
+        self.effort_selector.grid(row=0, column=0, sticky="w", padx=6, pady=4)
         self._refresh_effort()
 
         # MCP Seçici Butonu (Current Chat MCP Indicator)
@@ -316,10 +329,10 @@ class ChatView(ctk.CTkFrame):
             border_color="#38bdf8",
             command=self._open_mcp_selector,
         )
-        self.mcp_btn.pack(side="left", padx=6, pady=10)
+        self.mcp_btn.grid(row=0, column=2, padx=4, pady=6)
         self.browser_btn = ctk.CTkButton(model_bar, text="Tarayıcı", width=78, height=28,
             fg_color="transparent", border_width=1, command=self._open_browser)
-        self.browser_btn.pack(side="left", padx=4, pady=10)
+        self.browser_btn.grid(row=0, column=3, padx=4, pady=6)
 
         # Ayarları Göster / Gizle Butonu
         self.toggle_params_btn = ctk.CTkButton(
@@ -332,10 +345,10 @@ class ChatView(ctk.CTkFrame):
             text_color=("gray20", "gray80"),
             command=self._toggle_params,
         )
-        self.toggle_params_btn.pack(side="left", padx=4, pady=10)
+        self.toggle_params_btn.grid(row=0, column=4, padx=(4, 10), pady=6)
 
         # Sağ Taraf Butonları: Yeni Sohbet & Dışa Aktar & Temizle
-        clear_btn = ctk.CTkButton(
+        clear_btn = self._delete_button = ctk.CTkButton(
             actions_bar,
             text="Sohbeti sil",
             width=70,
@@ -345,9 +358,9 @@ class ChatView(ctk.CTkFrame):
             hover_color=("gray80", "#334155"),
             command=self._delete_chat,
         )
-        clear_btn.pack(side="right", padx=(4, 12), pady=10)
+        clear_btn.grid(row=0, column=3, padx=(4, 10), pady=6)
 
-        export_btn = ctk.CTkButton(
+        export_btn = self._export_button = ctk.CTkButton(
             actions_bar,
             text="Dışa Aktar",
             width=85,
@@ -357,9 +370,9 @@ class ChatView(ctk.CTkFrame):
             text_color=("gray20", "gray80"),
             command=self._export_chat,
         )
-        export_btn.pack(side="right", padx=4, pady=10)
+        export_btn.grid(row=0, column=2, padx=4, pady=6)
 
-        new_chat_btn = ctk.CTkButton(
+        new_chat_btn = self._new_chat_button = ctk.CTkButton(
             actions_bar,
             text="+ Yeni Sohbet",
             width=100,
@@ -368,11 +381,11 @@ class ChatView(ctk.CTkFrame):
             hover_color="#2563eb",
             command=self.new_chat,
         )
-        new_chat_btn.pack(side="right", padx=4, pady=10)
+        new_chat_btn.grid(row=0, column=1, padx=4, pady=6)
         if self._navigate:
-            new_chat_btn.pack_forget()
+            new_chat_btn.grid_remove()
 
-        history_bar = ctk.CTkFrame(self, fg_color="transparent")
+        history_bar = ctk.CTkFrame(self._chat_body, fg_color="transparent")
         history_bar.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 4))
         history_bar.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(history_bar, text="Sohbet geçmişi", font=ctk.CTkFont(size=12)).grid(row=0, column=0, padx=(0, 10))
@@ -390,7 +403,7 @@ class ChatView(ctk.CTkFrame):
                     child.grid_remove()
 
         # 2. KATLANABİLİR PARAMETRE PANELİ
-        self.params_frame = ctk.CTkFrame(self, fg_color=("gray95", "#161f2e"), corner_radius=8)
+        self.params_frame = ctk.CTkFrame(self._chat_body, fg_color=("gray95", "#161f2e"), corner_radius=8)
         self.params_visible = False
 
         # Sıcaklık (Temperature)
@@ -450,7 +463,7 @@ class ChatView(ctk.CTkFrame):
 
         # 3. SOHBET AKIŞ ALANI (Scrollable)
         self.chat_scroll = ctk.CTkScrollableFrame(
-            self,
+            self._chat_body,
             fg_color="transparent",
             corner_radius=0,
         )
@@ -461,11 +474,11 @@ class ChatView(ctk.CTkFrame):
         self._add_welcome_card()
 
         # 3.5. AKTİF MCP ÇİPLERİ (CHIPS) ÇUBUĞU
-        self.chips_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.chips_frame = ctk.CTkFrame(self._chat_body, fg_color="transparent")
         self.chips_frame.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 2))
 
         # 4. EKLİ GÖRSEL ÇUBUĞU (Varsa gösterilir)
-        self.img_tray = ctk.CTkFrame(self, fg_color=("gray85", "#243044"), corner_radius=8, height=36)
+        self.img_tray = ctk.CTkFrame(self._chat_body, fg_color=("gray85", "#243044"), corner_radius=8, height=36)
         self.img_tray_lbl = ctk.CTkLabel(
             self.img_tray,
             text="",
@@ -486,7 +499,7 @@ class ChatView(ctk.CTkFrame):
         self.img_remove_btn.pack(side="right", padx=10)
 
         # 5. ALT GİRDİ PANELİ
-        bottom_box = ctk.CTkFrame(self, fg_color=("gray90", "#1e293b"), corner_radius=12)
+        bottom_box = ctk.CTkFrame(self._chat_body, fg_color=("gray90", "#1e293b"), corner_radius=12)
         bottom_box.grid(row=6, column=0, sticky="ew", padx=16, pady=(4, 12))
         bottom_box.grid_columnconfigure(1, weight=1)
         self.live_activity = LiveActivity(bottom_box)
@@ -549,13 +562,44 @@ class ChatView(ctk.CTkFrame):
         self.voice_panel.grid(row=2, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 4))
 
         # Kısayol İpucu
-        hint_lbl = ctk.CTkLabel(
-            self,
+        hint_lbl = self._hint_label = ctk.CTkLabel(
+            self._chat_body,
             text="Göndermek için Enter veya Ctrl+Enter tuşlarına basın. Yeni satır için Shift+Enter kullanın.",
             font=ctk.CTkFont(size=10),
             text_color=("gray50", "gray60"),
         )
         hint_lbl.grid(row=7, column=0, sticky="w", padx=22, pady=(0, 6))
+        self._compact_toolbar = None
+        self._chat_body.bind("<Configure>", self._layout_chat_toolbar, add="+")
+        self._layout_chat_toolbar()
+
+    def _layout_chat_toolbar(self, event=None):
+        width = self._chat_body.winfo_width() / self._get_widget_scaling()
+        self._hint_label.configure(wraplength=max(240, int(width) - 44), justify="left")
+        compact = width < 620
+        if self._compact_toolbar == compact:
+            return
+        self._compact_toolbar = compact
+        if compact:
+            self.model_combo.grid_configure(row=0, column=1, columnspan=4)
+            self.mcp_btn.grid_configure(row=1, column=0, columnspan=2, sticky="w", padx=(12, 4))
+            self.browser_btn.grid_configure(row=1, column=2, sticky="w")
+            self.toggle_params_btn.grid_configure(row=1, column=3, columnspan=2, sticky="w")
+            self.effort_selector.grid_configure(row=0, column=0, columnspan=3)
+            self._new_chat_button.grid_configure(row=1, column=0, sticky="w", padx=(10, 4))
+            self._export_button.grid_configure(row=1, column=1, sticky="w")
+            self._delete_button.grid_configure(row=1, column=2, sticky="w")
+        else:
+            self.model_combo.grid_configure(row=0, column=1, columnspan=1)
+            self.mcp_btn.grid_configure(row=0, column=2, columnspan=1, sticky="", padx=4)
+            self.browser_btn.grid_configure(row=0, column=3, sticky="")
+            self.toggle_params_btn.grid_configure(row=0, column=4, columnspan=1, sticky="")
+            self.effort_selector.grid_configure(row=0, column=0, columnspan=1)
+            self._new_chat_button.grid_configure(row=0, column=1, sticky="", padx=4)
+            self._export_button.grid_configure(row=0, column=2, sticky="")
+            self._delete_button.grid_configure(row=0, column=3, sticky="")
+        if self._navigate:
+            self._new_chat_button.grid_remove()
 
     def _insert_dictation(self, text: str) -> None:
         existing = self.input_textbox.get("1.0", "end-1c")
@@ -621,15 +665,38 @@ class ChatView(ctk.CTkFrame):
         MCPChatSelectorDialog(self, service=self.service, session=self.session, on_changed=self._update_mcp_chips)
 
     def _open_browser(self) -> None:
-        window = getattr(self, "_browser_window", None)
-        if window is not None and window.winfo_exists():
-            window.lift()
-            return
+        panel = self._browser_panel
+        if panel is not None and panel.winfo_exists():
+            if panel.session_id != self.session.session_id:
+                self._close_browser_panel()
+            else:
+                panel.url.focus_set()
+                return
+        if self._on_browser_changed:
+            self._on_browser_changed(True)
+            self.update_idletasks()
         from firik_agent.ui.components.browser_preview import BrowserPanel
-        window = self._browser_window = ctk.CTkToplevel(self)
-        window.title("Sohbet Tarayıcısı")
-        window.geometry("1050x800")
-        BrowserPanel(window, self.service, self.session.session_id).pack(fill="both", expand=True)
+        host = self._browser_host = ctk.CTkFrame(self._split, corner_radius=0)
+        host.grid_rowconfigure(0, weight=1)
+        host.grid_columnconfigure(0, weight=1)
+        self._browser_panel = BrowserPanel(host, self.service, self.session.session_id,
+            on_close=self._close_browser_panel)
+        self._browser_panel.grid(row=0, column=0, sticky="nsew")
+        self._split.add(host, minsize=320, stretch="always")
+        self.browser_btn.configure(text="Tarayıcı açık")
+        self.update_idletasks()
+        self._split.sash_place(0, max(320, self._split.winfo_width() // 2), 0)
+        self._browser_panel.url.focus_set()
+
+    def _close_browser_panel(self) -> None:
+        host = getattr(self, "_browser_host", None)
+        if host is not None:
+            self._split.forget(host)
+            host.destroy()
+        self._browser_panel = self._browser_host = None
+        self.browser_btn.configure(text="Tarayıcı")
+        if host is not None and self._on_browser_changed:
+            self._on_browser_changed(False)
 
     def _remove_mcp_from_session(self, server_name: str) -> None:
         self.service.set_session_mcp(self.session.session_id, server_name, False)
@@ -788,6 +855,7 @@ class ChatView(ctk.CTkFrame):
         if not records:
             return
         session = self.service.restore_chat_session(session_id)
+        self._close_browser_panel()
         self.clear_chat(reset_session=False)
         self.session = session
         self._welcome_card.destroy()
@@ -852,6 +920,7 @@ class ChatView(ctk.CTkFrame):
         except Exception:
             self.history_status.configure(text="Silinemedi", text_color=("#b91c1c", "#f87171"))
             return
+        self._close_browser_panel()
         self.session = self.service.get_or_create_session(None)
         self.model_combo.set(self.session.model)
         self._refresh_effort()
@@ -1243,6 +1312,7 @@ class ChatView(ctk.CTkFrame):
             self._on_send_pressed()
         if not self._save_history():
             return
+        self._close_browser_panel()
         self.session = self.service.get_or_create_session(None)
         self.model_combo.set(self.session.model)
         self._refresh_effort()

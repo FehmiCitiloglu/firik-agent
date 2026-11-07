@@ -43,11 +43,14 @@ class BrowserGrant:
     allow_screenshots: bool = False
     allow_uploads: bool = False
     allow_downloads: bool = False
+    # Desktop browsing does not require a site-by-site allowlist. Scoped CLI
+    # and delegated grants can leave this off to retain exact-origin access.
+    allow_public_https: bool = False
 
     def __post_init__(self):
         from urllib.parse import urlsplit
         from firik_agent.browser.security import origin_of
-        for name in ("enabled", "allow_screenshots", "allow_uploads", "allow_downloads"):
+        for name in ("enabled", "allow_screenshots", "allow_uploads", "allow_downloads", "allow_public_https"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError("Browser grant flags must be booleans.")
         for name in ("origins", "allow_private_origins"):

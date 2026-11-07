@@ -7,6 +7,15 @@ import threading
 from urllib.parse import urlsplit
 
 
+def _browser_host_error(error):
+    """Keep browser error codes available for the panel's localized recovery UI."""
+    from firik_agent.browser.models import BrowserError
+    if isinstance(error, BrowserError):
+        return {"error": error.code, "message": str(error),
+                "requires_reconciliation": bool(error.requires_reconciliation)}
+    return str(error)
+
+
 def browser_origins(values):
     """Validate exact origins supplied by a person, including localhost ports."""
     if not isinstance(values, (list, tuple)) or len(values) > 32:
@@ -102,12 +111,14 @@ class BrowserBridge:
     def session_browser_settings(self, session_id):
         session = self.get_or_create_session(session_id)
         return {"enabled": session.browser_enabled, "origins": list(session.browser_origins),
-                "private_origins": list(session.browser_private_origins), "screenshots": session.browser_screenshots}
+                "private_origins": list(session.browser_private_origins), "screenshots": session.browser_screenshots,
+                "public_https": True}
 
     def _browser_grant(self, session):
         from firik_agent.browser.models import BrowserGrant
         return BrowserGrant(enabled=session.browser_enabled, origins=session.browser_origins,
-            allow_private_origins=session.browser_private_origins, allow_screenshots=session.browser_screenshots)
+            allow_private_origins=session.browser_private_origins, allow_screenshots=session.browser_screenshots,
+            allow_public_https=True)
 
     def _chat_browser_adapter(self, session, *, cancel_event=None, on_approval=None):
         from firik_agent.browser.models import BrowserIdentity
@@ -132,41 +143,51 @@ class BrowserBridge:
         if coding is not None and getattr(coding, "browser_adapter", None) is not None:
             if session_id not in getattr(self, "_streams", {}):
                 raise PermissionError("Kodlama tarayıcısı yalnız etkin çalışma sırasında kullanılabilir.")
-            return coding.browser_adapter
-        if session_id in getattr(self, "_coding_session_projects", {}):
+            adapter = coding.browser_adapter
+        elif session_id in getattr(self, "_coding_session_projects", {}):
             raise PermissionError("Proje tarayıcısı yetkili bir kodlama çalışması sırasında kullanılabilir.")
-        return self._chat_browser_adapter(self.get_or_create_session(session_id), on_approval=on_approval)
+        else:
+            adapter = self._chat_browser_adapter(self.get_or_create_session(session_id), on_approval=on_approval)
+        # User-driven starts must also bind live policy for resource requests,
+        # including redirects that happen without a later agent tool call.
+        self.browser_manager.bind_grant_provider(adapter.identity, adapter.grant_provider)
+        return adapter
 
     def browser_command_async(self, session_id, operation, arguments=None, *, on_done=None, on_error=None, on_approval=None):
         async def run():
-            from firik_agent.core.types import ToolCall, ToolCallFunction
-            import json
-            import uuid
             adapter = self._owned_browser_adapter(session_id, on_approval=on_approval)
-            coding = getattr(self, "_coding_filters", {}).get(session_id)
             if operation == "browser_resume_after_handoff":
-                if coding is not None:
-                    await coding.control.authorize("browser.authenticated", operation,
-                        {"session_id": session_id}, "Kullanıcı tarayıcı kontrolünü ajana geri veriyor.")
+                # The actual user clicked the host control. Do not turn that
+                # explicit decision into another model-operation approval.
                 result = await adapter.host_resume()
             else:
-                call = ToolCall(id=uuid.uuid4().hex,
-                    function=ToolCallFunction(name=operation, arguments=json.dumps(arguments or {})))
-                result = (await coding.execute(call, self.get_or_create_session(session_id))
-                          if coding is not None else await adapter.execute(call))
+                # Browser chrome belongs to the real user. The manager exposes
+                # only navigation/control operations here; model calls continue
+                # through their normal adapters and per-action approvals.
+                result = await self.browser_manager.host_command(adapter.identity, adapter.grant_provider(),
+                    operation, arguments or {})
             self._browser_activity.setdefault(session_id, deque(maxlen=80)).append({
                 "operation": operation, "is_error": bool(getattr(result, "is_error", False))})
             return result
         return self.runtime.submit(run(),
             on_done=(lambda result: self._dispatch(on_done, result)) if on_done else None,
-            on_error=(lambda error: self._dispatch(on_error, str(error))) if on_error else None)
+            on_error=(lambda error: self._dispatch(on_error, _browser_host_error(error))) if on_error else None)
 
     def browser_preview_async(self, session_id, *, on_done, on_error):
         async def run():
             adapter = self._owned_browser_adapter(session_id)
-            return await self.browser_manager.preview(adapter.identity, adapter.grant_provider())
+            return await self.browser_manager.host_preview(adapter.identity, adapter.grant_provider())
         return self.runtime.submit(run(), on_done=lambda data: self._dispatch(on_done, data),
-            on_error=lambda error: self._dispatch(on_error, str(error)))
+            on_error=lambda error: self._dispatch(on_error, _browser_host_error(error)))
+
+    def browser_input_async(self, session_id, kind, arguments=None, *, on_done=None, on_error=None):
+        """Forward a real user's panel input to their owned page, outside model tools."""
+        async def run():
+            adapter = self._owned_browser_adapter(session_id)
+            return await self.browser_manager.host_input(adapter.identity, adapter.grant_provider(), kind, arguments or {})
+        return self.runtime.submit(run(),
+            on_done=(lambda result: self._dispatch(on_done, result)) if on_done else None,
+            on_error=(lambda error: self._dispatch(on_error, _browser_host_error(error))) if on_error else None)
 
     async def _await_browser_handoff(self, session_id, cancel_event):
         """Suspend the native event generator until an explicit host resume."""

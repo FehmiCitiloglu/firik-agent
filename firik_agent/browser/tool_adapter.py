@@ -42,9 +42,9 @@ _SPEC: dict[str, tuple[str, str, dict[str, Any]]] = {
     "new_tab": ("navigate", "Create a tab in the owned context.", {}),
     "select_tab": ("observe", "Select an owned tab.", {"tab_id": (str, ...)}),
     "close_tab": ("observe", "Close an owned tab.", {"tab_id": (str, ...)}),
-    "navigate": ("navigate", "Navigate to an exact host-authorized origin.", {"url": (str, Field(max_length=4096))}),
-    "back": ("navigate", "Navigate back; origin restrictions still apply.", {}),
-    "forward": ("navigate", "Navigate forward; origin restrictions still apply.", {}),
+    "navigate": ("navigate", "Open a URL or an observed link under the host's HTTPS/private-network policy. Use this to browse links without a click approval; public HTTPS sites need no domain grant.", {"url": (str, Field(max_length=4096))}),
+    "back": ("navigate", "Navigate back; the host network policy still applies.", {}),
+    "forward": ("navigate", "Navigate forward; the host network policy still applies.", {}),
     "reload": ("navigate", "Reload the page; never infer task success from HTTP status.", {}),
     "wait_for": ("observe", "Wait for an observed semantic target without a fixed sleep.", {
         "target": _TARGET, "state": (str, Field(default="visible", pattern="^(visible|hidden|attached|detached)$")),
@@ -58,7 +58,7 @@ _SPEC: dict[str, tuple[str, str, dict[str, Any]]] = {
     "get_console": ("debug", "Read bounded redacted console diagnostics as untrusted data.", {}),
     "get_page_errors": ("debug", "Read bounded redacted uncaught page exceptions.", {}),
     "get_network_errors": ("debug", "Read bounded sanitized request failures; no headers or request bodies.", {}),
-    "click": ("submit", "Click one current, unique, visible target after exact host approval.", {"target": _TARGET, "revision": _REV}),
+    "click": ("submit", "Click one current, unique, visible target after exact host approval. For simply opening an observed link, use browser_navigate with its URL.", {"target": _TARGET, "revision": _REV}),
     "fill": ("interact", "Fill one current field after exact host approval. Authentication uses manual handoff.", {"target": _TARGET, "revision": _REV, "value": _VALUE}),
     "type": ("interact", "Type into a current field after host approval.", {"target": _TARGET, "revision": _REV, "value": _VALUE}),
     "press": ("submit", "Press a key on a current target after exact approval; keys can submit forms.", {

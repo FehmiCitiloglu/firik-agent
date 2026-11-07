@@ -1,0 +1,9 @@
+{
+  "installed": "/Applications/firik-agent.app",
+  "previous_bundle": "/private/tmp/firik-web-previous-mk_53gfn/firik-agent.app",
+  "version": "0.2.48",
+  "executable_sha256": "50bac236cb2cd01af4e3f2c5f8ead96c93878b1bdcf801bc938fe0c100cb976a",
+  "signing": "codesign --verify --deep --strict passed; local ad hoc signing",
+  "installed_app_relaunched": true,
+  "configured_web_transport": "builtin:web stdio, enabled, default policy (no explicit confirmation override)"
+}

@@ -54,6 +54,41 @@ async def test_dns_changes_and_mixed_destinations_fail_closed(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_public_https_grant_opens_unlisted_sites_and_their_resources(monkeypatch):
+    policy = BrowserSecurityPolicy()
+    resolver = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 0))])
+    monkeypatch.setattr(asyncio.get_running_loop(), 'getaddrinfo', resolver)
+    grant = BrowserGrant(enabled=True, allow_public_https=True)
+    for url in ('https://example.com/path', 'https://cdn.example.org/app.js', 'https://other.example/'):
+        assert await policy.validate(url, grant) == origin_of(url)
+    assert resolver.await_count == 3
+    # Existing explicitly scoped grants do not silently acquire broad access.
+    with pytest.raises(BrowserError) as error:
+        await policy.validate('https://other.example/', BrowserGrant(enabled=True, origins=('https://example.com',)))
+    assert error.value.code == 'origin_denied'
+
+
+@pytest.mark.asyncio
+async def test_public_browsing_blocks_http_and_private_addresses_even_when_listed(monkeypatch):
+    policy = BrowserSecurityPolicy()
+    resolver = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 0))])
+    monkeypatch.setattr(asyncio.get_running_loop(), 'getaddrinfo', resolver)
+    for origins in ((), ('http://example.com',)):
+        with pytest.raises(BrowserError) as error:
+            await policy.validate('http://example.com/path', BrowserGrant(enabled=True, origins=origins, allow_public_https=True))
+        assert error.value.code == 'insecure_http_denied'
+    grant = BrowserGrant(enabled=True, allow_public_https=True)
+    for url in ('https://127.0.0.1/', 'https://169.254.169.254/', 'https://[::1]/'):
+        with pytest.raises(BrowserError) as error:
+            await policy.validate(url, grant)
+        assert error.value.code == 'private_network_denied'
+    resolver.return_value += [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('10.0.0.1', 0))]
+    with pytest.raises(BrowserError) as error:
+        await policy.validate('https://example.com/', grant)
+    assert error.value.code == 'private_network_denied'
+
+
+@pytest.mark.asyncio
 async def test_strict_network_boundary_missing_and_disabled_host():
     manager = BrowserManager(BrowserConfig(enabled=True, strict_network_isolation=True))
     identity = BrowserIdentity('one')
@@ -81,7 +116,7 @@ async def test_unknown_or_model_owned_arguments_and_host_resume_rejected():
         assert error.value.code == 'unsupported_capability'
 
 
-@pytest.mark.parametrize('kwargs', [dict(enabled='false'),dict(allow_screenshots=1),dict(origins=['https://example.com']),
+@pytest.mark.parametrize('kwargs', [dict(enabled='false'),dict(allow_screenshots=1),dict(allow_public_https='true'),dict(origins=['https://example.com']),
     dict(origins=('https://example.com/path',)),dict(origins=('https://example.com?token=x',)),
     dict(origins=('https://example.com',)*33),dict(allow_private_origins=('http://localhost:8000',))])
 def test_grant_flags_and_origin_authority_are_strictly_validated(kwargs):

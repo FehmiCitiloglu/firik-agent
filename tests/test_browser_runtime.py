@@ -166,3 +166,120 @@ async def test_preview_privacy_revoked_while_waiting_for_page_lock():
     with pytest.raises(BrowserError) as error:await task
     assert error.value.code=='permission_denied';tab.page.screenshot.assert_not_awaited()
     await manager.close_all()
+
+
+@pytest.mark.asyncio
+async def test_inline_host_input_requires_takeover_and_cannot_be_called_as_agent_tool():
+    manager=BrowserManager(BrowserConfig(enabled=True));owner=BrowserIdentity('inline');session,tab=fixture_session(manager,owner)
+    tab.page.mouse.click=AsyncMock();tab.page.keyboard.insert_text=AsyncMock();tab.page.viewport_size={'width':1280,'height':800}
+    with pytest.raises(BrowserError) as error:await manager.host_input(owner,BrowserGrant(True),'click',{'x':12,'y':25})
+    assert error.value.code=='host_action_required'
+    handoff=await manager.host_command(owner,BrowserGrant(True),'request_handoff')
+    assert handoff['state']=='manual_control' and handoff['tabs']
+    await manager.host_input(owner,BrowserGrant(True),'click',{'x':12,'y':25})
+    await manager.host_input(owner,BrowserGrant(True),'text',{'text':'hello'})
+    tab.page.mouse.click.assert_awaited_once_with(12,25)
+    tab.page.keyboard.insert_text.assert_awaited_once_with('hello')
+    for args in ({'x':True,'y':1},{'x':1280,'y':5},{'x':-1,'y':1}):
+        with pytest.raises(BrowserError):await manager.host_input(owner,BrowserGrant(True),'click',args)
+    with pytest.raises(BrowserError) as error:await manager.dispatch(owner,BrowserGrant(True),'host_input',{'kind':'click'})
+    assert error.value.code=='unsupported_capability'
+    with pytest.raises(BrowserError) as error:await manager.host_command(owner,BrowserGrant(True),'fill',{})
+    assert error.value.code=='unsupported_capability'
+    assert 'tabs' not in await manager.dispatch(owner,BrowserGrant(True),'status')
+    assert 'tabs' not in manager.sessions(owner)[0]
+    assert 'tabs' in await manager.host_command(owner,BrowserGrant(True),'status')
+    await manager.close_all()
+
+
+@pytest.mark.asyncio
+async def test_host_preview_during_manual_control_is_ephemeral_and_agent_remains_paused():
+    manager=BrowserManager(BrowserConfig(enabled=True));owner=BrowserIdentity('inline');session,tab=fixture_session(manager,owner)
+    session.state='manual_control';tab.page.frames=[Mock()];tab.page.screenshot=AsyncMock(return_value=b'png')
+    grant=BrowserGrant(enabled=True,allow_screenshots=True)
+    assert await manager.host_preview(owner,grant)==b'png'
+    assert not manager.artifacts._artifacts
+    with pytest.raises(BrowserError) as error:await manager.preview(owner,grant)
+    assert error.value.code=='manual_control'
+    with pytest.raises(BrowserError) as error:await manager.host_preview(owner,BrowserGrant(True))
+    assert error.value.code=='permission_denied'
+    with pytest.raises(BrowserError) as error:await manager.host_preview(BrowserIdentity('foreign'),grant)
+    assert error.value.code=='session_missing'
+    await manager.close_all()
+
+
+@pytest.mark.asyncio
+async def test_explicit_start_replaces_failed_owned_context_and_disconnected_engine():
+    manager=BrowserManager(BrowserConfig(enabled=True));owner=BrowserIdentity('restart');session,tab=fixture_session(manager,owner)
+    session.state='failed';session.cancelled=True
+    active=BrowserGrant(True);manager.bind_grant_provider(owner,lambda:active)
+    page=Mock();page.is_closed.return_value=False;page.url='about:blank'
+    context=Mock();context.route=AsyncMock();context.route_web_socket=AsyncMock();context.new_page=AsyncMock(return_value=page);context.close=AsyncMock()
+    engine=Mock();engine.new_context=AsyncMock(return_value=context);engine.version='test';engine.close=AsyncMock()
+    disconnected=Mock();disconnected.is_connected.return_value=False
+    manager._browsers[True]=disconnected
+    driver=Mock();driver.chromium.launch=AsyncMock(return_value=engine);driver.stop=AsyncMock();manager._playwright=driver
+    result=await manager.host_command(owner,active,'start',{'headless':True})
+    assert result['state']=='ready' and result['context_id']!=session.context_id
+    session.context.close.assert_awaited_once();driver.chromium.launch.assert_awaited_once()
+    assert manager._live_grant(owner,BrowserGrant()) is active
+    await manager.close_all()
+
+
+@pytest.mark.asyncio
+async def test_host_input_rechecks_revocation_after_awaited_destination_validation():
+    import asyncio
+    manager=BrowserManager(BrowserConfig(enabled=True));owner=BrowserIdentity('inline');session,tab=fixture_session(manager,owner)
+    session.state='manual_control';tab.page.url='https://example.com';tab.page.viewport_size={'width':1280,'height':800}
+    tab.page.mouse.click=AsyncMock();started=asyncio.Event();release=asyncio.Event()
+    active=[BrowserGrant(enabled=True,allow_public_https=True)]
+    manager.bind_grant_provider(owner,lambda:active[0])
+    async def validate(url,grant):started.set();await release.wait();return 'https://example.com'
+    manager.policy.validate=validate
+    pending=asyncio.create_task(manager.host_input(owner,active[0],'click',{'x':10,'y':10}))
+    await started.wait();active[0]=BrowserGrant();release.set()
+    with pytest.raises(BrowserError) as error:await pending
+    assert error.value.code=='permission_denied';tab.page.mouse.click.assert_not_awaited()
+    await manager.close_all()
+
+
+@pytest.mark.asyncio
+async def test_resume_retries_only_stale_read_and_reports_resumed_if_page_keeps_changing():
+    manager=BrowserManager(BrowserConfig(enabled=True));owner=BrowserIdentity('animated');session,tab=fixture_session(manager,owner)
+    session.state='manual_control'
+    manager.dispatch=AsyncMock(side_effect=[BrowserError('stale_observation','changed'), {'content':'stable','untrusted':True}])
+    result=await manager.resume(owner,BrowserGrant(True))
+    assert result['resumed_by_host'] and result['content']=='stable' and manager.dispatch.await_count==2
+    session.state='manual_control';manager.dispatch=AsyncMock(side_effect=BrowserError('stale_observation','changed'))
+    result=await manager.resume(owner,BrowserGrant(True))
+    assert result['resumed_by_host'] and result['observation_pending'] and session.state=='ready'
+    assert manager.dispatch.await_count==3
+    await manager.close_all()
+
+
+@pytest.mark.asyncio
+async def test_cross_origin_resource_redirect_never_fetches_destination_or_leaks_headers():
+    manager=BrowserManager(BrowserConfig(enabled=True));owner=BrowserIdentity('redirect');session,tab=fixture_session(manager,owner)
+    manager.policy.validate=AsyncMock(return_value='https://example.com')
+    response=Mock();response.status=302;response.headers={'location':'https://other.example/private'};response.dispose=AsyncMock()
+    route=Mock();route.request.url='https://example.com/data';route.request.method='GET';route.request.resource_type='fetch'
+    route.request.is_navigation_request.return_value=False
+    route.fetch=AsyncMock(return_value=response);route.abort=AsyncMock();route.fulfill=AsyncMock()
+    await manager._route(session,route)
+    route.fetch.assert_awaited_once();route.fulfill.assert_not_awaited();route.abort.assert_awaited_once()
+    assert tab.network_errors[-1]['failure']=='cross_origin_redirect_blocked'
+    await manager.close_all()
+
+
+@pytest.mark.asyncio
+async def test_host_navigation_remains_available_after_agent_action_budget_is_exhausted():
+    manager=BrowserManager(BrowserConfig(enabled=True,max_actions_per_task=1));owner=BrowserIdentity('budget');session,tab=fixture_session(manager,owner)
+    session.actions=1
+    manager._execute=AsyncMock(return_value={'url':'about:blank'})
+    with pytest.raises(BrowserError) as error:await manager.dispatch(owner,BrowserGrant(True),'reload')
+    assert error.value.code=='browser_limit'
+    manager._execute.assert_not_awaited()
+    await manager.host_command(owner,BrowserGrant(True),'reload')
+    assert session.actions==1
+    manager._execute.assert_awaited_once()
+    await manager.close_all()

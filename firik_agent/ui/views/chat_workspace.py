@@ -17,10 +17,12 @@ class ChatWorkspace(ctk.CTkFrame):
         self.current: Optional[ChatView] = None
         self._unread: set[str] = set()
         self._busy: set[str] = set()
+        self._browser_open = False
+        self._history_collapsed = False
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        sidebar = ctk.CTkFrame(self, width=210, corner_radius=10, fg_color=("gray95", "#111827"))
+        sidebar = self.sidebar = ctk.CTkFrame(self, width=210, corner_radius=10, fg_color=("gray95", "#111827"))
         sidebar.grid(row=0, column=0, sticky="ns", padx=(12, 0), pady=12)
         sidebar.grid_propagate(False)
         sidebar.grid_columnconfigure(0, weight=1)
@@ -38,6 +40,7 @@ class ChatWorkspace(ctk.CTkFrame):
         self.body.grid(row=0, column=1, sticky="nsew")
         self.body.grid_columnconfigure(0, weight=1)
         self.body.grid_rowconfigure(0, weight=1)
+        self.bind("<Configure>", self._update_history_visibility, add="+")
         records = self.service.list_chat_history()
         self.open_chat(records[0]["session_id"] if records else None)
 
@@ -59,13 +62,32 @@ class ChatWorkspace(ctk.CTkFrame):
         if page is None:
             page = ChatView(self.body, self.service, session_id=session_id,
                             navigate=lambda sid: self.open_chat(sid) if sid else self.new_chat(),
-                            on_history_change=self.refresh_history)
+                            on_history_change=self.refresh_history,
+                            on_browser_changed=self._browser_changed)
             self.pages[page.session.session_id] = page
         self.current = page
+        self._browser_open = page._browser_panel is not None
+        self._update_history_visibility()
         page.set_voice_active(True)
         self._unread.discard(page.session.session_id)
         page.grid(row=0, column=0, sticky="nsew")
         self.refresh_history()
+
+    def _browser_changed(self, opened):
+        self._browser_open = opened
+        self._update_history_visibility()
+
+    def _update_history_visibility(self, event=None):
+        # Give chat and browser usable space without enlarging the user's window.
+        width = self.winfo_width() / self._get_widget_scaling()
+        collapse = self._browser_open and width < 1140
+        if collapse == self._history_collapsed:
+            return
+        self._history_collapsed = collapse
+        if collapse:
+            self.sidebar.grid_remove()
+        else:
+            self.sidebar.grid()
 
     def set_voice_active(self, active: bool):
         if self.current:

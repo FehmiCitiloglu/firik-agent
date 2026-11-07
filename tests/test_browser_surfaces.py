@@ -108,6 +108,81 @@ def test_host_origin_controls_normalize_exact_port_and_ipv6():
         "https://example.org", "http://localhost:3000", "http://[::1]:4200")
 
 
+def test_desktop_opt_in_grants_public_https_without_origins():
+    bridge = BrowserBridge()
+    session = ChatSession(session_id="public-web")
+    bridge.get_or_create_session = lambda sid: session
+    bridge.browser_manager = SimpleNamespace(config=BrowserConfig())
+    settings = bridge.set_session_browser(session.session_id, enabled=True, screenshots=True)
+    grant = bridge._browser_grant(session)
+    assert settings["public_https"] is True and settings["origins"] == []
+    assert grant.enabled and grant.allow_public_https and not grant.origins
+    assert not grant.allow_private_origins
+    assert bridge.browser_manager.config.enabled
+
+
+def test_user_started_browser_binds_live_grants_before_any_model_tool_call():
+    bridge = BrowserBridge()
+    session = ChatSession(session_id="host-navigation")
+    session.browser_enabled = True
+    bridge.get_or_create_session = lambda sid: session
+    providers = {}
+    bridge.browser_manager = SimpleNamespace(config=BrowserConfig(enabled=True),
+        bind_grant_provider=lambda identity, provider: providers.update({identity: provider}))
+    adapter = bridge._owned_browser_adapter(session.session_id)
+    assert providers[adapter.identity]().allow_public_https
+    assert providers[adapter.identity]().enabled
+    session.browser_enabled = False
+    assert not providers[adapter.identity]().enabled
+
+
+@pytest.mark.asyncio
+async def test_desktop_preview_and_input_use_host_owned_surface():
+    from unittest.mock import AsyncMock
+    bridge = BrowserBridge()
+    identity = BrowserIdentity("public-web")
+    grant = BrowserGrant(enabled=True, allow_public_https=True)
+    bridge._owned_browser_adapter = lambda sid: SimpleNamespace(identity=identity, grant_provider=lambda: grant)
+    bridge.browser_manager = SimpleNamespace(host_preview=AsyncMock(return_value=b"image"),
+        host_input=AsyncMock(return_value={"state": "manual_control"}))
+    def submit(coro, **callbacks):
+        async def complete():
+            result = await coro
+            if callbacks.get("on_done"):
+                callbacks["on_done"](result)
+            return result
+        return asyncio.create_task(complete())
+    bridge.runtime = SimpleNamespace(submit=submit)
+    bridge._dispatch = lambda callback, value: callback(value)
+    seen = []
+    await bridge.browser_preview_async("public-web", on_done=seen.append, on_error=pytest.fail)
+    await bridge.browser_input_async("public-web", "click", {"x": 20, "y": 30}, on_done=seen.append, on_error=pytest.fail)
+    bridge.browser_manager.host_preview.assert_awaited_once_with(identity, grant)
+    bridge.browser_manager.host_input.assert_awaited_once_with(identity, grant, "click", {"x": 20, "y": 30})
+    assert seen == [b"image", {"state": "manual_control"}]
+
+
+@pytest.mark.asyncio
+async def test_desktop_chrome_commands_are_user_actions_not_agent_operations():
+    from unittest.mock import AsyncMock
+    bridge = BrowserBridge()
+    identity = BrowserIdentity("host-navigation")
+    grant = BrowserGrant(enabled=True, allow_public_https=True)
+    resume = AsyncMock(return_value={"state": "ready"})
+    browser = SimpleNamespace(identity=identity, grant_provider=lambda: grant, host_resume=resume)
+    bridge._owned_browser_adapter = lambda sid, **kwargs: browser
+    bridge.browser_manager = SimpleNamespace(host_command=AsyncMock(return_value={"state": "manual_control"}))
+    bridge._browser_activity = {}
+    bridge.runtime = SimpleNamespace(submit=lambda coro, **callbacks: asyncio.create_task(coro))
+    # These controls must not need a model tool approval for the user's own click.
+    await bridge.browser_command_async("host-navigation", "browser_navigate", {"url": "https://example.org"})
+    bridge.browser_manager.host_command.assert_awaited_once_with(identity, grant,
+        "browser_navigate", {"url": "https://example.org"})
+    await bridge.browser_command_async("host-navigation", "browser_resume_after_handoff")
+    resume.assert_awaited_once_with()
+    assert len(bridge._browser_activity["host-navigation"]) == 2
+
+
 def test_desktop_refuses_finished_coding_run():
     bridge = BrowserBridge()
     bridge._coding_filters = {"coding": SimpleNamespace(browser_adapter=object())}

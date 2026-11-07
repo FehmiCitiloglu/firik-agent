@@ -59,8 +59,13 @@ and mutations against the same page.
 
 Normal chat also narrows unrelated tool authority after Browser activation or
 any retained browser tool result. `SessionToolFilter` requires an exact trusted
-host approval for every non-browser tool, including filesystem, shell, plugin,
-meta and MCP calls. Without that callback those tools are hidden and denied.
+host approval for unrelated filesystem, shell, plugin, meta and MCP calls.
+Firik's builtin public Web search/reader is the narrow exception: its captured
+connection/client/server/definition/handler identity is checked at admission and
+dispatch, and it enforces public HTTPS/private-address policy at each fetch and
+redirect. Remote tools cannot assert this provenance. Explicit Web MCP confirmation
+and deny policies still apply. Without a trusted approval callback, unrelated tools
+are hidden and denied.
 Approvals bind to a copied canonical argument object and the current registry,
 definition and handler; policy revocation or replacement invalidates approval.
 This restriction survives Browser disablement, history restoration and
@@ -91,8 +96,10 @@ does not declare task completion or replace quality gates.
 
 ## Network boundary
 
-The service enforces HTTP(S), exact host-authorized origins and explicit private
-origin grants. It rejects embedded credentials and unsupported URL schemes.
+Desktop grants admit public HTTPS sites without an origin allowlist. CLI grants
+can retain exact-origin restrictions. Public HTTP is rejected; explicitly granted
+local development origins are the HTTP exception. Private origins still require
+an exact host grant. The service rejects embedded credentials and unsupported URL schemes.
 Policy applies to navigation and intercepted subordinate requests, rather than
 only validating the first URL. Service workers and WebSockets are restricted by
 the driver. Downloads, arbitrary model-selected uploads, unrestricted script
@@ -104,9 +111,13 @@ outside interception are not OS-contained. Request routing is **not a firewall**
 `strict_network_isolation=true` is rejected until a separately verified egress
 boundary exists. Docker command isolation does not change the browser's host
 execution boundary.
-Automatic HTTP redirects are blocked, including redirects between admitted
-origins; a fresh reviewed navigation is required. WebSocket-dependent apps,
-service-worker workflows and redirect-based authentication may therefore need
+Redirect handling validates the destination and current live grant at each hop,
+with a bounded chain and no automatic replay of uncertain submissions.
+Top-level redirects perform a fresh browser navigation; POST 302/303 responses
+continue with GET, while mutation-preserving redirects remain blocked. Cross-origin
+subresource redirects are blocked rather than fulfilled under a misleading source
+origin. This preserves the authorization/CORS boundary. WebSocket-dependent apps,
+cross-origin resource redirects and service-worker workflows may still need
 capabilities beyond this core implementation.
 
 ## Observations, images and provider compatibility
@@ -124,6 +135,13 @@ Typed fill/type values are omitted from tool-event and stored history copies.
 The native loop keeps a separate executable call so this privacy projection
 does not change legitimate form entry. Password/MFA/payment targets and forms
 require manual control; screenshot input masks also cover child frames.
+
+The chat Browser panel shares its existing page context with the agent and runs
+Chromium headlessly. It renders in-memory page frames alongside the chat. Host-only
+input and navigation methods serialize against the same page locks, verify the
+current identity/grant and require manual ownership for raw input. They are never
+model tool definitions. The host can view a masked preview during manual control;
+agent observations and captures remain blocked until explicit host resume.
 
 The provider serializer has a tested optional browser image path. It requires
 all of: explicit trusted model metadata `supports_vision=true`, an independently

@@ -29,11 +29,18 @@ def website():
         def do_POST(self):
             hits['POST '+self.path]+=1
             self.rfile.read(int(self.headers.get('Content-Length',0)))
+            if self.path in {'/login-redirect', '/replay-redirect'}:
+                self.send_response(303 if self.path=='/login-redirect' else 307)
+                self.send_header('Location','/delayed');self.end_headers();return
             self.send_response(200); self.end_headers(); self.wfile.write(b'ok')
         def do_GET(self):
             hits[self.path]+=1
             if self.path=='/redirect':
                 self.send_response(302); self.send_header('Location','http://127.0.0.1:1/private'); self.end_headers(); return
+            if self.path in {'/redirect-safe', '/redirect-chain'}:
+                self.send_response(302); self.send_header('Location','/redirect-safe' if self.path=='/redirect-chain' else '/delayed'); self.end_headers(); return
+            if self.path=='/redirect-loop':
+                self.send_response(302); self.send_header('Location','/redirect-loop'); self.end_headers(); return
             if self.path=='/slow':
                 time.sleep(3)
             if self.path=='/delayed':
@@ -189,7 +196,7 @@ async def test_network_redirect_service_worker_websocket_and_secret_logs(browser
     assert hits['/socket']==0
     with pytest.raises(BrowserError) as error:
         await manager.dispatch(identity,grant,'navigate',{'url':url+'/redirect'})
-    assert error.value.requires_reconciliation
+    assert error.value.code == 'origin_denied' and not error.value.requires_reconciliation
     assert hits['/redirect']==1
 
 
@@ -247,12 +254,54 @@ async def test_cancel_navigation_preserves_uncertainty_and_cleans_context(browse
 
 
 @pytest.mark.asyncio
-async def test_headless_handoff_rejected_and_agent_resume_never_allowed(browser):
+async def test_headless_handoff_user_input_and_agent_resume_never_allowed(browser):
     manager,identity,grant,url,hits=browser
-    with pytest.raises(BrowserError) as error: await manager.dispatch(identity,grant,'request_handoff')
-    assert error.value.code=='headful_required'
+    handoff=await manager.dispatch(identity,grant,'request_handoff')
+    assert handoff['state']=='manual_control'
+    page=manager._sessions[identity].tabs[manager._sessions[identity].active_tab_id].page
+    box=await page.get_by_label('Name',exact=True).bounding_box()
+    await manager.host_input(identity,grant,'click',{'x':int(box['x']+5),'y':int(box['y']+5)})
+    await manager.host_input(identity,grant,'text',{'text':'User types inline'})
+    assert await page.get_by_label('Name',exact=True).input_value()=='User types inline'
+    assert (await manager.host_preview(identity,grant)).startswith(b'\x89PNG')
+    with pytest.raises(BrowserError) as error: await manager.dispatch(identity,grant,'snapshot')
+    assert error.value.code=='manual_control'
     with pytest.raises(BrowserError) as error: await manager.dispatch(identity,grant,'resume_after_handoff')
     assert error.value.code=='host_action_required'
+    await manager.host_command(identity,grant,'navigate',{'url':url+'/delayed'})
+    assert manager._sessions[identity].state=='manual_control'
+    assert page.url==url+'/delayed'
+
+
+@pytest.mark.asyncio
+async def test_safe_redirect_chain_preserves_url_and_private_redirect_is_blocked(browser):
+    manager,identity,grant,url,hits=browser
+    result=await manager.dispatch(identity,grant,'navigate',{'url':url+'/redirect-chain'})
+    assert result['url']==url+'/delayed'
+    page=manager._sessions[identity].tabs[manager._sessions[identity].active_tab_id].page
+    assert page.url==url+'/delayed'
+    assert hits['/redirect-chain']==1 and hits['/redirect-safe']==1 and hits['/delayed']==1
+    with pytest.raises(BrowserError):
+        await manager.dispatch(identity,grant,'navigate',{'url':url+'/redirect'})
+    with pytest.raises(BrowserError):
+        await manager.dispatch(identity,grant,'navigate',{'url':url+'/redirect-loop'})
+    assert hits['/redirect-loop']==11
+
+
+@pytest.mark.asyncio
+async def test_form_post_303_follows_as_fresh_get_without_replaying_submission(browser):
+    manager,identity,grant,url,hits=browser
+    await manager.host_command(identity,grant,'request_handoff')
+    page=manager._sessions[identity].tabs[manager._sessions[identity].active_tab_id].page
+    await page.evaluate("""() => {const form=document.createElement('form');form.method='POST';
+        form.action='/login-redirect';document.body.append(form);form.submit();}""")
+    # The routed POST is deliberately aborted before its fresh GET; native
+    # wait_for_url observes that intermediate abort rather than the new load.
+    deadline=asyncio.get_running_loop().time()+5
+    while page.url != url+'/delayed':
+        assert asyncio.get_running_loop().time()<deadline, 'redirect did not complete'
+        await asyncio.sleep(.01)
+    assert hits['POST /login-redirect']==1 and hits['POST /delayed']==0 and hits['/delayed']==1
 
 
 @pytest.mark.asyncio

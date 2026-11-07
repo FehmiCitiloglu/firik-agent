@@ -49,9 +49,12 @@ async def test_web_builtin_discovery_search_and_open(monkeypatch):
 
 def test_web_http_limits_and_search_failure(monkeypatch):
     import httpx
+    import socket
     from firik_agent.mcp.web_server import WebMCPServer
 
     server = WebMCPServer()
+    monkeypatch.setattr(socket, 'getaddrinfo', lambda *args, **kwargs: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 443))])
     with pytest.raises(ValueError):
         server._get("file:///etc/passwd")
     real_client = httpx.Client

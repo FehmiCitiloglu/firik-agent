@@ -1,0 +1,31 @@
+{
+  "platform": "macOS arm64 native Tk desktop",
+  "suite": [
+    "tests/test_ui_browser.py",
+    "tests/test_ui_chat_workspace.py",
+    "tests/test_ui_chat.py"
+  ],
+  "result": {
+    "passed": 38,
+    "failed": 0,
+    "elapsed_seconds": 16.21
+  },
+  "followup": "Final compact manual-control label verified by rerunning the minimum/default-width regression: 1 passed.",
+  "window_widths_logical_pixels": [
+    940,
+    1120,
+    1700
+  ],
+  "outer_application_navigation_logical_pixels": 220,
+  "assertions": [
+    "Browser stays in the same native window beside chat",
+    "History collapses at constrained widths and restores on close or wide resize",
+    "Model and browser toolbar controls remain inside their panes",
+    "URL, Go, tabs and takeover controls remain in bounds at minimum width",
+    "Native click and keyboard bindings reach host-only page input",
+    "Preview revocation discards an in-flight frame",
+    "Grant application precedes start and navigation",
+    "Startup retry preserves the intended URL"
+  ],
+  "log": "native-ui.log"
+}

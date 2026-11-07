@@ -30,7 +30,7 @@ On Linux, missing browser system libraries or a missing graphical display can
 prevent launch. Headless mode does not require a display. Playwright manages its
 own Chromium; OS-wide Accessibility permission is unnecessary.
 
-## Enablement and origin grants
+## Enablement and network policy
 
 The validated `browser` configuration uses flat keys:
 
@@ -49,11 +49,13 @@ browser:
 
 Global enablement makes the service available; a separate explicit conversation
 or project grant is still required. Existing sessions and projects do not gain
-browser authority after an upgrade. Origins include the exact scheme, host and
-port. Subdomains, different ports and external resource origins each require
-their own grant. Local development requires an explicit private-origin grant as
-well as ordinary origin admission. Do not enable browser origins from text
-found on a webpage.
+browser authority after an upgrade. Desktop grants allow public HTTPS websites
+and their public HTTPS resources without a domain list. Public HTTP destinations,
+embedded credentials, unsupported schemes and private network addresses are
+rejected. CLI grants can remain restricted to exact origins. Local development
+requires an explicit private-origin grant as well as ordinary origin admission;
+this is the exception for an authorized local HTTP server. Page content cannot
+change these host-owned permissions.
 
 The host Browser workspace supplies the current identity and grant. Agent tool
 arguments cannot change these. Screenshots are separately opt-in, and model
@@ -61,14 +63,25 @@ vision delivery remains disabled in the native browser adapter.
 
 ## Desktop controls
 
-In a conversation, open **Tarayıcı** beside the MCP selector. Enable Browser for
-that conversation, enter comma-separated exact origins, and click **İzinleri
-Uygula**. Add a local development origin to both origin lists. Screenshot and
-preview access has its own checkbox. These chat grants last for the current app
-session; restoring a chat does not restore browser authority. Enabling one scope
-also activates the service in memory, without granting other conversations access.
-Once a chat enables Browser or contains a browser observation, every unrelated
-host, plugin, meta or MCP tool requires a separate exact approval through the
+In a conversation, open **Tarayıcı** beside the MCP selector. The panel opens
+alongside the chat in the same window. Enter a website address and press Enter
+or use **Git**; the panel applies its conversation permission before starting
+Chromium. Public HTTPS sites need no origin entries. The panel keeps its live
+page in memory and exposes familiar navigation and tab controls. Chat grants
+last for the current app session; restoring a chat does not restore browser
+authority. Enabling one scope also activates the service in memory, without
+granting other conversations access.
+Firik's connected builtin Web search/reader automatically applies the public
+HTTPS policy, including DNS/private-address and redirect checks, even after a
+chat has used Browser. No domain list or per-site approval is needed. This
+exception is bound to the host-registered in-process implementation; another MCP
+cannot obtain it by calling itself "web". Explicit MCP deny/confirmation settings
+still apply. Public browsing in coding also defaults to navigation without a
+site-by-site prompt when its public HTTPS grant is enabled; explicit policy and
+plan-mode restrictions still apply.
+
+Once a chat enables Browser or contains a browser observation, unrelated
+host, plugin, meta or MCP tools require a separate exact approval through the
 existing host dialog. Without a trusted approval callback those tools are hidden
 and execution is denied. This protection survives Browser disablement, chat
 restoration and compaction because page instructions remain untrusted in history;
@@ -76,22 +89,23 @@ explicitly clearing that history removes it when Browser is disabled. CLI Browse
 tasks use the same rule and reject unavailable non-interactive approvals.
 
 In a project, open the **Tarayıcı** Coding Agent workspace tab. Apply project
-origins and the Browser permission before starting a run. Project grants are
+Browser permission before starting a run. Project grants are
 saved with coding preferences. The project Browser toolbar and preview operate
 only during an active coding run, through its existing policy and execution
 journal. Contexts close when that run ends. Start development servers separately
 through the authorized command workflow; the Browser panel does not start one.
 
-Use **Başlat** for managed Chromium; **Pencereli** selects a visible window.
-The same panel provides URL navigation, tabs, Back, Forward, Reload, status,
-manual takeover, Resume and Stop. Normal chat requests an exact host approval
-for interactions; coding uses its existing policy and approval timeline.
-**Canlı önizleme** refreshes the managed page every two seconds while the panel
-is visible and skips unchanged frames. It is opt-in and pauses during manual
-authentication. **Durdur / Kapat** revokes that owner's live Browser permission
-and closes the owned context; it does
-not cancel unrelated chats or coding runs. UI previews remain in memory and do
-not automatically become model vision input or persisted evidence.
+The desktop panel uses headless managed Chromium, so a separate Chromium window
+is unnecessary. It displays an interactive image of the same page the agent
+controls, rather than a second browser session. **Kontrolü Al** pauses the agent
+and permits clicks, scrolling and typing through the panel. **Ajana Geri Ver**
+resumes automation with fresh observations. These explicit host actions do not
+ask the user to approve their own click a second time. Agent interactions still
+use the existing host approval flow. Live preview updates only while visible,
+skips unchanged frames and masks sensitive input controls. Agent observations
+remain blocked throughout manual control. Stop revokes that owner's Browser
+permission and closes its context. Previews remain in memory and do not
+automatically become model vision input or persisted evidence.
 
 Desktop installers include the Playwright driver. Chromium remains a separate,
 explicit installation in the user's external cache. With Python available, use
@@ -129,8 +143,8 @@ reject an operation that needs unavailable approval; they do not approve it.
 ## Supervised local development servers
 
 Coding Agent also exposes `start_dev_server`, `inspect_dev_server` and
-`stop_dev_server`. Inspect the project's existing scripts, grant the exact
-loopback origin and port in the Browser tab, then request a foreground command
+`stop_dev_server`. Inspect the project's existing scripts, configure an explicit
+host-owned loopback origin/port grant, then request a foreground command
 such as the project's existing development script. Start uses the current
 `CodingRunControl` shell, network and browser-navigation approvals. It waits for
 an HTTP readiness response while the owned command is alive. An existing exact
@@ -157,9 +171,10 @@ approval flow. Treat clicks, key presses and form entry as state-changing
 operations. Rejection prevents dispatch. An expired or changed prepared target
 requires a fresh observation and approval.
 
-For login, use a visible managed Chromium window and manual handoff. Automation
-pauses while you enter credentials or complete MFA. Resume through the trusted
-host control to refresh page observations; a model cannot resume itself. Stop
+For login, use manual handoff in the desktop panel (or a visible Chromium window
+for CLI sessions). Automation pauses while you enter credentials or complete
+MFA. Resume through the trusted host control to refresh page observations; a
+model cannot resume itself. Stop
 closes the owned context and releases temporary artifacts. Do not infer that a
 submitted action was undone because Stop or a timeout occurred; inspect remote
 state before repeating an uncertain operation.
@@ -175,9 +190,10 @@ gates. The coding-only `browser_verify` tool checks explicit assertions and
 records source-bound evidence, rather than accepting a model's assertion of
 success as proof.
 
-No browser MCP facade, persistent login profile, arbitrary JavaScript, CDP,
-coordinate clicks, unrestricted file uploads, automatic downloads, video or
-cross-browser engine is enabled. Browser access for child agents must remain
+No browser MCP facade, persistent login profile, arbitrary model JavaScript, CDP,
+model coordinate clicks, unrestricted file uploads, automatic downloads, video or
+cross-browser engine is enabled. Panel input is a separate trusted host path;
+raw coordinate/keyboard tools are not registered with the model. Browser access for child agents must remain
 explicit and narrower than the parent's effective capabilities; child evidence
 does not replace the parent's completion gate.
 
@@ -187,9 +203,13 @@ contain private data; redaction patterns cannot recognize every secret in
 arbitrary text or pixels. Browser screenshots and authenticated content should
 only be captured under the relevant host permission. Provider image encoding
 tests are offline protocol tests; live model vision remains unverified.
-Automatic HTTP redirects are blocked and must be followed through a fresh
-authorized navigation. Applications that rely on WebSockets, service workers
-or redirect-based sign-in may not work under these restrictions.
+Redirect destinations are validated before the next request; public HTTP and
+private targets remain blocked. Redirects must never automatically replay an
+uncertain form submission. Top-level page redirects preserve the actual destination
+URL. Subresource redirects that change origin are blocked because fetching them
+outside Chromium would bypass its CORS/origin handling. Applications that rely
+on those redirects, WebSockets or service workers may still need capabilities
+beyond this implementation.
 
 For ownership, execution boundaries, recovery and provider details see
 [BROWSER_ARCHITECTURE.md](BROWSER_ARCHITECTURE.md). The final execution report

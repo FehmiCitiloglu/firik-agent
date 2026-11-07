@@ -73,6 +73,72 @@ async def test_browser_independent_from_mcp_and_grants_rechecked(browser_runtime
 
 
 @pytest.mark.asyncio
+async def test_public_https_navigation_uses_standing_grant_without_per_site_approval(browser_runtime):
+    control, manager, tools, session = browser_runtime
+    control.browser_grant = BrowserGrant(enabled=True, allow_public_https=True)
+    approval_events = []
+    control.on_event = lambda event: approval_events.append(event) if event.metadata.get("request_id") else None
+    for url in ("https://example.com/", "https://other.example/docs"):
+        result = await tools.execute(call("browser_navigate", {"url": url}), session)
+        assert not result.is_error
+    assert not approval_events
+    assert [entry[3]["url"] for entry in manager.calls] == ["https://example.com/", "https://other.example/docs"]
+    assert control.permission_decision("browser.interact") == "ask"
+    assert control.permission_decision("browser.submit") == "ask"
+    assert control.permission_decision("mcp") == "deny"  # Browser grant does not enable MCP.
+
+
+@pytest.mark.parametrize("mode,policy,inherited,expected", [
+    ("auto", {}, {}, "allow"),
+    ("safe", {}, {}, "allow"),
+    ("approved", {}, {}, "allow"),
+    ("custom", {"browser.navigate": "ask"}, {}, "ask"),
+    ("auto", {"browser.navigate": "deny"}, {}, "deny"),
+    ("auto", {}, {"browser.navigate": "ask"}, "ask"),
+    ("auto", {}, {"browser.navigate": "deny"}, "deny"),
+    ("ask", {}, {}, "deny"),
+    ("plan", {}, {}, "deny"),
+])
+def test_public_navigation_retains_explicit_mode_and_inherited_limits(mode, policy, inherited, expected):
+    control = CodingRunControl("chat", "project", mode=mode,
+        permissions={"allow_browser": True}, policy=policy, inherited_policy=inherited,
+        browser_grant=BrowserGrant(enabled=True, allow_public_https=True))
+    assert control.permission_decision("browser.navigate") == expected
+    control.permissions["allow_browser"] = False
+    assert control.permission_decision("browser.navigate") == "deny"
+
+
+@pytest.mark.asyncio
+async def test_explicit_navigation_review_still_applies_to_public_browsing(browser_runtime):
+    control, manager, tools, session = browser_runtime
+    control.browser_grant = BrowserGrant(enabled=True, allow_public_https=True)
+    control.policy["browser.navigate"] = "ask"
+    def reject(event):
+        if event.metadata.get("request_id"):
+            control.decide_approval(event.metadata["request_id"], False)
+    control.on_event = reject
+    result = await tools.execute(call("browser_navigate", {"url": "https://example.com/"}), session)
+    assert result.is_error and not manager.calls
+    control.policy.clear()
+    control.browser_grant = BrowserGrant(enabled=True, origins=("https://example.com",))
+    assert control.permission_decision("browser.navigate") == "ask"
+
+
+@pytest.mark.parametrize("child,parent,origins,broad", [
+    (BrowserGrant(enabled=True, allow_public_https=True), BrowserGrant(enabled=True, allow_public_https=True), (), True),
+    (BrowserGrant(enabled=True, origins=("https://example.com",)), BrowserGrant(enabled=True, allow_public_https=True), ("https://example.com",), False),
+    (BrowserGrant(enabled=True, allow_public_https=True), BrowserGrant(enabled=True, origins=("https://example.com",)), ("https://example.com",), False),
+    (BrowserGrant(enabled=True, origins=("https://example.com",)), BrowserGrant(enabled=True, origins=("https://other.example",)), (), False),
+])
+def test_delegated_browser_grant_intersects_public_and_scoped_access(browser_runtime, child, parent, origins, broad):
+    control, manager, tools, session = browser_runtime
+    control.browser_grant = child
+    control.parent = SimpleNamespace(browser_grant=parent, permissions={"allow_browser": True})
+    grant = tools._browser_adapter().grant_provider()
+    assert grant.enabled and grant.origins == origins and grant.allow_public_https is broad
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["ask", "plan"])
 async def test_readonly_modes_allow_observations_but_block_navigation_and_click(browser_runtime, mode):
     control, manager, tools, session = browser_runtime
