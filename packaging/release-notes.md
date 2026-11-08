@@ -1,3 +1,12 @@
+## v0.2.51 değişiklikleri
+
+- Gömülü tarayıcıya Chrome benzeri yatay sekme çubuğu eklendi: etkin sekme vurgusu, her sekmede kapatma düğmesi, sabit yeni sekme düğmesi ve dar panellerde yatay kaydırma bulunur.
+- Sekme değiştirirken veya yeni sekme açarken önceki sayfanın görüntüsü ve bekleyen elle girdiler temizlenir; son sekme kapanınca eski sayfa görüntüsü yerine boş sekme durumu gösterilir.
+- Sohbette Tarayıcı panelini açmak o sohbetin tarayıcı iznini etkinleştirir; etkin paneli yeniden açmak kullanıcının önizleme tercihini korur. Model, yandaki paneli işletim sistemi pencerelerinde aramak yerine aynı oturumun tarayıcı araçlarına yönlendirilir.
+- MCP ve computer-use görüntüleri seçili modele gönderilemediğinde bu durum açıkça bildirilir. Doğrulanmış görüntü yetenek bilgisi model adı tahminlerinden önce uygulanır.
+- macOS paketlerindeki Playwright Node sürücüsünün eksik JIT izni düzeltildi; yalnız bu sürücüye gereken izin verilir ve paket imzaları yayın öncesinde doğrulanır.
+- Sekmeler, dar pencere yerleşimi, görüntü aktarımı, tarayıcı keşfi ve macOS paketleme regresyonları genişletildi.
+
 ## v0.2.50 değişiklikleri
 
 - Gömülü tarayıcının klavye girdi testi, sentetik tıklama öncesinde yerel pencereyi etkinleştirecek şekilde düzeltildi.

@@ -664,12 +664,24 @@ class ChatView(ctk.CTkFrame):
     def _open_mcp_selector(self) -> None:
         MCPChatSelectorDialog(self, service=self.service, session=self.session, on_changed=self._update_mcp_chips)
 
+    def _enable_chat_browser_if_needed(self, panel) -> bool:
+        try:
+            settings = self.service.session_browser_settings(self.session.session_id)
+        except Exception as error:
+            panel._error(str(error))
+            return False
+        # Focusing or reopening an authorized panel must preserve an explicit
+        # preview opt-out. Read host state: a failed activation can leave the
+        # panel's enabled Boolean checked without applying the actual grant.
+        return settings.get("enabled") is True or panel._activate()
+
     def _open_browser(self) -> None:
         panel = self._browser_panel
         if panel is not None and panel.winfo_exists():
             if panel.session_id != self.session.session_id:
                 self._close_browser_panel()
             else:
+                self.browser_btn.configure(text="Tarayıcı açık" if self._enable_chat_browser_if_needed(panel) else "Tarayıcı")
                 panel.url.focus_set()
                 return
         if self._on_browser_changed:
@@ -683,7 +695,9 @@ class ChatView(ctk.CTkFrame):
             on_close=self._close_browser_panel)
         self._browser_panel.grid(row=0, column=0, sticky="nsew")
         self._split.add(host, minsize=320, stretch="always")
-        self.browser_btn.configure(text="Tarayıcı açık")
+        # Opening this chat's browser is the user's explicit opt-in. Reuse the
+        # panel grant path without launching Chromium or navigating a website.
+        self.browser_btn.configure(text="Tarayıcı açık" if self._enable_chat_browser_if_needed(self._browser_panel) else "Tarayıcı")
         self.update_idletasks()
         self._split.sash_place(0, max(320, self._split.winfo_width() // 2), 0)
         self._browser_panel.url.focus_set()

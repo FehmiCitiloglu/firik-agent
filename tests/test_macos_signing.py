@@ -112,3 +112,34 @@ def test_temporary_notary_keychain_is_used_for_all_requests(monkeypatch):
     ]
     monkeypatch.delenv("FIRIK_NOTARY_KEYCHAIN")
     assert signing.notary_credentials("test-profile") == ["--keychain-profile", "test-profile"]
+
+
+@pytest.mark.parametrize("skip_build", [False, True])
+def test_invalid_node_entitlements_stop_before_smoke_and_notarization(monkeypatch, tmp_path, skip_build):
+    fingerprint = "A" * 40
+    calls = []
+    arguments = ["sign_macos.py", "--identity", fingerprint, "--profile", "fixture"]
+    if skip_build:
+        arguments.append("--skip-build")
+    monkeypatch.setattr(signing.sys, "argv", arguments)
+    monkeypatch.setattr(signing.sys, "platform", "darwin")
+    monkeypatch.setattr(signing, "LOGS", tmp_path / "logs")
+
+    def run(*args, **kwargs):
+        calls.append(args)
+        if args[:2] == ("security", "find-identity"):
+            return SimpleNamespace(stdout=f'{fingerprint} "Developer ID Application: Fixture (TESTTEAM00)"')
+        return SimpleNamespace(stdout="")
+
+    def reject(app):
+        calls.append(("validate-node", app))
+        raise RuntimeError("Packaged Playwright Node has no valid JIT entitlements")
+
+    monkeypatch.setattr(signing, "run", run)
+    monkeypatch.setattr(signing, "verify_playwright_node_entitlements", reject)
+    monkeypatch.setattr(signing, "notarize", lambda *args: pytest.fail("Invalid app reached notarization"))
+    with pytest.raises(RuntimeError, match="no valid JIT entitlements"):
+        signing.main()
+    assert calls[-1] == ("validate-node", signing.APP)
+    assert any("PyInstaller" in call for call in calls) is not skip_build
+    assert not any("scripts/smoke_desktop.py" in call for call in calls)

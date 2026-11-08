@@ -9,10 +9,12 @@ import json
 import sys
 import time
 import tkinter as tk
-from urllib.parse import quote_plus, urlsplit
+from urllib.parse import quote_plus
 
 import customtkinter as ctk
 from PIL import Image
+
+from firik_agent.ui.components.browser_tabs import BrowserTabStrip
 
 
 class BrowserPreviewImage(ctk.CTkImage):
@@ -102,14 +104,9 @@ class BrowserPanel(ctk.CTkFrame):
         ctk.CTkButton(heading, text="Ayarlar", width=58, height=26, fg_color="transparent",
             command=self._toggle_settings).pack(side="right", padx=4)
 
-        tabs = ctk.CTkFrame(self, fg_color="transparent")
-        tabs.grid(row=1, column=0, sticky="ew", padx=8, pady=2)
-        self.tab_selector = ctk.CTkOptionMenu(tabs, values=["Yeni sekme"], command=self._select_tab)
-        self.tab_selector.pack(side="left", fill="x", expand=True, padx=(0, 5))
-        ctk.CTkButton(tabs, text="+", width=30, height=28,
-            command=lambda: self._command("browser_new_tab")).pack(side="left", padx=2)
-        ctk.CTkButton(tabs, text="✕", width=30, height=28, fg_color="transparent",
-            command=self._close_tab).pack(side="left", padx=2)
+        self.tab_strip = BrowserTabStrip(self, on_select=self._select_tab,
+            on_close=self._close_tab, on_new=self._new_tab)
+        self.tab_strip.grid(row=1, column=0, sticky="ew", padx=8, pady=2)
 
         navigation = ctk.CTkFrame(self, fg_color="transparent")
         navigation.grid(row=2, column=0, sticky="ew", padx=8, pady=4)
@@ -303,17 +300,26 @@ class BrowserPanel(ctk.CTkFrame):
         narrow = self.winfo_width() / self._get_widget_scaling() < 424
         self.mode.configure(text=("Ajan duraklatıldı" if manual else "Aynı oturum") if narrow
             else ("Kontrol sizde · ajan duraklatıldı" if manual else "Sohbetle aynı oturum"))
+        previous_tab = self._active_tab
         self._active_tab = data.get("active_tab_id", data.get("tab_id", self._active_tab))
         tabs = data.get("tabs")
         if isinstance(tabs, list):
-            self._tabs = {f"{index + 1} · {str(tab.get('title') or urlsplit(tab.get('url', '')).hostname or 'Yeni sekme')[:42]}": tab.get("tab_id", tab.get("id"))
-                          for index, tab in enumerate(tabs) if tab.get("tab_id", tab.get("id"))}
-            self.tab_selector.configure(values=list(self._tabs) or ["Yeni sekme"])
-            selected = next((label for label, tab_id in self._tabs.items() if tab_id == self._active_tab), next(iter(self._tabs), "Yeni sekme"))
-            self.tab_selector.set(selected)
-            selected_tab = next((tab for tab in tabs if tab.get("tab_id", tab.get("id")) == self._active_tab), None)
+            self._tabs = {tab.get("tab_id", tab.get("id")): tab for tab in tabs
+                          if tab.get("tab_id", tab.get("id"))}
+            if "active_tab_id" not in data and "tab_id" not in data:
+                self._active_tab = next((tab_id for tab_id, tab in self._tabs.items() if tab.get("active")),
+                                        self._active_tab)
+            if self._active_tab not in self._tabs:
+                self._active_tab = next((tab_id for tab_id, tab in self._tabs.items() if tab.get("active")),
+                                        next(iter(self._tabs), ""))
+            selected_tab = self._tabs.get(self._active_tab)
             if selected_tab:
                 data.setdefault("url", selected_tab.get("url", ""))
+            elif not self._tabs:
+                data.setdefault("url", "")
+        if self._active_tab != previous_tab or (isinstance(tabs, list) and not tabs):
+            self._invalidate_page("Sekme yükleniyor…" if self._active_tab else "Açık sekme yok\n+ ile yeni sekme açabilirsiniz.")
+        self.tab_strip.set_tabs(list(self._tabs.values()), self._active_tab)
         if "url" in data and self.focus_get() is not self.url._entry:
             self.url.delete(0, "end")
             if data["url"] != "about:blank":
@@ -328,13 +334,32 @@ class BrowserPanel(ctk.CTkFrame):
                     self._command("browser_list_tabs", quiet=True)
         return True
 
-    def _select_tab(self, label):
-        if label in self._tabs:
-            self._command("browser_select_tab", {"tab_id": self._tabs[label]})
+    def _new_tab(self):
+        # Starting an owned session already creates its first blank tab.
+        operation = "browser_start" if self._state in {"uninitialized", "closed", "failed"} else "browser_new_tab"
+        self._invalidate_page("Yeni sekme açılıyor…")
+        self._command(operation)
 
-    def _close_tab(self):
-        if self._active_tab:
-            self._command("browser_close_tab", {"tab_id": self._active_tab})
+    def _select_tab(self, tab_id):
+        if tab_id in self._tabs and tab_id != self._active_tab:
+            self._invalidate_page("Sekme yükleniyor…")
+            self._command("browser_select_tab", {"tab_id": tab_id})
+
+    def _close_tab(self, tab_id=None):
+        tab_id = tab_id or self._active_tab
+        if tab_id in self._tabs:
+            if tab_id == self._active_tab:
+                self._invalidate_page("Sekme kapatılıyor…")
+            self._command("browser_close_tab", {"tab_id": tab_id})
+
+    def _invalidate_page(self, text):
+        self._input_epoch += 1
+        self._input_queue.clear()
+        # CTkLabel's image=None unregisters its image but does not clear the
+        # native Tk label. Detach that reference before releasing PhotoImage.
+        self.preview._label.configure(image="")
+        self.preview.configure(image=None, text=text)
+        self._image = self._frame_hash = self._viewport = self._render_size = None
 
     def _toggle_control(self):
         operation = "browser_resume_after_handoff" if self._state == "manual_control" else "browser_request_handoff"
@@ -365,24 +390,27 @@ class BrowserPanel(ctk.CTkFrame):
     def _stop(self):
         self.enabled.set(False)
         self._state = "closed"
-        self._input_epoch += 1
-        self._input_queue.clear()
+        self._tabs.clear()
+        self._active_tab = ""
+        self.tab_strip.set_tabs([], "")
+        self._invalidate_page("Tarayıcı kapalı\nBir adres açarak yeniden başlayabilirsiniz.")
         self.service.stop_browser_async(self.session_id)
-        self.preview.configure(image=None, text="Tarayıcı kapalı\nBir adres açarak yeniden başlayabilirsiniz.")
         self.status.configure(text="Tarayıcı kapatılıyor.")
         self.control_button.configure(text="Kontrolü al")
-        self._image = self._frame_hash = self._viewport = self._render_size = None
 
     def _preview(self):
-        if self._closed or self._preview_busy or not self.winfo_ismapped() or not self.screenshots.get():
+        if self._closed or self._preview_busy or self._busy or not self.winfo_ismapped() or not self.screenshots.get():
             return
-        if self._state in {"uninitialized", "closed", "failed"}:
+        if self._state in {"uninitialized", "closed", "failed"} or not self._active_tab:
             return
         self._preview_busy = True
         epoch = self._input_epoch
         def ready(data):
             self._preview_busy = False
-            if self._closed or not self.winfo_exists() or epoch != self._input_epoch or not self.screenshots.get():
+            if self._closed or not self.winfo_exists() or not self.screenshots.get():
+                return
+            if epoch != self._input_epoch:
+                self._preview()
                 return
             scaling = self._get_widget_scaling()
             width, height = max(1, int(self.preview.winfo_width() / scaling) - 8), max(1, int(self.preview.winfo_height() / scaling) - 8)
@@ -456,7 +484,7 @@ class BrowserPanel(ctk.CTkFrame):
         return "break"
 
     def _input(self, kind, arguments):
-        if self._closed or self._state != "manual_control":
+        if self._closed or self._busy or self._state != "manual_control" or not self._active_tab:
             return
         if len(self._input_queue) >= 128:
             return
@@ -464,7 +492,7 @@ class BrowserPanel(ctk.CTkFrame):
         self._next_input()
 
     def _next_input(self):
-        if self._input_busy or not self._input_queue or self._closed or self._state != "manual_control":
+        if self._input_busy or not self._input_queue or self._closed or self._state != "manual_control" or not self._active_tab:
             return
         kind, arguments = self._input_queue.popleft()
         self._input_busy = True

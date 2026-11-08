@@ -14,6 +14,11 @@ import subprocess
 import sys
 import time
 
+if __package__:
+    from .macos_browser_signing import verify_playwright_node_entitlements
+else:
+    from macos_browser_signing import verify_playwright_node_entitlements
+
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "dist/firik-agent.app"
 OUT = ROOT / "release_assets"
@@ -88,6 +93,9 @@ def main():
         env = dict(os.environ, FIRIK_CODESIGN_IDENTITY=identity,
                    PYINSTALLER_STRICT_BUNDLE_CODESIGN_ERROR="1")
         run(sys.executable, "-m", "PyInstaller", "firik-agent.spec", "--clean", "--noconfirm", env=env)
+    # Also validate --skip-build inputs. A valid outer signature alone cannot
+    # prove that the nested Playwright driver can execute its JavaScript.
+    verify_playwright_node_entitlements(APP)
     run("codesign", "--verify", "--deep", "--strict", "--verbose=2", APP)
     details = subprocess.run(
         ["codesign", "-dvvv", str(APP)], check=True, capture_output=True, text=True,

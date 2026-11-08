@@ -123,7 +123,7 @@ def test_browser_reclaims_history_space_and_wraps_controls_at_default_app_width(
     assert page.model_combo.winfo_rooty() + page.model_combo.winfo_height() <= page.browser_btn.winfo_rooty()
     panel = page._browser_panel
     panel_right = panel.winfo_rootx() + panel.winfo_width()
-    for widget in (panel.url, panel.go_button, panel.tab_selector, panel.control_button):
+    for widget in (panel.url, panel.go_button, panel.tab_strip, panel.control_button):
         assert widget.winfo_rootx() >= panel.winfo_rootx()
         assert widget.winfo_rootx() + widget.winfo_width() <= panel_right
     assert panel_right <= root.winfo_rootx() + root.winfo_width()
@@ -132,7 +132,7 @@ def test_browser_reclaims_history_space_and_wraps_controls_at_default_app_width(
     assert not view.sidebar.winfo_ismapped()
     for widget in (page.model_combo, page.mcp_btn, page.browser_btn, page.toggle_params_btn, page.send_btn):
         assert widget.winfo_rootx() + widget.winfo_width() <= page._chat_body.winfo_rootx() + page._chat_body.winfo_width()
-    for widget in (panel.url, panel.go_button, panel.tab_selector, panel.control_button):
+    for widget in (panel.url, panel.go_button, panel.tab_strip, panel.control_button):
         assert widget.winfo_rootx() + widget.winfo_width() <= root.winfo_rootx() + root.winfo_width()
     assert panel.winfo_rootx() + panel.winfo_width() <= root.winfo_rootx() + root.winfo_width()
     panel._result("browser_request_handoff", {"state": "manual_control"})

@@ -16,15 +16,36 @@ def browser_instructions(schemas: Sequence[Mapping[str, Any]]) -> str:
         return ""
     instructions = (
         "Tarayıcı seçimi: browser_* araçları Firik'in bu oturuma ait kendi Chromium "
-        "tarayıcısını yönetir. Kullanıcı genel olarak 'tarayıcıda yap', 'siteyi aç' veya "
+        "tarayıcısını yönetir. Masaüstü uygulamasında sohbetin yanındaki entegre "
+        "tarayıcı paneli aynı oturumu gösterir; 'yandaki tarayıcı' bu paneldir. "
+        "Masaüstündeki bu panel headless Chromium kullanır ve ayrı bir sistem penceresi olarak görünmez. "
+        "Paneli keşfetmek için işletim sistemi pencerelerini listeleme veya computer-use "
+        "ekran görüntüleri alma; Finder dışında pencere bulunmaması bu tarayıcının "
+        "olmadığını göstermez. Kullanıcı genel olarak 'tarayıcıda yap', 'siteyi aç' veya "
         "bir web sayfasını incele derse önce bu araçları kullan; computer-use ile "
         "sistemin tarayıcısını açmaya veya yönetmeye yönelme. "
     )
-    if {"browser_status", "browser_start", "browser_navigate"} <= names:
+    if "browser_status" in names:
+        instructions += "Önce browser_status ile mevcut oturumu ve etkin sekmeyi kontrol et. "
+    if "browser_list_tabs" in names:
+        instructions += "Açık sekmeleri ve URL'lerini browser_list_tabs ile bul. "
+    if "browser_snapshot" in names:
         instructions += (
-            "browser_status ile mevcut oturumu kontrol et; yalnız başlatılmamışsa "
-            "browser_start kullan, ardından browser_navigate ile URL'yi aç. "
+            "Mevcut açık sayfayı browser_snapshot ile oku; kullanıcı açık sayfayı "
+            "incelemek istiyorsa yeniden başlatma veya başka adrese gitme. "
         )
+    if "browser_start" in names:
+        instructions += (
+            "Yalnız oturum henüz başlatılmamışsa browser_start kullan. "
+        )
+    if "browser_navigate" in names:
+        instructions += "Kullanıcının istediği yeni URL için browser_navigate ile URL'yi aç. "
+    instructions += (
+        "Sayfa gözlemi için DOM/metin verisini kullan. Bir ekran görüntüsüne ait "
+        "dosya yolu veya 'görüntü döndü' yer tutucusu görüntünün pikselleri değildir; "
+        "bunlardan görüntüyü gördüğünü iddia etme veya aynı ekran görüntüsünü "
+        "tekrar tekrar isteme. "
+    )
     instructions += (
         "Kullanıcı özellikle sistem tarayıcısını, Chrome/Safari'yi, kendi profilini veya "
         "orada açık bir sekmeyi isterse bu açık tercihi izle. Firik tarayıcısında gerekli "

@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-09",
+  "scope": "local pre-release validation",
+  "version": "0.2.51",
+  "native_ui": {
+    "command": ".venv/bin/python -m pytest -q tests/test_ui_browser_tabs.py tests/test_ui_browser.py tests/test_ui_chat_workspace.py",
+    "passed": 30,
+    "seconds": 8.63
+  },
+  "focused_browser_image_signing_regression": {
+    "passed": 156
+  },
+  "visuals": {
+    "wide": "tabs-wide.png",
+    "narrow": "tabs-narrow.png",
+    "source": "native synthetic local preview; no account or external website"
+  },
+  "artifact": {
+    "path": "/Users/alien/Development/evren/build/horizontal-tabs/dist/firik-agent.app",
+    "executable_sha256": "b9cdef6710ef254fb9dbe288f5d2809f8afa35ae6c2e3332620246750d92af5f",
+    "signing": "local ad hoc; nested strict verification passed"
+  },
+  "frozen_smoke": "UI, PortAudio device discovery and real Chromium startup passed",
+  "live_provider_tested": false,
+  "installed_application_modified": false
+}

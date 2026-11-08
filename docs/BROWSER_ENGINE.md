@@ -65,9 +65,16 @@ vision delivery remains disabled in the native browser adapter.
 
 In a conversation, open **Tarayıcı** beside the MCP selector. The panel opens
 alongside the chat in the same window. Enter a website address and press Enter
-or use **Git**; the panel applies its conversation permission before starting
-Chromium. Public HTTPS sites need no origin entries. The panel keeps its live
-page in memory and exposes familiar navigation and tab controls. Chat grants
+or use **Git**. Opening a disabled chat's panel enables Browser and its preview
+for that conversation, so the model can discover the same browser through `browser_status`
+even before an address is entered. Opening alone does not start Chromium or
+navigate. Focusing or reopening an enabled chat's panel preserves its preview
+preference. Public HTTPS sites need no origin entries. The panel keeps its live
+page in memory and shows tabs side by side with an active-tab highlight, a close
+button on each tab and a persistent **+** button. The row scrolls horizontally
+when the pane is narrow and reveals a tab when it becomes active. Switching tabs
+clears the previous page's preview and queued manual input; closing the last tab
+shows an empty browser until a new tab is opened. Chat grants
 last for the current app session; restoring a chat does not restore browser
 authority. Enabling one scope also activates the service in memory, without
 granting other conversations access.
@@ -106,6 +113,14 @@ skips unchanged frames and masks sensitive input controls. Agent observations
 remain blocked throughout manual control. Stop revokes that owner's Browser
 permission and closes its context. Previews remain in memory and do not
 automatically become model vision input or persisted evidence.
+
+The agent is told that the adjacent panel is this owned, potentially headless
+browser, which need not appear in the operating system's window list. It discovers
+the session and reads existing pages through status, tabs and DOM snapshots.
+For other image-producing tools, including computer-use MCP, the provider honors
+explicit vision capability metadata. If it omits image pixels from a request,
+it reports that omission to the model instead of leaving an ambiguous image
+placeholder. Native Browser image delivery retains its separate host opt-in.
 
 Desktop installers include the Playwright driver. Chromium remains a separate,
 explicit installation in the user's external cache. With Python available, use

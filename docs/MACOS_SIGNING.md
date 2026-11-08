@@ -34,6 +34,16 @@ stapled tickets and Gatekeeper acceptance. Reports are under `build/notarization
 installers and architecture-specific checksums are under `release_assets`.
 Failed notarization must be resolved before distributing those files.
 
+Browser-enabled builds give only the bundled Playwright Node executable the
+`com.apple.security.cs.allow-jit` entitlement. PyInstaller's deep bundle signing
+replaces Node's original signature, so the spec signs that driver after `BUNDLE`
+and seals the outer app again without `--deep`. The app retains its microphone
+entitlement. The signing script also verifies the driver's entitlement when
+`--skip-build` is used. Without this exception the signed Node can print its
+version yet crash when executing JavaScript, before Chromium is launched. The
+packaged Browser smoke must therefore run, rather than relying on `node --version`
+or a valid outer signature alone. See [Apple's JIT guidance](https://developer.apple.com/documentation/apple-silicon/porting-just-in-time-compilers-to-apple-silicon).
+
 ## GitHub Releases
 
 The Desktop Release workflow now requires signed and notarized macOS installers

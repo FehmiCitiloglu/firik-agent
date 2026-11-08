@@ -70,6 +70,11 @@ async def test_provider_gets_owned_browser_priority_and_explicit_user_choice(str
     assert "Chrome/Safari" in system and "bu açık tercihi izle" in system
     assert "Engellenen HTTP/özel ağ" in system
     assert "Erişilemeyen siteyi atlayıp" in system
+    assert "'yandaki tarayıcı' bu paneldir" in system
+    assert "ayrı bir sistem penceresi olarak görünmez" in system
+    assert "işletim sistemi pencerelerini listeleme" in system
+    assert "browser_list_tabs ile bul" in system and "browser_snapshot ile oku" in system
+    assert "yer tutucusu görüntünün pikselleri değildir" in system
     names = {schema["function"]["name"] for schema in request["tools"]}
     assert {"browser_start", "browser_navigate", "computer_screenshot"} <= names
     assert request["messages"][-1].content == prompt
@@ -145,3 +150,17 @@ def test_helper_does_not_promote_unavailable_navigation():
     guidance = browser_instructions([{"function": {"name": "browser_snapshot"}}])
     assert "önce bu araçları kullan" in guidance
     assert "browser_start kullan" not in guidance
+
+
+@pytest.mark.parametrize("names", [
+    {"browser_snapshot"}, {"browser_navigate"},
+    {"browser_status", "browser_list_tabs", "browser_snapshot"},
+    {"browser_status", "browser_start", "browser_navigate"},
+])
+def test_browser_guidance_names_only_available_tools(names):
+    import re
+    guidance = browser_instructions([{"function": {"name": name}} for name in names])
+    assert set(re.findall(r"\bbrowser_[a-z_]+\b", guidance)) <= names
+    assert "Chrome/Safari" in guidance and "bu açık tercihi izle" in guidance
+    if "browser_snapshot" in names:
+        assert "yeniden başlatma veya başka adrese gitme" in guidance

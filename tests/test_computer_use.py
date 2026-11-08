@@ -397,7 +397,8 @@ def test_multimodal_provider_formatting():
     payload_non_vision = firik_prov._prepare_payload([tool_msg])
     # Non-vision model receives clean text string, NOT a base64 dump
     assert isinstance(payload_non_vision["messages"][0]["content"], str)
-    assert payload_non_vision["messages"][0]["content"] == "[Screenshot: 800x600]"
+    assert payload_non_vision["messages"][0]["content"].startswith("[Screenshot: 800x600]")
+    assert "Image data was not delivered to the selected model" in payload_non_vision["messages"][0]["content"]
 
     # 3. OpenAIProvider with vision model (gpt-4o)
     openai_prov = OpenAIProvider(api_key="test_key", default_model="gpt-4o")

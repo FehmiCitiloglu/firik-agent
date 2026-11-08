@@ -1,0 +1,55 @@
+{
+  "date": "2026-11-07",
+  "installed_version_observed": "0.2.50",
+  "installed_bundle_modified": false,
+  "observed_model": "deepseek-v4.1-flash",
+  "original_failures": [
+    "Computer-use MCP image parts omitted from provider request without explicit notice",
+    "Adjacent browser discovery through OS windows instead of owned browser tools",
+    "Installed Playwright Node JavaScript execution: Failed to reserve virtual memory for CodeRange"
+  ],
+  "broad_regression": {
+    "command": ".venv/bin/python -m pytest -q --ignore-glob='tests/test_ui*.py' -k 'not live and not docker'",
+    "passed": 2544,
+    "skipped": 28,
+    "deselected": 65,
+    "seconds": 203.19,
+    "note": "Ran before final UI-only preview-preference correction; affected native panel suite reran afterwards (12 passed)."
+  },
+  "focused_checks": [
+    {
+      "scope": "image delivery, computer use, browser provider, MCP results",
+      "passed": 86
+    },
+    {
+      "scope": "browser preference",
+      "passed": 27
+    },
+    {
+      "scope": "native browser panel",
+      "passed": 12
+    },
+    {
+      "scope": "macOS signing and packaging",
+      "passed": 80
+    }
+  ],
+  "counts_overlap": true,
+  "node_probe": {
+    "original_node_eval_exit": 133,
+    "allow_jit_only_copy_eval_exit": 0,
+    "copy_path": "/private/tmp/firik-node-jit-1gb5ouj3/node",
+    "installed_app_with_corrected_node_override": "ready; Chromium 156.0.8078.4"
+  },
+  "artifact": {
+    "path": "/Users/alien/Development/evren/build/browser-diagnostics/dist/firik-agent.app",
+    "version": "0.2.48",
+    "executable_sha256": "70a0f641bc84a0eff22a5990ceb68541e2a0c5777c62ea8b45265ff2231873ee",
+    "node_sha256": "26c104713013cbfdcd1dc1cf40390701c09ca2272bd6b62c031abe7858ae138c",
+    "signing": "local ad hoc; nested strict verification passed",
+    "frozen_smoke": "UI, PortAudio device discovery and real headless Chromium ready",
+    "final_preview_preference_correction_included": true
+  },
+  "live_provider_tested": false,
+  "notarized_or_published": false
+}

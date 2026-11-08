@@ -36,7 +36,8 @@ for audio_module, audio_distribution in (("soundfile", "soundfile"), ("webrtcvad
 # The optional Python driver must travel with a browser-enabled build. Chromium
 # is installed explicitly in Playwright's external cache; it is never silently
 # downloaded by the app or assumed to exist inside the executable.
-if find_spec("playwright") is not None:
+browser_driver_included = find_spec("playwright") is not None
+if browser_driver_included:
     browser_datas, browser_binaries, browser_hidden = collect_all("playwright")
     datas += browser_datas + copy_metadata("playwright", recursive=True)
     binaries += browser_binaries
@@ -165,3 +166,8 @@ if is_mac:
             "NSMicrophoneUsageDescription": "Bas-konuş düğmesini basılı tuttuğunuzda veya sesli sohbeti açıkça başlattığınızda konuşmanızı yazıya dönüştürmek için mikrofon kullanılır. Dinlemeyi duraklatabilir veya kapatabilirsiniz.",
         },
     )
+    if browser_driver_included:
+        # BUNDLE's deep signing overwrites Node's vendor JIT entitlement.
+        # Restore it only on that driver, then seal the parent without --deep.
+        from scripts.macos_browser_signing import sign_playwright_node
+        sign_playwright_node(app.name, os.environ.get("FIRIK_CODESIGN_IDENTITY"), required=True)
