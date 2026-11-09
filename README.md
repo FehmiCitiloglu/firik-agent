@@ -2,6 +2,8 @@
 
 Masaüstü uygulaması: `firik-gui`; agent: `firik-agent`; doğrudan API istemcisi: `firik`. Python paketi: `firik_agent`.
 
+**Hibrit desktop önizlemesi:** Electron + React/TypeScript arayüz, mevcut Python Agent'e özel stdio/IPC üzerinden bağlanır. Sohbet akışı, geçmiş, ayarlar, iptal ve MCP seçimi ilk çalışan dilimde hazırdır: `npm run desktop:dev`. [Kurulum, paketleme, doğrulama ve henüz taşınmayan özellikler](docs/HYBRID_DESKTOP_MIGRATION.md), [mimari plan ve browser geçişi](docs/HYBRID_DESKTOP_ARCHITECTURE.md). Varsayılan dağıtılan uygulama bu aşamada Python/CustomTkinter kullanmaya devam eder.
+
 FIRIK'in **LLM Çıkarım API'sini terminalden kullanmak** için CLI ve Python istemcisi. Sohbetin yanında görsel anlama, OCR, ses çözümleme, embeddings, rerank, medya yükleme, kota/kredi ve istek durumu sorgularını destekler. Önceki agent, MCP, skill ve plugin özellikleri `firik-agent` komutuyla kullanılmaya devam eder.
 
 **Kapsam:** [Resmî OpenAPI şemasından](https://evren-llmapi.ssyz.org.tr/openapi.json) kaydedilen **21 genel işlem** (temel sözleşme 22 Eylül, ses sözleşmesi 2 Kasım 2026). `internal` servis uçları kapsam dışıdır. [Uç nokta ve kapsam tablosu](docs/API.md).

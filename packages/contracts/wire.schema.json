@@ -1,0 +1,878 @@
+{
+  "$defs": {
+    "Ack": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "const": true,
+          "default": true,
+          "title": "Ok",
+          "type": "boolean"
+        }
+      },
+      "title": "Ack",
+      "type": "object"
+    },
+    "ApprovalResolveParams": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Approval Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "allowed": {
+          "title": "Allowed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "approval_id",
+        "run_id",
+        "allowed"
+      ],
+      "title": "ApprovalResolveParams",
+      "type": "object"
+    },
+    "ApprovalState": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_id": {
+          "title": "Approval Id",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "conversation_id": {
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "preview": {
+          "title": "Preview",
+          "type": "string"
+        }
+      },
+      "required": [
+        "approval_id",
+        "run_id",
+        "conversation_id",
+        "tool_name",
+        "preview"
+      ],
+      "title": "ApprovalState",
+      "type": "object"
+    },
+    "ChatCreateParams": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Model",
+          "type": "string"
+        }
+      },
+      "title": "ChatCreateParams",
+      "type": "object"
+    },
+    "ChatGetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conversation_id"
+      ],
+      "title": "ChatGetParams",
+      "type": "object"
+    },
+    "ChatMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "user",
+            "assistant"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "pending": {
+          "title": "Pending",
+          "type": "boolean"
+        },
+        "timestamp": {
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "content",
+        "pending",
+        "timestamp"
+      ],
+      "title": "ChatMessage",
+      "type": "object"
+    },
+    "ChatStartParams": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "prompt": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "title": "Prompt",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning Effort"
+        }
+      },
+      "required": [
+        "conversation_id",
+        "prompt",
+        "model"
+      ],
+      "title": "ChatStartParams",
+      "type": "object"
+    },
+    "ChatState": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reasoning Effort"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/$defs/ChatMessage"
+          },
+          "title": "Messages",
+          "type": "array"
+        },
+        "earlier_messages": {
+          "title": "Earlier Messages",
+          "type": "integer"
+        },
+        "active_mcp_servers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Active Mcp Servers",
+          "type": "array"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "conversation_id",
+        "title",
+        "model",
+        "reasoning_effort",
+        "messages",
+        "earlier_messages",
+        "active_mcp_servers",
+        "run"
+      ],
+      "title": "ChatState",
+      "type": "object"
+    },
+    "ChatSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "number"
+        },
+        "updated_at": {
+          "title": "Updated At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "conversation_id",
+        "title",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "ChatSummary",
+      "type": "object"
+    },
+    "CredentialsSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "api_key": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Api Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "api_key"
+      ],
+      "title": "CredentialsSetParams",
+      "type": "object"
+    },
+    "DesktopEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "backend_instance_id": {
+          "title": "Backend Instance Id",
+          "type": "string"
+        },
+        "sequence": {
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "agent",
+            "run",
+            "approval",
+            "approval_closed",
+            "history",
+            "warning"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "conversation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conversation Id"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "event_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Type"
+        },
+        "content": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content"
+        },
+        "tool_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Name"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "approval": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApprovalState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        }
+      },
+      "required": [
+        "backend_instance_id",
+        "sequence",
+        "kind"
+      ],
+      "title": "DesktopEvent",
+      "type": "object"
+    },
+    "EmptyParams": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "EmptyParams",
+      "type": "object"
+    },
+    "HelloParams": {
+      "additionalProperties": false,
+      "properties": {
+        "protocol_version": {
+          "const": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "protocol_version"
+      ],
+      "title": "HelloParams",
+      "type": "object"
+    },
+    "HelloResult": {
+      "additionalProperties": false,
+      "properties": {
+        "protocol_version": {
+          "const": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "backend_instance_id": {
+          "title": "Backend Instance Id",
+          "type": "string"
+        },
+        "app_version": {
+          "title": "App Version",
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "backend_instance_id",
+        "app_version",
+        "capabilities"
+      ],
+      "title": "HelloResult",
+      "type": "object"
+    },
+    "MCPSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "server_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Server Name",
+          "type": "string"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "conversation_id",
+        "server_name",
+        "enabled"
+      ],
+      "title": "MCPSetParams",
+      "type": "object"
+    },
+    "MCPState": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "enabled"
+      ],
+      "title": "MCPState",
+      "type": "object"
+    },
+    "ModelsResult": {
+      "additionalProperties": false,
+      "properties": {
+        "models": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Models",
+          "type": "array"
+        },
+        "effort_levels": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Effort Levels",
+          "type": "object"
+        }
+      },
+      "required": [
+        "models",
+        "effort_levels"
+      ],
+      "title": "ModelsResult",
+      "type": "object"
+    },
+    "RunCancelParams": {
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "title": "RunCancelParams",
+      "type": "object"
+    },
+    "RunState": {
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "generation": {
+          "minimum": 1,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "conversation_id": {
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "running",
+            "completed",
+            "cancelled",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error"
+        }
+      },
+      "required": [
+        "run_id",
+        "generation",
+        "conversation_id",
+        "status",
+        "error"
+      ],
+      "title": "RunState",
+      "type": "object"
+    },
+    "SettingsState": {
+      "additionalProperties": false,
+      "properties": {
+        "base_url": {
+          "title": "Base Url",
+          "type": "string"
+        },
+        "default_model": {
+          "title": "Default Model",
+          "type": "string"
+        },
+        "timeout": {
+          "title": "Timeout",
+          "type": "number"
+        },
+        "has_api_key": {
+          "title": "Has Api Key",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "base_url",
+        "default_model",
+        "timeout",
+        "has_api_key"
+      ],
+      "title": "SettingsState",
+      "type": "object"
+    },
+    "SettingsUpdateParams": {
+      "additionalProperties": false,
+      "properties": {
+        "base_url": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Base Url",
+          "type": "string"
+        },
+        "default_model": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Default Model",
+          "type": "string"
+        },
+        "timeout": {
+          "maximum": 1800,
+          "minimum": 5,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "required": [
+        "base_url",
+        "default_model",
+        "timeout"
+      ],
+      "title": "SettingsUpdateParams",
+      "type": "object"
+    },
+    "Snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "backend_instance_id": {
+          "title": "Backend Instance Id",
+          "type": "string"
+        },
+        "sequence": {
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "settings": {
+          "$ref": "#/$defs/SettingsState"
+        },
+        "conversations": {
+          "items": {
+            "$ref": "#/$defs/ChatSummary"
+          },
+          "title": "Conversations",
+          "type": "array"
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/RunState"
+          },
+          "title": "Runs",
+          "type": "array"
+        },
+        "approvals": {
+          "items": {
+            "$ref": "#/$defs/ApprovalState"
+          },
+          "title": "Approvals",
+          "type": "array"
+        },
+        "models": {
+          "$ref": "#/$defs/ModelsResult"
+        },
+        "mcps": {
+          "items": {
+            "$ref": "#/$defs/MCPState"
+          },
+          "title": "Mcps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "backend_instance_id",
+        "sequence",
+        "settings",
+        "conversations",
+        "runs",
+        "approvals",
+        "models",
+        "mcps"
+      ],
+      "title": "Snapshot",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "HelloParams": {
+      "$ref": "#/$defs/HelloParams"
+    },
+    "HelloResult": {
+      "$ref": "#/$defs/HelloResult"
+    },
+    "EmptyParams": {
+      "$ref": "#/$defs/EmptyParams"
+    },
+    "Snapshot": {
+      "$ref": "#/$defs/Snapshot"
+    },
+    "ChatCreateParams": {
+      "$ref": "#/$defs/ChatCreateParams"
+    },
+    "ChatState": {
+      "$ref": "#/$defs/ChatState"
+    },
+    "ChatGetParams": {
+      "$ref": "#/$defs/ChatGetParams"
+    },
+    "ChatStartParams": {
+      "$ref": "#/$defs/ChatStartParams"
+    },
+    "RunState": {
+      "$ref": "#/$defs/RunState"
+    },
+    "RunCancelParams": {
+      "$ref": "#/$defs/RunCancelParams"
+    },
+    "Ack": {
+      "$ref": "#/$defs/Ack"
+    },
+    "SettingsState": {
+      "$ref": "#/$defs/SettingsState"
+    },
+    "SettingsUpdateParams": {
+      "$ref": "#/$defs/SettingsUpdateParams"
+    },
+    "CredentialsSetParams": {
+      "$ref": "#/$defs/CredentialsSetParams"
+    },
+    "ModelsResult": {
+      "$ref": "#/$defs/ModelsResult"
+    },
+    "MCPSetParams": {
+      "$ref": "#/$defs/MCPSetParams"
+    },
+    "ApprovalResolveParams": {
+      "$ref": "#/$defs/ApprovalResolveParams"
+    },
+    "DesktopEvent": {
+      "$ref": "#/$defs/DesktopEvent"
+    }
+  },
+  "required": [
+    "HelloParams",
+    "HelloResult",
+    "EmptyParams",
+    "Snapshot",
+    "ChatCreateParams",
+    "ChatState",
+    "ChatGetParams",
+    "ChatStartParams",
+    "RunState",
+    "RunCancelParams",
+    "Ack",
+    "SettingsState",
+    "SettingsUpdateParams",
+    "CredentialsSetParams",
+    "ModelsResult",
+    "MCPSetParams",
+    "ApprovalResolveParams",
+    "DesktopEvent"
+  ],
+  "title": "DesktopWireTypes",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://firik.local/desktop/v1",
+  "x-methods": {
+    "system.hello": {
+      "params": "HelloParams",
+      "result": "HelloResult"
+    },
+    "state.snapshot": {
+      "params": "EmptyParams",
+      "result": "Snapshot"
+    },
+    "chat.create": {
+      "params": "ChatCreateParams",
+      "result": "ChatState"
+    },
+    "chat.get": {
+      "params": "ChatGetParams",
+      "result": "ChatState"
+    },
+    "chat.start": {
+      "params": "ChatStartParams",
+      "result": "RunState"
+    },
+    "run.cancel": {
+      "params": "RunCancelParams",
+      "result": "Ack"
+    },
+    "settings.get": {
+      "params": "EmptyParams",
+      "result": "SettingsState"
+    },
+    "settings.update": {
+      "params": "SettingsUpdateParams",
+      "result": "SettingsState"
+    },
+    "credentials.set": {
+      "params": "CredentialsSetParams",
+      "result": "Ack"
+    },
+    "models.list": {
+      "params": "EmptyParams",
+      "result": "ModelsResult"
+    },
+    "mcp.set": {
+      "params": "MCPSetParams",
+      "result": "ChatState"
+    },
+    "approval.resolve": {
+      "params": "ApprovalResolveParams",
+      "result": "Ack"
+    },
+    "system.shutdown": {
+      "params": "EmptyParams",
+      "result": "Ack"
+    }
+  }
+}

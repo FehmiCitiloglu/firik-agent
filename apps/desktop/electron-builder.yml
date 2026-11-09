@@ -1,0 +1,29 @@
+appId: ssyz.firik-agent.hybrid
+productName: Firik Agent Hybrid
+asar: true
+electronDist: ../../node_modules/electron/dist
+npmRebuild: false
+directories:
+  output: ../../dist/hybrid-desktop
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: ../../dist/hybrid-backend/firik-backend
+    to: backend
+    filter:
+      - '**/*'
+  - from: ../../firik_agent/ui/assets/icon.png
+    to: icon.png
+mac:
+  category: public.app-category.productivity
+  identity: null
+  icon: ../../firik_agent/ui/assets/icon.icns
+  extendInfo:
+    NSHighResolutionCapable: true
+win:
+  icon: ../../firik_agent/ui/assets/icon.ico
+  target: nsis
+linux:
+  icon: ../../firik_agent/ui/assets/icon.png
+  target: AppImage

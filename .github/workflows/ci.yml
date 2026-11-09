@@ -50,3 +50,30 @@ jobs:
       - name: Testler (macOS ve Windows)
         if: runner.os != 'Linux'
         run: python scripts/test_desktop.py
+
+  hybrid-desktop:
+    name: Hybrid desktop contracts, build and tests
+    runs-on: ubuntu-latest
+    env:
+      FIRIK_DESKTOP_PYTHON: python
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '26'
+      - name: Install backend dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Install pinned desktop dependencies
+        run: npm exec --yes --package=@yarnpkg/cli-dist@4.18.1 -- yarn install --immutable
+      - name: Build desktop and check shared contracts
+        run: |
+          npm run desktop:build
+          git diff --exit-code -- packages/contracts/wire.schema.json packages/contracts/src/wire.ts
+          npm run desktop:check
+      - name: Test desktop boundary
+        run: |
+          python -m pytest -q tests/test_desktop_rpc.py
+          npm run desktop:test

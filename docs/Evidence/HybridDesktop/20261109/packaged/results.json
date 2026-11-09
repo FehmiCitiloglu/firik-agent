@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "checks": [
+    "sandbox/context isolation; no renderer Node access",
+    "real Python Agent streaming through private stdio and Electron IPC",
+    "settings persist and saved key is never returned to UI",
+    "per-run cancellation and new-chat default model",
+    "same conversation continues successfully after cancellation",
+    "conversation switching keeps independent histories",
+    "app restart restores SQLite conversation and config settings",
+    "bundled backend runs with an intentionally missing system Python path"
+  ],
+  "liveInference": false,
+  "platform": "darwin"
+}

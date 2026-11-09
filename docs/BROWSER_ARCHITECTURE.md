@@ -1,5 +1,12 @@
 # Native Browser architecture
 
+This document describes the implemented Python/CustomTkinter browser. The
+[hybrid desktop architecture plan](HYBRID_DESKTOP_ARCHITECTURE.md) defines the
+proposed Electron/React/TypeScript migration, including the distinction between
+a Playwright page preview and a real embedded WebContentsView. The
+[first hybrid desktop slice](HYBRID_DESKTOP_MIGRATION.md) implements chat and
+the shared backend boundary; the browser remains Python-owned at this stage.
+
 The browser is an optional host tool executor for Firik's existing native agent.
 It does not call a provider, run a second reasoning loop, replace a harness, or
 grant execution authority through MCP selection.

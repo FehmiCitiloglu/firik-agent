@@ -1,0 +1,14 @@
+{
+  "name": "@firik/contracts",
+  "version": "0.2.51",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./desktop-api": "./src/desktop-api.ts"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "zod": "4.6.7"
+  }
+}

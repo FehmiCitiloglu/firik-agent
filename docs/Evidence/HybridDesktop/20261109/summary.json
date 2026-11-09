@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-09",
+  "base_commit": "a0c95be239607648dad3813f0aaaf3e5664a461e",
+  "platform": "macOS arm64",
+  "python_passed": 2898,
+  "python_skipped": 31,
+  "isolated_gui_cases": 267,
+  "python_runner_exit_code": 0,
+  "typescript_tests_passed": 6,
+  "source_smoke_checks": 7,
+  "packaged_smoke_checks": 8,
+  "live_inference": false,
+  "frozen_backend_contains_tk": false,
+  "release_published": false,
+  "artifact_sha256": {
+    "dist/hybrid-desktop/mac-arm64/Firik Agent Hybrid.app/Contents/Resources/app.asar": "791ad836a8dce0381bf4b92db3b8a69ec1f89067544919c71886ee47edfa0c81",
+    "dist/hybrid-desktop/mac-arm64/Firik Agent Hybrid.app/Contents/Resources/backend/firik-backend": "4b64dca83563c8dd9d4d8311154740e4c880c88b51f8b618bec01f4ed4b58155",
+    "packages/contracts/wire.schema.json": "63ce0fb0ec6b63bd35b7332c5cb2912d72a204f77a927734417447e5f0a41302"
+  }
+}
