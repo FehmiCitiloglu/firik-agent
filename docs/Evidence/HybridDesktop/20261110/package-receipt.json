@@ -1,0 +1,21 @@
+{
+  "app_version": "0.2.51",
+  "platform": "Darwin",
+  "architecture": "arm64",
+  "browser": {
+    "driver_version": "1.65.0",
+    "revision": "1254",
+    "browser_version": "158.0.8127.18",
+    "platform": "darwin",
+    "arch": "arm64",
+    "executable": "chromium-1254/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+  },
+  "worker_sha256": "227751e3b1e3f89d0ff2cee234b77df63c968ca867765ce13dc57092e4174b38",
+  "backend_sha256": "dab0e62a8392e6410893640751057cffa8e364e41abe46783dcc14422beeb76c",
+  "app_asar_sha256": "cbd21d8460b4433d6f664ed53e5e69b29312bb9c389549e4b14fcd898c98d38e",
+  "worker_matches_source_build": true,
+  "developer_id_signed": false,
+  "notarized": false,
+  "installed": false,
+  "published": false
+}

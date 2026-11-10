@@ -1,11 +1,12 @@
 import { StrictMode, Suspense, lazy, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, ChevronDown, Command, LoaderCircle, MessageSquare, Plus, RefreshCw,
+import { ArrowUp, ChevronDown, Command, Globe, LoaderCircle, MessageSquare, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Square, Terminal, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatState, DesktopEvent, Snapshot } from '@firik/contracts';
+import { BrowserPanel } from './browser-panel.js';
 import { Button } from './components/ui/button.js';
 import { disconnect, showError, useUI } from './store.js';
 import './style.css';
@@ -24,6 +25,7 @@ function App() {
   const error = useUI(state => state.error);
   const disconnected = useUI(state => state.disconnected);
   const settingsOpen = useUI(state => state.settingsOpen);
+  const browserOpen = useUI(state => state.browserOpen);
   const snapshot = useQuery({ queryKey: ['snapshot'], queryFn: () => window.firik.snapshot({}) });
   const conversation = useQuery({ queryKey: ['chat', active], queryFn: () => window.firik.chat.get({ conversation_id: active! }), enabled: !!active });
   const [search, setSearch] = useState('');
@@ -59,6 +61,7 @@ function App() {
           text_delta: 'Yanıt yazılıyor', tool_call_started: event.tool_name ? `${event.tool_name} çalışıyor` : 'Araç çalışıyor',
           tool_call_result: 'Araç tamamlandı', recovery: 'Bağlantı kurtarılıyor', mcp_connecting: 'Araçlar bağlanıyor' };
         if (event.event_type && labels[event.event_type]) setStage(old => ({ ...old, [sid]: labels[event.event_type!] }));
+        if (event.tool_name?.startsWith('browser_')) useUI.setState({ browserOpen: true });
       }
       if (event.kind === 'run' && event.run) {
         useUI.getState().updateRun(event.run);
@@ -174,6 +177,7 @@ function App() {
     <main className="main-content">
       <header className="topbar"><div className="page-title"><span className="breadcrumb">Çalışma alanı</span><ChevronDown size={12} /><span>{chat?.title ?? 'Yeni sohbet'}</span></div>
         <div className="topbar-right"><span className="local-badge"><span /> Masaüstü</span>
+          <Button variant={browserOpen ? 'outline' : 'ghost'} aria-label="Tarayıcı panelini aç" disabled={!active || disconnected} onClick={() => useUI.setState({ browserOpen: !browserOpen })}><Globe size={15} /> Tarayıcı</Button>
           <Button variant="ghost" aria-label="Model listesini yenile" title="Model listesini yenile" disabled={!data || disconnected} onClick={() => {
             void window.firik.models.list({}).then(models => client.setQueryData<Snapshot>(['snapshot'], old => old ? { ...old, models } : old)).catch(showError);
           }}><RefreshCw size={16} /></Button></div>
@@ -183,7 +187,8 @@ function App() {
       {snapshot.isError && <div className="startup-error" role="alert"><Terminal size={30} /><h2>Çekirdek başlatılamadı</h2><p>{snapshot.error.message}</p><p>Python bağımlılıklarını kontrol edip uygulamayı yeniden başlatın.</p></div>}
       {!data && !snapshot.isError && <div className="loading-state"><LoaderCircle size={24} className="spin" /><p>Çalışma alanınız hazırlanıyor…</p></div>}
 
-      {data && <>
+      {data && <div className="workspace-body">
+        <div className="chat-column">
         <div className="messages-area" ref={scrollArea} onScroll={() => {
           const element = scrollArea.current;
           if (element) following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
@@ -241,8 +246,17 @@ function App() {
           </form>
           <div className="composer-hint"><span>Enter ile gönder <span className="hint-separator">·</span> Shift + Enter ile yeni satır</span><span>Firik Agent <span className="hint-separator">/</span> Hibrit önizleme</span></div>
         </div>
+        </div>
+        {browserOpen && active && (
+          <BrowserPanel
+            key={active}
+            conversationId={active}
+            initialGrant={chat?.browser}
+            onClose={() => useUI.setState({ browserOpen: false })}
+          />
+        )}
         {settingsOpen && <Suspense fallback={null}><SettingsDialog snapshot={data} /></Suspense>}
-      </>}
+      </div>}
     </main>
   </div>;
 }

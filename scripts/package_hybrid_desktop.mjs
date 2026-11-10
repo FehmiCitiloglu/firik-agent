@@ -11,6 +11,7 @@ function run(command, args) {
   } });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
+run(process.execPath, ['scripts/prepare_hybrid_browser.mjs']);
 run(pythonCommand(), ['scripts/build_hybrid_backend.py']);
 run(process.execPath, [require.resolve('electron-builder/cli.js'), '--projectDir', 'apps/desktop',
   '--config', 'electron-builder.yml', '--dir', ...process.argv.slice(2)]);

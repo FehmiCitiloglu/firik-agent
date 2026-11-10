@@ -75,6 +75,662 @@
       "title": "ApprovalState",
       "type": "object"
     },
+    "BrowserConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "headless": {
+          "default": true,
+          "title": "Headless",
+          "type": "boolean"
+        },
+        "strict_network_isolation": {
+          "default": false,
+          "title": "Strict Network Isolation",
+          "type": "boolean"
+        },
+        "max_sessions": {
+          "default": 3,
+          "maximum": 16,
+          "minimum": 1,
+          "title": "Max Sessions",
+          "type": "integer"
+        },
+        "max_tabs_per_session": {
+          "default": 8,
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Max Tabs Per Session",
+          "type": "integer"
+        },
+        "max_actions_per_task": {
+          "default": 100,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Actions Per Task",
+          "type": "integer"
+        },
+        "action_timeout_ms": {
+          "default": 15000,
+          "maximum": 60000,
+          "minimum": 100,
+          "title": "Action Timeout Ms",
+          "type": "integer"
+        },
+        "navigation_timeout_ms": {
+          "default": 30000,
+          "maximum": 120000,
+          "minimum": 100,
+          "title": "Navigation Timeout Ms",
+          "type": "integer"
+        },
+        "launch_timeout_ms": {
+          "default": 30000,
+          "maximum": 120000,
+          "minimum": 1000,
+          "title": "Launch Timeout Ms",
+          "type": "integer"
+        },
+        "max_snapshot_chars": {
+          "default": 16000,
+          "maximum": 64000,
+          "minimum": 100,
+          "title": "Max Snapshot Chars",
+          "type": "integer"
+        },
+        "max_diagnostics": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Max Diagnostics",
+          "type": "integer"
+        },
+        "max_screenshot_bytes": {
+          "default": 8000000,
+          "maximum": 32000000,
+          "minimum": 10000,
+          "title": "Max Screenshot Bytes",
+          "type": "integer"
+        },
+        "approval_ttl_seconds": {
+          "default": 60,
+          "maximum": 300,
+          "minimum": 1,
+          "title": "Approval Ttl Seconds",
+          "type": "integer"
+        },
+        "viewport_width": {
+          "default": 1280,
+          "maximum": 2560,
+          "minimum": 320,
+          "title": "Viewport Width",
+          "type": "integer"
+        },
+        "viewport_height": {
+          "default": 800,
+          "maximum": 1440,
+          "minimum": 240,
+          "title": "Viewport Height",
+          "type": "integer"
+        },
+        "locale": {
+          "default": "en-US",
+          "maxLength": 32,
+          "minLength": 2,
+          "title": "Locale",
+          "type": "string"
+        },
+        "timezone_id": {
+          "default": "UTC",
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Timezone Id",
+          "type": "string"
+        }
+      },
+      "title": "BrowserConfig",
+      "type": "object"
+    },
+    "BrowserConfigureParams": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "origins": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Origins",
+          "type": "array"
+        },
+        "private_origins": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Private Origins",
+          "type": "array"
+        },
+        "screenshots": {
+          "default": false,
+          "title": "Screenshots",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "conversation_id",
+        "enabled"
+      ],
+      "title": "BrowserConfigureParams",
+      "type": "object"
+    },
+    "BrowserExecuteParams": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "identity": {
+          "$ref": "#/$defs/BrowserIdentityWire"
+        },
+        "grant": {
+          "$ref": "#/$defs/BrowserGrantWire"
+        },
+        "operation": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Operation",
+          "type": "string"
+        },
+        "arguments": {
+          "additionalProperties": true,
+          "title": "Arguments",
+          "type": "object"
+        },
+        "approved_fingerprint": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved Fingerprint"
+        },
+        "host_control": {
+          "default": false,
+          "title": "Host Control",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "execution_id",
+        "identity",
+        "grant",
+        "operation"
+      ],
+      "title": "BrowserExecuteParams",
+      "type": "object"
+    },
+    "BrowserExecutorConfigParams": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/BrowserConfig"
+        }
+      },
+      "required": [
+        "config"
+      ],
+      "title": "BrowserExecutorConfigParams",
+      "type": "object"
+    },
+    "BrowserGrantState": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "origins": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Origins",
+          "type": "array"
+        },
+        "private_origins": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Private Origins",
+          "type": "array"
+        },
+        "screenshots": {
+          "default": false,
+          "title": "Screenshots",
+          "type": "boolean"
+        },
+        "public_https": {
+          "default": true,
+          "title": "Public Https",
+          "type": "boolean"
+        }
+      },
+      "title": "BrowserGrantState",
+      "type": "object"
+    },
+    "BrowserGrantWire": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "origins": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Origins",
+          "type": "array"
+        },
+        "allow_private_origins": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allow Private Origins",
+          "type": "array"
+        },
+        "allow_screenshots": {
+          "default": false,
+          "title": "Allow Screenshots",
+          "type": "boolean"
+        },
+        "allow_uploads": {
+          "default": false,
+          "title": "Allow Uploads",
+          "type": "boolean"
+        },
+        "allow_downloads": {
+          "default": false,
+          "title": "Allow Downloads",
+          "type": "boolean"
+        },
+        "allow_public_https": {
+          "default": true,
+          "title": "Allow Public Https",
+          "type": "boolean"
+        }
+      },
+      "title": "BrowserGrantWire",
+      "type": "object"
+    },
+    "BrowserHostResult": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "default": true,
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        }
+      },
+      "title": "BrowserHostResult",
+      "type": "object"
+    },
+    "BrowserIdentityWire": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "project_id": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "run_id": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "actor_id": {
+          "default": "parent",
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "parent_agent_id": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Parent Agent Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conversation_id"
+      ],
+      "title": "BrowserIdentityWire",
+      "type": "object"
+    },
+    "BrowserPrepareParams": {
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/BrowserIdentityWire"
+        },
+        "grant": {
+          "$ref": "#/$defs/BrowserGrantWire"
+        },
+        "operation": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Operation",
+          "type": "string"
+        },
+        "arguments": {
+          "additionalProperties": true,
+          "title": "Arguments",
+          "type": "object"
+        }
+      },
+      "required": [
+        "identity",
+        "grant",
+        "operation"
+      ],
+      "title": "BrowserPrepareParams",
+      "type": "object"
+    },
+    "BrowserPreviewParams": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "width": {
+          "default": 960,
+          "maximum": 1440,
+          "minimum": 240,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "default": 600,
+          "maximum": 900,
+          "minimum": 180,
+          "title": "Height",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "conversation_id"
+      ],
+      "title": "BrowserPreviewParams",
+      "type": "object"
+    },
+    "BrowserRevokeParams": {
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BrowserIdentityWire"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "grant": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BrowserGrantWire"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "close_owner": {
+          "default": false,
+          "title": "Close Owner",
+          "type": "boolean"
+        },
+        "close_all": {
+          "default": false,
+          "title": "Close All",
+          "type": "boolean"
+        }
+      },
+      "title": "BrowserRevokeParams",
+      "type": "object"
+    },
+    "BrowserStatusState": {
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "default": "uninitialized",
+          "title": "State",
+          "type": "string"
+        },
+        "active_tab_id": {
+          "default": "",
+          "title": "Active Tab Id",
+          "type": "string"
+        },
+        "tab_count": {
+          "default": 0,
+          "title": "Tab Count",
+          "type": "integer"
+        },
+        "revision": {
+          "default": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "url": {
+          "default": "",
+          "title": "Url",
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "tabs": {
+          "items": {
+            "$ref": "#/$defs/BrowserTabInfo"
+          },
+          "title": "Tabs",
+          "type": "array"
+        },
+        "grant": {
+          "$ref": "#/$defs/BrowserGrantState"
+        }
+      },
+      "title": "BrowserStatusState",
+      "type": "object"
+    },
+    "BrowserTabInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "tab_id": {
+          "title": "Tab Id",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "title": "Url",
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "active": {
+          "default": false,
+          "title": "Active",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tab_id"
+      ],
+      "title": "BrowserTabInfo",
+      "type": "object"
+    },
+    "BrowserUserCommandParams": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "command": {
+          "enum": [
+            "start",
+            "status",
+            "navigate",
+            "back",
+            "forward",
+            "reload",
+            "list_tabs",
+            "new_tab",
+            "select_tab",
+            "close_tab",
+            "close",
+            "request_handoff",
+            "resume_after_handoff"
+          ],
+          "title": "Command",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "maxLength": 2048,
+          "title": "Url",
+          "type": "string"
+        },
+        "tab_id": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Tab Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conversation_id",
+        "command"
+      ],
+      "title": "BrowserUserCommandParams",
+      "type": "object"
+    },
+    "BrowserUserInputParams": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "click",
+            "wheel",
+            "type",
+            "key"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Y",
+          "type": "number"
+        },
+        "delta_x": {
+          "default": 0.0,
+          "maximum": 2400.0,
+          "minimum": -2400.0,
+          "title": "Delta X",
+          "type": "number"
+        },
+        "delta_y": {
+          "default": 0.0,
+          "maximum": 2400.0,
+          "minimum": -2400.0,
+          "title": "Delta Y",
+          "type": "number"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 512,
+          "title": "Text",
+          "type": "string"
+        },
+        "key": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conversation_id",
+        "kind"
+      ],
+      "title": "BrowserUserInputParams",
+      "type": "object"
+    },
     "ChatCreateParams": {
       "additionalProperties": false,
       "properties": {
@@ -238,6 +894,9 @@
               "type": "null"
             }
           ]
+        },
+        "browser": {
+          "$ref": "#/$defs/BrowserGrantState"
         }
       },
       "required": [
@@ -793,8 +1452,38 @@
     "ApprovalResolveParams": {
       "$ref": "#/$defs/ApprovalResolveParams"
     },
+    "BrowserConfigureParams": {
+      "$ref": "#/$defs/BrowserConfigureParams"
+    },
+    "BrowserStatusState": {
+      "$ref": "#/$defs/BrowserStatusState"
+    },
+    "BrowserUserCommandParams": {
+      "$ref": "#/$defs/BrowserUserCommandParams"
+    },
+    "BrowserUserInputParams": {
+      "$ref": "#/$defs/BrowserUserInputParams"
+    },
+    "BrowserExecutorConfigParams": {
+      "$ref": "#/$defs/BrowserExecutorConfigParams"
+    },
+    "BrowserPrepareParams": {
+      "$ref": "#/$defs/BrowserPrepareParams"
+    },
+    "BrowserHostResult": {
+      "$ref": "#/$defs/BrowserHostResult"
+    },
+    "BrowserExecuteParams": {
+      "$ref": "#/$defs/BrowserExecuteParams"
+    },
+    "BrowserRevokeParams": {
+      "$ref": "#/$defs/BrowserRevokeParams"
+    },
     "DesktopEvent": {
       "$ref": "#/$defs/DesktopEvent"
+    },
+    "BrowserPreviewParams": {
+      "$ref": "#/$defs/BrowserPreviewParams"
     }
   },
   "required": [
@@ -815,7 +1504,17 @@
     "ModelsResult",
     "MCPSetParams",
     "ApprovalResolveParams",
-    "DesktopEvent"
+    "BrowserConfigureParams",
+    "BrowserStatusState",
+    "BrowserUserCommandParams",
+    "BrowserUserInputParams",
+    "BrowserExecutorConfigParams",
+    "BrowserPrepareParams",
+    "BrowserHostResult",
+    "BrowserExecuteParams",
+    "BrowserRevokeParams",
+    "DesktopEvent",
+    "BrowserPreviewParams"
   ],
   "title": "DesktopWireTypes",
   "type": "object",
@@ -870,9 +1569,39 @@
       "params": "ApprovalResolveParams",
       "result": "Ack"
     },
+    "browser.configure": {
+      "params": "BrowserConfigureParams",
+      "result": "BrowserStatusState"
+    },
+    "browser.userCommand": {
+      "params": "BrowserUserCommandParams",
+      "result": "BrowserStatusState"
+    },
+    "browser.userInput": {
+      "params": "BrowserUserInputParams",
+      "result": "BrowserStatusState"
+    },
     "system.shutdown": {
       "params": "EmptyParams",
       "result": "Ack"
+    }
+  },
+  "x-host-methods": {
+    "browser.configureExecutor": {
+      "params": "BrowserExecutorConfigParams",
+      "result": "Ack"
+    },
+    "browser.prepare": {
+      "params": "BrowserPrepareParams",
+      "result": "BrowserHostResult"
+    },
+    "browser.execute": {
+      "params": "BrowserExecuteParams",
+      "result": "BrowserHostResult"
+    },
+    "browser.revoke": {
+      "params": "BrowserRevokeParams",
+      "result": "BrowserHostResult"
     }
   }
 }

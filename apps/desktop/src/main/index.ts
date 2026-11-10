@@ -1,8 +1,20 @@
-import { app, BrowserWindow, ipcMain, Menu, net, protocol, session, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  MessageChannelMain,
+  net,
+  protocol,
+  session,
+  shell,
+  utilityProcess,
+} from 'electron';
 import { existsSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseParams, PROTOCOL_VERSION, type Method } from '@firik/contracts';
+import { parseParams, parsePreviewParams, PROTOCOL_VERSION, type Method } from '@firik/contracts';
+import { BrowserHost } from './browser-host.js';
 import { BackendClient } from './rpc-client.js';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'firik', privileges: {
@@ -15,6 +27,7 @@ const devURL = !app.isPackaged && process.env.FIRIK_DESKTOP_DEV_URL === 'http://
   ? 'http://127.0.0.1:5173' : null;
 let window: BrowserWindow | null = null;
 let backend: BackendClient;
+let browserHost: BrowserHost;
 let ready: Promise<unknown>;
 let closing = false;
 
@@ -32,12 +45,38 @@ function startBackend() {
     : process.env.FIRIK_DESKTOP_PYTHON || (existsSync(localPython) ? localPython : process.platform === 'win32' ? 'python' : 'python3');
   const args = app.isPackaged ? [] : ['-m', 'firik_agent.desktop_rpc'];
   if (process.env.FIRIK_DESKTOP_CONFIG) args.push('--config', process.env.FIRIK_DESKTOP_CONFIG);
+  const workerPath = resolve(__dirname, '../browser-worker/index.cjs').replace('app.asar', 'app.asar.unpacked');
+  browserHost = new BrowserHost({
+    workerPath,
+    browsersPath: app.isPackaged ? join(process.resourcesPath, 'browser') : join(root, 'build/hybrid-browser'),
+    utilityProcess,
+    MessageChannelMain,
+  });
   backend = new BackendClient(command, args, app.isPackaged ? app.getPath('userData') : root,
     { ...process.env, PYTHONUNBUFFERED: '1' });
+  backend.setHostHandler(async (method, params) => {
+    if (method === 'browser.configureExecutor') {
+      return browserHost.configure((params as { config: Parameters<BrowserHost['configure']>[0] }).config);
+    }
+    if (method === 'browser.prepare') {
+      const p = params as Parameters<BrowserHost['handlePrepare']>[0];
+      return { ok: true, payload: await browserHost.handlePrepare(p) };
+    }
+    if (method === 'browser.execute') {
+      const p = params as Parameters<BrowserHost['handleExecute']>[0];
+      return { ok: true, payload: await browserHost.handleExecute(p) };
+    }
+    if (method === 'browser.revoke') {
+      const p = params as Parameters<BrowserHost['handleRevoke']>[0];
+      return { ok: true, payload: await browserHost.handleRevoke(p) };
+    }
+    throw new Error('Desteklenmeyen host yöntemi.');
+  });
   backend.on('event', event => {
     if (window && !window.isDestroyed()) window.webContents.send('firik:event', event);
   });
   backend.on('disconnected', (message: string) => {
+    void browserHost.shutdown();
     if (window && !window.isDestroyed()) window.webContents.send('firik:disconnected', message);
   });
   ready = backend.request('system.hello', { protocol_version: PROTOCOL_VERSION });
@@ -45,10 +84,25 @@ function startBackend() {
 }
 
 function registerIPC() {
-  const methods: Method[] = ['state.snapshot', 'chat.create', 'chat.get', 'chat.start', 'run.cancel',
-    'settings.get', 'settings.update', 'credentials.set', 'models.list', 'mcp.set', 'approval.resolve'];
+  const methods: Method[] = [
+    'state.snapshot',
+    'chat.create',
+    'chat.get',
+    'chat.start',
+    'run.cancel',
+    'settings.get',
+    'settings.update',
+    'credentials.set',
+    'models.list',
+    'mcp.set',
+    'approval.resolve',
+    'browser.configure',
+    'browser.userCommand',
+    'browser.userInput',
+  ];
   for (const method of methods) {
     ipcMain.handle(`firik:${method}`, async (event, input: unknown) => {
+      if (closing) throw new Error('Uygulama kapatılıyor.');
       if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
           || !trustedURL(event.senderFrame.url)) throw new Error('Geçersiz masaüstü istemcisi.');
       const params = parseParams(method, input);
@@ -56,6 +110,14 @@ function registerIPC() {
       return backend.request(method, params);
     });
   }
+  ipcMain.handle('firik:browser.preview', async (event, input: unknown) => {
+    if (closing) return null;
+    if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
+        || !trustedURL(event.senderFrame.url)) throw new Error('Geçersiz masaüstü istemcisi.');
+    const params = parsePreviewParams(input);
+    await ready;
+    return browserHost.captureUserPreview(params.conversation_id);
+  });
   ipcMain.handle('firik:link.open', async (event, input: unknown) => {
     if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
         || !trustedURL(event.senderFrame.url)) throw new Error('Geçersiz istemci.');
@@ -83,7 +145,10 @@ async function createWindow() {
     if (closing) return;
     event.preventDefault();
     closing = true;
-    void backend.shutdown().finally(() => { window?.destroy(); app.quit(); });
+    void backend.shutdown().finally(() => browserHost?.shutdown()).finally(() => {
+      window?.destroy();
+      app.quit();
+    });
   });
   await window.loadURL(devURL ?? 'firik://app/index.html');
 }
@@ -115,5 +180,8 @@ else {
     registerIPC();
     startBackend();
     await createWindow();
-  }).catch(() => { closing = true; void backend?.shutdown().finally(() => app.quit()); });
+  }).catch(() => {
+    closing = true;
+    void Promise.allSettled([backend?.shutdown(), browserHost?.shutdown()]).finally(() => app.quit());
+  });
 }

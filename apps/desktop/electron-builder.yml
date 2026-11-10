@@ -8,11 +8,22 @@ directories:
 files:
   - out/**/*
   - package.json
+asarUnpack:
+  - out/browser-worker/**/*
 extraResources:
   - from: ../../dist/hybrid-backend/firik-backend
     to: backend
     filter:
       - '**/*'
+  - from: ../../node_modules/playwright
+    to: node_modules/playwright
+  - from: ../../node_modules/playwright-core
+    to: node_modules/playwright-core
+  - from: ../../build/hybrid-browser
+    to: browser
+    filter:
+      - '**/*'
+      - '!**/.links/**'
   - from: ../../firik_agent/ui/assets/icon.png
     to: icon.png
 mac:

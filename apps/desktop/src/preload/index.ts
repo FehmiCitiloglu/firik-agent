@@ -20,6 +20,12 @@ const api: DesktopAPI = {
   models: { list: params => ipcRenderer.invoke('firik:models.list', params) },
   mcp: { set: params => ipcRenderer.invoke('firik:mcp.set', params) },
   approvals: { resolve: params => ipcRenderer.invoke('firik:approval.resolve', params) },
+  browser: {
+    configure: params => ipcRenderer.invoke('firik:browser.configure', params),
+    command: params => ipcRenderer.invoke('firik:browser.userCommand', params),
+    input: params => ipcRenderer.invoke('firik:browser.userInput', params),
+    preview: params => ipcRenderer.invoke('firik:browser.preview', params),
+  },
   openLink: url => ipcRenderer.invoke('firik:link.open', url),
   onEvent(callback: (event: DesktopEvent) => void) {
     const listener = (_event: unknown, value: DesktopEvent) => callback(value);

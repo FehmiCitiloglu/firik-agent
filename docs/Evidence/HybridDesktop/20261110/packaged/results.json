@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "checks": [
+    "sandbox/context isolation; no renderer Node access",
+    "real Python Agent streaming through private stdio and Electron IPC",
+    "settings persist and saved key is never returned to UI",
+    "per-run cancellation and new-chat default model",
+    "same conversation continues successfully after cancellation",
+    "conversation switching keeps independent histories",
+    "real TypeScript utilityProcess Chromium navigation and binary preview with explicit loopback origin",
+    "human input and Python native Agent browser_snapshot observe the same TypeScript-owned page",
+    "Python native browser_click waits for exact UI approval and executes once in the TypeScript worker",
+    "tab switching restores the correct active address and page",
+    "preview revocation clears frames and conversation switching does not share browser grants or images",
+    "app restart restores SQLite conversation and config settings",
+    "bundled backend runs with an intentionally missing system Python path",
+    "app restart closes browser resources and does not persist browser authority",
+    "bundled Chromium launches with an intentionally unavailable global browser cache"
+  ],
+  "liveInference": false,
+  "platform": "darwin",
+  "architecture": "arm64",
+  "globalBrowserCacheDisabled": true
+}

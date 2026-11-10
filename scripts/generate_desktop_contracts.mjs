@@ -16,5 +16,7 @@ const types = await compile(schema, 'DesktopWireTypes', {
 });
 const methods = Object.entries(schema['x-methods']).map(([method, pair]) =>
   `  '${method}': { params: ${pair.params}; result: ${pair.result} };`).join('\n');
+const hostMethods = Object.entries(schema['x-host-methods'] || {}).map(([method, pair]) =>
+  `  '${method}': { params: ${pair.params}; result: ${pair.result} };`).join('\n');
 await writeFile(fileURLToPath(new URL('../packages/contracts/src/wire.ts', import.meta.url)),
-  `${types}\nexport interface DesktopMethods {\n${methods}\n}\n`);
+  `${types}\nexport interface DesktopMethods {\n${methods}\n}\n\nexport interface DesktopHostMethods {\n${hostMethods}\n}\n`);

@@ -16,6 +16,8 @@
     "desktop:start": "electron apps/desktop",
     "desktop:check": "tsc --noEmit -p apps/desktop/tsconfig.json",
     "desktop:test": "vitest run --config apps/desktop/vitest.config.ts",
+    "desktop:browser:install": "node scripts/prepare_hybrid_browser.mjs",
+    "desktop:test:browser": "node scripts/test_hybrid_browser.mjs",
     "desktop:smoke": "node scripts/smoke_hybrid_desktop.mjs",
     "desktop:package": "node scripts/package_hybrid_desktop.mjs",
     "contracts:generate": "node scripts/generate_desktop_contracts.mjs"

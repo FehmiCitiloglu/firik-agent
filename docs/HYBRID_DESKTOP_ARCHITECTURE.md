@@ -1,10 +1,11 @@
 # Firik Agent hibrit masaüstü mimarisi
 
-Tarih: 9 Kasım 2026. İncelenen kaynak: `a0c95be`, paket sürümü `0.2.51`.
-Durum: 1–2. aşamanın ilk çalışan dilimi uygulandı: Electron/React sohbeti, GUI
-bağımsız Python servisi ve özel stdio/IPC bağlantısı. TypeScript browser ve diğer
-ekranlar aşağıdaki planın sonraki aşamalarıdır. Güncel çalıştırma/paketleme ve
-sınırlar: [ilk geçiş dokümanı](HYBRID_DESKTOP_MIGRATION.md).
+İlk plan: 9 Kasım 2026 (`a0c95be`, paket sürümü `0.2.51`). Güncelleme: 10 Kasım 2026.
+Durum: Electron/React sohbeti, GUI bağımsız Python servisi ve özel stdio/IPC
+bağlantısına TypeScript Playwright worker ve React browser paneli eklendi.
+Aynı sayfa, onaylı tıklama ve elle kontrol macOS arm64 üzerinde gerçek Chromium
+ile doğrulanıyor. Diğer ekranlar, platform paketleri ve gerçek gömme sonraki
+kapılardır. Güncel kapsam ve kanıtlar: [geçiş dokümanı](HYBRID_DESKTOP_MIGRATION.md).
 
 ## Karar
 
@@ -221,8 +222,8 @@ bağlıdır. Sadece Electron'dan bu sınıfı başlatmak servis ayrıştırması
 İlk prototipte mevcut servisi saran bir adaptör kullanılabilir; hedef bağımlılık
 yönü `UI / RPC → application → core/services` olur.
 
-Klasör düzeni aşağıdadır. `src/browser-worker/` sonraki browser aşamasının hedefidir;
-diğer uygulama/sözleşme/backend klasörleri ilk çalışan dilimde eklendi:
+Klasör düzeni aşağıdadır. `src/browser-worker/` 10 Kasım browser diliminde eklendi;
+diğer uygulama/sözleşme/backend klasörleri ilk çalışan dilimde oluşturuldu:
 
 ```text
 apps/desktop/
@@ -307,11 +308,11 @@ binary imzaları ve noter doğrulaması yeni bundle yapısıyla yeniden sınanı
 
 ## Bu düzenlemenin kapsamı
 
-İlk uygulama dilimi 1–2. aşamalardaki desktop iskeleti, sohbet akışı, geçmiş,
-ayarlar, iptal ve mevcut onay/MCP seçimi bağlantılarını kapsar. Ayrı headless
-backend ve Electron önizleme paketleme betikleri eklendi. Mevcut GUI import
-yolları uyumluluk için ortak `application/` modüllerine yönlenir.
+1, 2 ve 3. aşamalardaki desktop iskeleti, sohbet akışı, geçmiş, ayarlar, iptal,
+mevcut onay/MCP seçimi bağlantıları ve TypeScript Playwright tarayıcı yürütücüsü /
+React tarayıcı panelinin macOS üzerinde doğrulanan dilimi uygulandı. Ayrı headless backend ve Electron önizleme paketleme
+betikleri güncellendi.
 
-TS browser, coding cockpit ve diğer ekranlar henüz taşınmadı. Varsayılan GUI/CLI
-giriş noktaları ve mevcut release hattı korunur. Özellik eşliği ve platform
-doğrulaması tamamlanmadan tam mimari geçişin bittiği iddia edilmez.
+Coding cockpit, Monaco, terminal ve diğer kalan ekranlar sıradaki aşamalardır.
+Varsayılan GUI/CLI giriş noktaları ve mevcut release hattı korunur. Özellik eşliği
+ve platform doğrulaması tamamlanmadan tam mimari geçişin bittiği iddia edilmez.

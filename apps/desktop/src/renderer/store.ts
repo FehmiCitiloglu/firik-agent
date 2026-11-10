@@ -7,6 +7,7 @@ interface UIState {
   runs: Record<string, RunState>;
   approvals: Record<string, ApprovalState>;
   settingsOpen: boolean;
+  browserOpen: boolean;
   error: string | null;
   disconnected: boolean;
   select: (id: string) => void;
@@ -15,7 +16,7 @@ interface UIState {
 }
 
 export const useUI = create<UIState>(set => ({
-  active: null, drafts: {}, runs: {}, approvals: {}, settingsOpen: false, error: null, disconnected: false,
+  active: null, drafts: {}, runs: {}, approvals: {}, settingsOpen: false, browserOpen: false, error: null, disconnected: false,
   select: id => set({ active: id }),
   draft: (id, text) => set(state => ({ drafts: { ...state.drafts, [id]: text } })),
   updateRun: run => set(state => {

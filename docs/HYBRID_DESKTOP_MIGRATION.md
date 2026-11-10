@@ -1,7 +1,8 @@
-# Hibrit desktop: ilk çalışan geçiş
+# Hibrit desktop: aşama 1, 2 ve 3 geçişi
 
-9 Kasım 2026. Kapsam: mimari planın 1–2. aşamalarındaki sohbet ve backend
-bağlantısı. Mevcut native masaüstü ve CLI giriş noktaları korunur.
+Güncelleme: 10 Kasım 2026. Kapsam: mimari planın 1, 2 ve 3. aşamalarındaki sohbet, backend
+bağlantısı ve TypeScript Playwright Browser geçişi. Mevcut native masaüstü ve CLI
+giriş noktaları korunur.
 
 ## Çalışan parçalar
 
@@ -13,8 +14,24 @@ bağlantısı. Mevcut native masaüstü ve CLI giriş noktaları korunur.
   anahtar yazma; UI'ya kayıtlı anahtar değeri döndürülmez.
 - Model kataloğunu yenileme, doğrulanmış reasoning seviyeleri, mevcut MCP'leri
   konuşma başına seçme ve mevcut ajan onay callback'lerini cevaplama.
-- Özel stdio üzerinde sürümlü JSON-RPC; Pydantic'ten üretilen ortak JSON Schema,
-  TypeScript türleri ve IPC'nin iki tarafında çalışma zamanı doğrulaması.
+- Özel stdio üzerinde çift yönlü sürümlü JSON-RPC 2.0 (`browser.configureExecutor`, `browser.prepare`,
+  `browser.execute`, `browser.revoke` Python → Host; `browser.configure`, `browser.userCommand`, `browser.userInput`
+  Host → Python); Pydantic'ten üretilen ortak JSON Schema ve TypeScript sözleşmeleri.
+- **Aşama 3 TypeScript Browser Yürütücüsü ve Host Katmanı**:
+  - `apps/desktop/src/browser-worker/`: Playwright tabanlı izole Node/Electron `utilityProcess` worker;
+    DNS/IP ve private-origin denetimi, canlı grant doğrulama,
+    request interception, redirect takibi, AI modlu ARIA snapshot (native ref/revision),
+    tek kullanımlık `prepare` → `dispatch` onay jetonları, şifre/OTP formlarında zorunlu `request_handoff`,
+    maskelenmiş ekran yakalama.
+  - `apps/desktop/src/main/browser-host.ts`: Worker'ı `MessagePort` üzerinden yöneten Electron Main
+    yöneticisi; execution ID tekilleştirme (`tool_outcome_unknown` / `requires_reconciliation`),
+    oturum yaşam döngüsü ve Renderer'a doğrudan `Uint8Array` binary IPC kanalı (`firik:browser.preview`)
+    sayesinde ham görsel baytları asla JSON-RPC veya event log'larına girmez.
+  - `firik_agent/desktop_rpc/browser_client.py`: Python tarafında `BrowserManager` arayüzünü
+    uyumunu koruyup Main BrowserHost'a delege eden `RemoteBrowserManager`.
+  - `apps/desktop/src/renderer/browser-panel.tsx`: Sekme yönetimi, adres/arama çubuğu,
+    ajandan kontrolü alma/ajana devretme, elle giriş (tıklama, kaydırma, metin, tuş) ve
+    canlı `Blob` görsel önizleme paneli.
 - GUI bağımsız Python uygulama servisi, ayrı PyInstaller backend spec'i ve
   electron-builder önizleme paketleme betiği.
 
@@ -35,6 +52,7 @@ ve mevcut backend bağımlılıkları gerekir. Proje kökünde:
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'
 npm exec --yes --package=@yarnpkg/cli-dist@4.18.1 -- yarn install --immutable
+npm run desktop:browser:install
 npm run desktop:dev
 ```
 
@@ -58,8 +76,15 @@ ortamından çalışır. Backend bağımlılıklarını da içine alan yerel uyg
 npm run desktop:package
 ```
 
+`desktop:browser:install` yalnız proje içindeki `build/hybrid-browser/` dizinine,
+kilitli Playwright sürümünün beklediği Chromium'u kurar. Geliştirmede tarayıcı
+kullanılmayacaksa bu adım atlanabilir; eksik binary hata verir. Uygulama
+başlangıcında indirme veya farklı bir global cache sürümüne geri dönüş yapılmaz.
+
 Paketleme UI'yı, sözleşmeleri ve backend'i sırasıyla yeniden derler; hata alan
-aşamadan sonra devam etmez. Çıktılar `dist/hybrid-desktop/` altındadır. Bu ilk
+aşamadan sonra devam etmez. Eşleşen Chromium, Playwright sürücüsü ve
+`firik-browser-manifest.json` uygulama kaynaklarına eklenir. Paketlenmiş worker
+yalnız bu browser dizinini kullanır. Çıktılar `dist/hybrid-desktop/` altındadır. Bu ilk
 önizleme paketleme ayarı macOS Developer ID imzası/noter işlemi veya yayınlama
 yapmaz. Release pipeline ve `/Applications` altındaki kurulu uygulama
 değiştirilmez. Kurulum paketi/imza ve diğer platform paketleri ayrı geçiş
@@ -99,12 +124,39 @@ backend süreç ağacı, POSIX'te backend'in özel süreç grubu sonlandırılı
 ayrılır; backend/plugin print çıktıları stderr'e yönlendirilir. Ham stderr
 renderer'a taşınmaz; veri dizini kilit hatası sabit bir hata koduyla bildirilir.
 
+## Tarayıcı sınırı
+
+Python'daki model araçları, session/tool filter, approval ve journal akışı yerinde
+kalır. `RemoteBrowserManager`, kanonik `BrowserConfig` limitlerini ve host kimliği /
+güncel grant'i Main'e gönderir; Main özel MessagePort ile utilityProcess worker'a
+iletir. Renderer yalnız doğrulanan kullanıcı komutlarını sunar. Chromium sayfası
+Electron uygulamasının preload'una veya Node erişimine sahip değildir.
+
+Panel, aynı Playwright sayfasının yaklaşık 1,5 saniyede yenilenen PNG önizlemesidir.
+Görüntü arayüze binary IPC ile gider; stdio, transcript ve model girdisine eklenmez.
+Kullanıcı önizlemesinde parola/OTP/kart alanları; model screenshot artifact'larında
+normal metin alanları da maskelenir, child frame'ler dahil edilir. Elle kontrol
+ajan gözlemini/etkileşimini durdurur; host geri verdiğinde yeni gözlem alınır.
+Gerçek `WebContentsView` gömmesi bu dilimde uygulanmadı.
+
+İzin değişikliği bekleyen işlem jetonlarını geçersiz kılar. Sohbet değiştirmek
+frame'leri temizler; izin ve oturumlar diğer sohbete taşınmaz. Backend kopması veya
+worker timeout/exit sonrası yeni işlemler engellenir, belirsiz etkiler otomatik
+tekrarlanmaz. Uygulama yeniden açıldığında tarayıcı yetkisi geri yüklenmez.
+
+Ağ koruması uygulama düzeyinde URL/DNS/IP ve her redirect/istek denetimidir;
+OS egress izolasyonu veya DNS bağlantısının IP'ye sabitlenmesi değildir.
+`strict_network_isolation` isteği desteklenmediği için reddedilir. Upload/download,
+kalıcı kullanıcı profili ve renderer/model üzerinden genel CDP erişimi açılmaz.
+
 ## Doğrulama
 
 ```sh
 npm run desktop:build
 npm run desktop:check
 npm run desktop:test
+npm run desktop:browser:install
+npm run desktop:test:browser
 .venv/bin/python -m pytest -q tests/test_desktop_rpc.py
 npm run desktop:smoke
 ```
@@ -112,13 +164,15 @@ npm run desktop:smoke
 Smoke testi gerçek Electron penceresi, gerçek Python Agent ve loopback üzerinde
 yerel sahte FIRIK sağlayıcısı kullanır. Canlı FIRIK çağrısı veya model kotası
 kullanmaz; kullanıcının geçmiş/ayar/anahtarlarını değiştirmez. Akış, model/ayar,
-iptal, geçmiş, yeniden açılış, temel renderer izolasyonu ve ekran boyutu
-kontrollerini yapar. Görüntüler/sonuçlar `test-results/hybrid-desktop/` altına
+iptal, geçmiş, yeniden açılış, renderer izolasyonu ve ekran boyutuna ek olarak
+gerçek Chromium navigasyonu, elle yazılan sayfanın Python ajanı tarafından
+okunması, tek kullanımlık onaylı tıklama, sekme/izin/sohbet yalıtımını doğrular. Görüntüler/sonuçlar `test-results/hybrid-desktop/` altına
 yazılır. `FIRIK_DESKTOP_EVIDENCE` çıktı dizinini değiştirebilir.
 
 Paketlenmiş uygulamayı aynı testle sınamak için
 `FIRIK_DESKTOP_PACKAGED_EXECUTABLE` paket içindeki yürütülebilir dosyaya ayarlanır.
-Bu modda Python sidecar kurulum paketinin içinden çalışır.
+Bu modda Python sidecar ve Chromium uygulama paketinin içinden çalışır; test
+sistem Python yolunu ve global browser cache yolunu bilerek kullanılamaz yapar.
 
 macOS/Windows eski GUI regresyonları proje standardına göre her Tk testini ayrı
 süreçte çalıştırır:
@@ -128,21 +182,25 @@ süreçte çalıştırır:
 ```
 
 Yeni CI işi ortak şemaları yeniden üretip fark denetler, TypeScript derler ve
-Python/TypeScript sınır testlerini çalıştırır. Yerel doğrulama sonucu, uzak CI
+Python/TypeScript sınır testlerini çalıştırır. Ayrı macOS işi eşleşen Chromium
+kurup `desktop:test:browser` senaryolarını çalıştırır; standart unit işi bunları
+bilinçli atlar. Chromium sandbox'ı test için kapatılmaz. Yerel doğrulama sonucu, uzak CI
 çalışmasının geçtiği anlamına gelmez.
 
-[Yerel doğrulama raporu ve ekran görüntüleri](Evidence/HybridDesktop/20261109/verification.md).
+[10 Kasım browser doğrulaması](Evidence/HybridDesktop/20261110/verification.md).
+[9 Kasım ilk dilimin geçmiş raporu](Evidence/HybridDesktop/20261109/verification.md)
+o günkü test ve paket kapsamını gösterir.
 
-## Sıradaki geçiş
+## Geçişin durumu ve kalan işler
 
-TypeScript browser yürütücüsü, React browser paneli ve gerçek WebContentsView
-bu ilk dilimde uygulanmadı. Browser mevcut Python/Tk sürümünde çalışmaya devam
-eder. Browser geçişi mevcut izin, ref/revision, devralma, gizlilik, ağ politikası
-ve belirsiz yan etki testlerinin TypeScript yürütücüde karşılığını gerektirir.
+Aşama 3'ün worker, Python adaptörü ve önizleme paneli eklendi. Gerçek Chromium ve
+Electron üzerindeki macOS arm64 kapsamı tarihli kanıtla izlenir; bu sonuç diğer
+platformlar, canlı sağlayıcı veya tüm özelliklerin taşındığı anlamına gelmez.
 
-Coding cockpit, Monaco, etkileşimli terminal, MCP sunucusu ekleme/yönetme,
-ses/OCR/rerank/kota ekranları ve improvement paneli de henüz Electron'a taşınmadı.
-Bu özellikler için mevcut native UI kullanılabilir. Electron bütün temel
-akışlarda eşlik sağlamadan varsayılan `firik gui` / `firik-gui` değiştirilmez.
+Coding cockpit, Monaco, mevcut komut çıktıları/Git akışı, MCP sunucusu yönetimi,
+ses/OCR/rerank/kota ve improvement ekranları sonraki aşamadadır. Etkileşimli
+terminal için xterm.js yanında mevcut izinli çalışma sınırına bağlı PTY gerekir.
+Bu ekranlar ve platform/imza kapıları geçilmeden `firik gui` / `firik-gui`
+varsayılanları değişmez. Tk sürümü mevcut ortak Python servisleriyle çalışır.
 
 Katmanlar ve diğer kabul kapıları: [mimari plan](HYBRID_DESKTOP_ARCHITECTURE.md).

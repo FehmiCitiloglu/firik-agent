@@ -221,5 +221,180 @@ def test_stdio_process_handshake_shutdown_and_protocol_stdout(tmp_path):
     assert result.returncode == 0, result.stderr
     responses = [json.loads(row) for row in result.stdout.splitlines()]
     assert responses[0]["result"]["protocol_version"] == 1
-    assert "browser-typescript" not in responses[0]["result"]["capabilities"]
+    assert "browser-typescript" in responses[0]["result"]["capabilities"]
     assert responses[1]["result"] == {"ok": True}
+
+
+def test_browser_configure_and_command_rpc(desktop):
+    server, service, output, _ = desktop
+    sid = create(server, output)
+    chat = request(server, output, "chat.get", {"conversation_id": sid}, request_id=10)
+    assert chat["result"]["browser"]["enabled"] is False
+
+    # Mock host handler responses when server sends reverse RPC to host
+    host_requests = []
+    original_send = server.send
+
+    def intercept_send(msg):
+        original_send(msg)
+        if isinstance(msg, dict) and msg.get("method") == "browser.configureExecutor":
+            host_requests.append(msg)
+            server.handle({"jsonrpc": "2.0", "id": msg["id"], "result": {"ok": True}})
+        if isinstance(msg, dict) and msg.get("method") == "browser.revoke":
+            host_requests.append(msg)
+            # Reply to reverse RPC
+            server.handle({"jsonrpc": "2.0", "id": msg["id"], "result": {"ok": True, "payload": {}}})
+
+    server.send = intercept_send
+
+    # Configure browser
+    server.handle({"jsonrpc": "2.0", "id": 11, "method": "browser.configure",
+                   "params": {"conversation_id": sid, "enabled": True, "origins": ["https://example.com"],
+                              "private_origins": [], "screenshots": True}})
+
+    wait_until(lambda: any(row.get("id") == 11 for row in messages(output)))
+    conf_res = next(row for row in reversed(messages(output)) if row.get("id") == 11)
+    assert conf_res["result"]["grant"]["enabled"] is True
+    assert conf_res["result"]["grant"]["screenshots"] is True
+    assert conf_res["result"]["grant"]["origins"] == ["https://example.com"]
+
+
+def test_reverse_rpc_invalid_result_finishes_future_instead_of_timing_out(desktop):
+    from pydantic import ValidationError
+    server, _, _, _ = desktop
+    def respond(message):
+        server.handle({"jsonrpc": "2.0", "id": message["id"], "result": {"ok": "invalid"}})
+    server.send = respond
+    with pytest.raises(ValidationError):
+        asyncio.run(server.request_host("browser.revoke", {"close_all": True}, timeout=.5))
+    assert server._host_pending == {}
+
+
+def test_remote_browser_forwards_source_limits_and_classifies_lost_action_ack():
+    from types import SimpleNamespace
+    from firik_agent.browser.config import BrowserConfig
+    from firik_agent.browser.models import BrowserError, BrowserGrant, BrowserIdentity
+    from firik_agent.desktop_rpc.browser_client import RemoteBrowserManager
+    calls = []
+    async def host(method, params, **kwargs):
+        calls.append((method, params))
+        if method == "browser.configureExecutor":
+            return {"ok": True}
+        raise TimeoutError("lost acknowledgement")
+    config = BrowserConfig(enabled=True, max_tabs_per_session=1, navigation_timeout_ms=4000)
+    manager = RemoteBrowserManager(SimpleNamespace(request_host=host), config)
+    identity, grant = BrowserIdentity("remote"), BrowserGrant(enabled=True)
+    with pytest.raises(BrowserError) as error:
+        asyncio.run(manager.dispatch(identity, grant, "navigate", {"url": "https://example.com"}))
+    assert error.value.code == "tool_outcome_unknown"
+    assert error.value.dispatched and error.value.requires_reconciliation
+    assert calls[0] == ("browser.configureExecutor", {"config": config.model_dump()})
+    assert len(calls) == 2
+    with pytest.raises(BrowserError) as error:
+        asyncio.run(manager.dispatch(identity, grant, "snapshot", {}))
+    assert not error.value.dispatched and not error.value.requires_reconciliation
+    assert len([c for c in calls if c[0] == "browser.configureExecutor"]) == 1
+    config.strict_network_isolation = True
+    with pytest.raises(BrowserError, match="Strict network isolation"):
+        asyncio.run(manager.dispatch(identity, grant, "start", {}))
+    assert len(calls) == 3
+
+
+def test_config_failure_does_not_claim_an_action_was_dispatched():
+    from types import SimpleNamespace
+    from firik_agent.browser.config import BrowserConfig
+    from firik_agent.browser.models import BrowserGrant, BrowserIdentity
+    from firik_agent.desktop_rpc.browser_client import RemoteBrowserManager
+    calls = []
+    async def host(method, params, **kwargs):
+        calls.append(method)
+        raise TimeoutError("configuration not acknowledged")
+    manager = RemoteBrowserManager(SimpleNamespace(request_host=host), BrowserConfig(enabled=True))
+    with pytest.raises(TimeoutError):
+        asyncio.run(manager.dispatch(BrowserIdentity("remote"), BrowserGrant(enabled=True), "navigate", {}))
+    assert calls == ["browser.configureExecutor"]
+
+
+def test_remote_screenshot_keeps_existing_artifact_ownership_and_hides_path(tmp_path):
+    from types import SimpleNamespace
+    from firik_agent.browser.config import BrowserConfig
+    from firik_agent.browser.models import BrowserError, BrowserGrant, BrowserIdentity
+    from firik_agent.desktop_rpc.browser_client import RemoteBrowserManager
+    screenshot = tmp_path / "worker-shot.png"
+    screenshot.write_bytes(b"\x89PNG-private-fixture")
+    async def host(method, params, **kwargs):
+        if method == "browser.configureExecutor":
+            return {"ok": True}
+        return {"ok": True, "payload": {"artifact_id": "worker-id", "artifact_path": str(screenshot), "model_image": False}}
+    manager = RemoteBrowserManager(SimpleNamespace(request_host=host), BrowserConfig(enabled=True))
+    identity = BrowserIdentity("remote")
+    try:
+        payload = asyncio.run(manager.dispatch(identity, BrowserGrant(enabled=True, allow_screenshots=True), "screenshot", {}))
+        assert "artifact_path" not in payload
+        assert payload["artifact_id"] != "worker-id"
+        assert manager.artifact_path(identity, payload["artifact_id"]).read_bytes() == b"\x89PNG-private-fixture"
+        assert not screenshot.exists()
+        with pytest.raises(BrowserError):
+            manager.artifact_path(BrowserIdentity("other"), payload["artifact_id"])
+        manager.artifacts.remove_owner(identity)
+        with pytest.raises(BrowserError):
+            manager.artifact_path(identity, payload["artifact_id"])
+    finally:
+        manager.artifacts.close()
+
+
+def test_shutdown_keeps_reverse_rpc_reader_alive_until_browser_cleanup_ack():
+    import queue
+    import threading
+    from types import SimpleNamespace
+    frames = queue.Queue()
+    output = io.BytesIO()
+    cleanup = []
+    def stop():
+        result = asyncio.run(server.request_host("browser.revoke", {"close_all": True}, timeout=1))
+        cleanup.append(result["ok"])
+    service = SimpleNamespace(get_key=lambda: "", shutdown=stop,
+                              projects=SimpleNamespace(scheduler=SimpleNamespace(stop=lambda: None)))
+    server = DesktopServer(service, output)
+    class Input:
+        def readline(self, _limit):
+            return frames.get(timeout=3)
+    def send_frame(message):
+        frames.put((json.dumps(message) + "\n").encode())
+    thread = threading.Thread(target=server.serve, args=(Input(),), daemon=True)
+    thread.start()
+    try:
+        send_frame({"jsonrpc": "2.0", "id": 1, "method": "system.shutdown", "params": {}})
+        wait_until(lambda: any(row.get("method") == "browser.revoke" for row in messages(output)))
+        reverse = next(row for row in messages(output) if row.get("method") == "browser.revoke")
+        assert not any(row.get("id") == 1 for row in messages(output))
+        send_frame({"jsonrpc": "2.0", "id": reverse["id"], "result": {"ok": True}})
+        wait_until(lambda: any(row.get("id") == 1 for row in messages(output)))
+        assert cleanup == [True]
+    finally:
+        frames.put(b"")
+        thread.join(timeout=3)
+    assert not thread.is_alive()
+
+
+def test_remote_browser_retains_owner_when_close_ack_is_lost():
+    from types import SimpleNamespace
+    from firik_agent.browser.config import BrowserConfig
+    from firik_agent.browser.models import BrowserError, BrowserGrant, BrowserIdentity
+    from firik_agent.desktop_rpc.browser_client import RemoteBrowserManager
+    fail_close = True
+    async def host(method, params, **kwargs):
+        if method == "browser.revoke" and fail_close:
+            raise TimeoutError("close acknowledgement lost")
+        return {"ok": True}
+    manager = RemoteBrowserManager(SimpleNamespace(request_host=host, _closing=False), BrowserConfig(enabled=True))
+    identity = BrowserIdentity("retained")
+    manager.bind_grant_provider(identity, lambda: BrowserGrant(enabled=True))
+    manager._update_cache(identity, "start", {"state": "ready"})
+    with pytest.raises(BrowserError) as error:
+        asyncio.run(manager.close_owner(identity))
+    assert error.value.code == "cleanup_unresolved" and error.value.requires_reconciliation
+    assert manager.sessions(identity)[0]["state"] == "failed"
+    fail_close = False
+    asyncio.run(manager.close_owner(identity))
+    assert manager.sessions(identity) == []

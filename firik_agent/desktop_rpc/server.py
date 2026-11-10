@@ -5,6 +5,7 @@ on the network. Model arguments never enter this host-control method table.
 """
 from __future__ import annotations
 
+import asyncio
 from concurrent.futures import Future
 from datetime import datetime, timezone
 import json
@@ -17,10 +18,27 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from firik_agent.browser.models import BrowserError, BrowserIdentity
 from firik_agent.desktop_rpc import MAX_FRAME_BYTES, PROTOCOL_VERSION
+from firik_agent.desktop_rpc.browser_client import RemoteBrowserManager
 from firik_agent.desktop_rpc.models import (
-    Ack, ApprovalState, ChatMessage, ChatState, ChatSummary, DesktopEvent,
-    HelloResult, METHODS, MCPState, ModelsResult, RunState, SettingsState, Snapshot,
+    Ack,
+    ApprovalState,
+    BrowserGrantState,
+    BrowserStatusState,
+    BrowserTabInfo,
+    ChatMessage,
+    ChatState,
+    ChatSummary,
+    DesktopEvent,
+    HOST_METHODS,
+    HelloResult,
+    METHODS,
+    MCPState,
+    ModelsResult,
+    RunState,
+    SettingsState,
+    Snapshot,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,6 +57,10 @@ class DesktopServer:
         self._lock = threading.RLock()
         self._write_lock = threading.Lock()
         self._closing = False
+        self._input_closed = False
+        self._shutting_down = False
+        self._service_stopped = False
+        self._shutdown_thread: threading.Thread | None = None
         self._hello = False
         self._runs: dict[str, RunState] = {}
         self._run_generation = 0
@@ -49,7 +71,35 @@ class DesktopServer:
         self._owned_chats: set[str] = set()
         self._model_refresh = False
         self._known_key = ""
+        self._host_pending: dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Future, Any]] = {}
+        if hasattr(self.service, "browser_manager"):
+            cfg = getattr(self.service.browser_manager, "config", None)
+            self.service.browser_manager = RemoteBrowserManager(self, cfg)
         self._refresh_key()
+
+    async def request_host(self, method: str, params: dict[str, Any], timeout: float = 45.0) -> dict[str, Any]:
+        if method not in HOST_METHODS:
+            raise RPCError(-32601, "Host yöntemi bulunamadı.")
+        params_type, result_type = HOST_METHODS[method]
+        checked_params = params_type.model_validate(params)
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future = loop.create_future()
+        req_id = f"host_{uuid4().hex}"
+        with self._lock:
+            if self._closing or self._input_closed:
+                raise BrowserError("cancelled", "Desktop RPC sunucusu kapatılıyor.")
+            self._host_pending[req_id] = (loop, fut, result_type)
+        try:
+            self.send({
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "method": method,
+                "params": checked_params.model_dump(),
+            })
+            return await asyncio.wait_for(fut, timeout=timeout)
+        finally:
+            with self._lock:
+                self._host_pending.pop(req_id, None)
 
     def _refresh_key(self) -> None:
         try:
@@ -129,6 +179,50 @@ class DesktopServer:
         return next((run for run in self._runs.values()
                      if run.conversation_id == sid and run.status == "running"), None)
 
+    def _browser_grant_state(self, sid: str) -> BrowserGrantState:
+        raw = self.service.session_browser_settings(sid)
+        return BrowserGrantState(
+            enabled=bool(raw.get("enabled", False)),
+            origins=list(raw.get("origins", [])),
+            private_origins=list(raw.get("private_origins", [])),
+            screenshots=bool(raw.get("screenshots", False)),
+            public_https=bool(raw.get("public_https", True)),
+        )
+
+    def _browser_status_state(self, sid: str, raw: dict[str, Any] | None = None) -> BrowserStatusState:
+        payload = dict(raw or {})
+        cached = self.service.browser_manager.sessions(BrowserIdentity(sid))
+        base = dict(cached[0]) if cached else {}
+        merged = {**base, **payload}
+        raw_tabs = merged.get("tabs") if isinstance(merged.get("tabs"), list) else []
+        tabs = [
+            BrowserTabInfo(
+                tab_id=str(tab.get("tab_id", "")),
+                url=str(tab.get("url", "")),
+                title=str(tab.get("title", "")),
+                active=bool(tab.get("active", False)),
+            )
+            for tab in raw_tabs
+            if isinstance(tab, dict) and tab.get("tab_id")
+        ]
+        active_tab = next((t for t in tabs if t.active), tabs[0] if tabs else None)
+        url = str(merged.get("url") or (active_tab.url if active_tab else ""))
+        title = str(merged.get("title") or (active_tab.title if active_tab else ""))
+        state = str(
+            merged.get("state")
+            or ("ready" if (tabs or url or merged.get("active_tab_id")) else "uninitialized")
+        )
+        return BrowserStatusState(
+            state=state,
+            active_tab_id=str(merged.get("active_tab_id") or (active_tab.tab_id if active_tab else "")),
+            tab_count=int(merged.get("tab_count") if "tab_count" in merged else len(tabs)),
+            revision=int(merged.get("revision") or 0),
+            url=url,
+            title=title,
+            tabs=tabs,
+            grant=self._browser_grant_state(sid),
+        )
+
     def chat(self, sid: str) -> ChatState:
         with self._lock:
             session = self._session(sid)
@@ -143,7 +237,9 @@ class DesktopServer:
             return ChatState(conversation_id=sid, title=session.title, model=session.model,
                              reasoning_effort=session.reasoning_effort, messages=messages,
                              earlier_messages=max(0, len(visible) - len(messages)),
-                             active_mcp_servers=sorted(session.active_mcp_servers), run=self._active_run(sid))
+                             active_mcp_servers=sorted(session.active_mcp_servers),
+                             run=self._active_run(sid),
+                             browser=self._browser_grant_state(sid))
 
     @staticmethod
     def _display_content(value) -> str:
@@ -281,6 +377,110 @@ class DesktopServer:
             self.emit("history")
             return run.model_copy()
 
+    def _handle_browser_async(self, request_id: int | str, method: str, params: Any, result_type: Any) -> None:
+        with self._lock:
+            if not self._hello:
+                raise RPCError(-32000, "Önce protokol sürümü doğrulanmalıdır.")
+            session = self._session(params.conversation_id)
+            sid = session.session_id
+            if method == "browser.configure":
+                try:
+                    self.service.set_session_browser(
+                        sid,
+                        enabled=params.enabled,
+                        origins=params.origins,
+                        private_origins=params.private_origins,
+                        screenshots=params.screenshots,
+                    )
+                except ValueError as exc:
+                    raise RPCError(-32602, self._clean(str(exc), 512)) from None
+
+        async def run_browser_op() -> BrowserStatusState:
+            adapter = self.service._owned_browser_adapter(sid)
+            grant = adapter.grant_provider()
+            if method == "browser.configure":
+                if hasattr(self.service.browser_manager, "sync_grant"):
+                    await self.service.browser_manager.sync_grant(adapter.identity, grant)
+                if not grant.enabled:
+                    return self._browser_status_state(sid, {"state": "uninitialized", "tab_count": 0, "tabs": []})
+                if self.service.browser_manager.sessions(adapter.identity):
+                    status = await self.service.browser_manager.host_command(adapter.identity, grant, "status", {})
+                    return self._browser_status_state(sid, status)
+                return self._browser_status_state(sid, {"state": "uninitialized", "tab_count": 0, "tabs": []})
+
+            if method == "browser.userCommand":
+                cmd = params.command
+                if cmd == "resume_after_handoff":
+                    raw_res = await self.service.browser_manager.resume(adapter.identity, grant)
+                    status = await self.service.browser_manager.host_command(adapter.identity, grant, "status", {})
+                    return self._browser_status_state(sid, {**raw_res, **status})
+                args: dict[str, Any] = {}
+                if params.url:
+                    args["url"] = params.url
+                if params.tab_id:
+                    args["tab_id"] = params.tab_id
+                if cmd in {"navigate", "new_tab"} and not self.service.browser_manager.sessions(adapter.identity):
+                    await self.service.browser_manager.host_command(adapter.identity, grant, "start", {})
+                raw_res = await self.service.browser_manager.host_command(adapter.identity, grant, cmd, args)
+                if cmd not in {"status", "close", "request_handoff"} and self.service.browser_manager.sessions(adapter.identity):
+                    status = await self.service.browser_manager.host_command(adapter.identity, grant, "status", {})
+                    raw_res = {**raw_res, **status}
+                return self._browser_status_state(sid, raw_res)
+
+            if method == "browser.userInput":
+                # Translate the renderer's wire shape into the worker's exact
+                # host-input contract; unknown fields are rejected there.
+                if params.kind == "click":
+                    worker_kind = "click"
+                    input_args: dict[str, Any] = {"x_ratio": params.x, "y_ratio": params.y}
+                elif params.kind == "wheel":
+                    worker_kind = "scroll"
+                    input_args = {
+                        "delta_x": max(-2000, min(2000, int(params.delta_x))),
+                        "delta_y": max(-2000, min(2000, int(params.delta_y))),
+                    }
+                elif params.kind == "type":
+                    worker_kind = "text"
+                    input_args = {"text": params.text}
+                else:
+                    worker_kind = "key"
+                    input_args = {"key": params.key}
+                raw_res = await self.service.browser_manager.host_input(
+                    adapter.identity,
+                    grant,
+                    worker_kind,
+                    input_args,
+                )
+                return self._browser_status_state(sid, raw_res)
+
+            raise RPCError(-32601, "Yöntem bulunamadı.")
+
+        def on_done(result: BrowserStatusState) -> None:
+            checked = result_type.model_validate(result)
+            self.send({"jsonrpc": "2.0", "id": request_id, "result": checked.model_dump()})
+
+        def on_error(error: BaseException) -> None:
+            if isinstance(error, RPCError):
+                self.send({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": error.code, "message": error.message},
+                })
+            elif isinstance(error, (BrowserError, PermissionError, ValueError)):
+                self.send({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32001, "message": self._clean(str(error), 512)},
+                })
+            else:
+                self.send({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32001, "message": "Tarayıcı işlemi tamamlanamadı."},
+                })
+
+        self.service.runtime.submit(run_browser_op(), on_done=on_done, on_error=on_error)
+
     def dispatch(self, method: str, params):
         with self._lock:
             if method == "system.hello":
@@ -289,7 +489,7 @@ class DesktopServer:
                 return HelloResult(protocol_version=PROTOCOL_VERSION, backend_instance_id=self.instance_id,
                                    app_version=version("firik-agent"),
                                    capabilities=["chat", "history", "settings", "streaming", "cancel",
-                                                 "mcp-selection", "approvals"])
+                                                 "mcp-selection", "approvals", "browser-typescript"])
             if not self._hello:
                 raise RPCError(-32000, "Önce protokol sürümü doğrulanmalıdır.")
             if method == "state.snapshot":
@@ -351,9 +551,79 @@ class DesktopServer:
                 return Ack()
             raise RPCError(-32601, "Yöntem bulunamadı.")
 
+    def _handle_host_response(self, message: dict[str, Any]) -> bool:
+        req_id = message.get("id")
+        if not isinstance(req_id, str):
+            return True
+        with self._lock:
+            pending = self._host_pending.pop(req_id, None)
+        if pending is None:
+            return True
+        loop, fut, result_type = pending
+        if "error" in message and isinstance(message["error"], dict):
+            err = message["error"]
+            data = err.get("data") if isinstance(err.get("data"), dict) else {}
+            browser_err = BrowserError(
+                str(data.get("code") or "browser_operation_failed"),
+                str(err.get("message") or "Browser operation failed."),
+                dispatched=bool(data.get("dispatched")),
+                requires_reconciliation=bool(data.get("requires_reconciliation")),
+            )
+            loop.call_soon_threadsafe(
+                lambda: None if fut.done() else fut.set_exception(browser_err)
+            )
+        else:
+            try:
+                checked = result_type.model_validate(message.get("result", {})).model_dump()
+                loop.call_soon_threadsafe(
+                    lambda: None if fut.done() else fut.set_result(checked)
+                )
+            except Exception as exc:
+                loop.call_soon_threadsafe(
+                    lambda error=exc: None if fut.done() else fut.set_exception(error)
+                )
+        return True
+
+    def _begin_shutdown(self, request_id) -> None:
+        """Keep reading reverse-RPC replies while synchronous cleanup runs."""
+        if self._shutting_down:
+            raise RPCError(-32000, "Desktop backend kapatılıyor.")
+        self._shutting_down = True
+
+        def stop():
+            try:
+                self.service.shutdown()
+                if hasattr(self.service.projects, "scheduler"):
+                    self.service.projects.scheduler.stop()
+            finally:
+                self._service_stopped = True
+                self.send({"jsonrpc": "2.0", "id": request_id, "result": {"ok": True}})
+                self._closing = True
+
+        self._shutdown_thread = threading.Thread(target=stop, name="FirikDesktopShutdown", daemon=True)
+        self._shutdown_thread.start()
+
+    def _fail_host_pending(self) -> None:
+        with self._lock:
+            for loop, fut, _ in list(self._host_pending.values()):
+                if not loop.is_closed():
+                    loop.call_soon_threadsafe(
+                        lambda f=fut: None if f.done() else f.set_exception(
+                            BrowserError("cancelled", "Desktop RPC bağlantısı kapatıldı.")
+                        )
+                    )
+            self._host_pending.clear()
+
     def handle(self, message: Any) -> bool:
         request_id = None
         try:
+            if (
+                isinstance(message, dict)
+                and message.get("jsonrpc") == "2.0"
+                and "method" not in message
+                and ("result" in message or "error" in message)
+            ):
+                return self._handle_host_response(message)
             if (not isinstance(message, dict) or message.get("jsonrpc") != "2.0"
                     or set(message) - {"jsonrpc", "id", "method", "params"}):
                 raise RPCError(-32600, "Geçersiz RPC isteği.")
@@ -362,6 +632,8 @@ class DesktopServer:
                     (isinstance(request_id, str) and len(request_id) > 256)):
                 request_id = None
                 raise RPCError(-32600, "İstek kimliği gereklidir.")
+            if self._shutting_down:
+                raise RPCError(-32000, "Desktop backend kapatılıyor.")
             method = message.get("method")
             if not isinstance(method, str) or method not in METHODS:
                 raise RPCError(-32601, "Yöntem bulunamadı.")
@@ -371,6 +643,12 @@ class DesktopServer:
             except ValidationError:
                 # Pydantic errors contain the supplied values, possibly a key.
                 raise RPCError(-32602, "İstek alanları doğrulanamadı.") from None
+            if method == "system.shutdown":
+                self._begin_shutdown(request_id)
+                return True
+            if method in {"browser.configure", "browser.userCommand", "browser.userInput"}:
+                self._handle_browser_async(request_id, method, params, result_type)
+                return True
             if method == "models.list":
                 if not self._hello:
                     raise RPCError(-32000, "Önce protokol sürümü doğrulanmalıdır.")
@@ -407,6 +685,10 @@ class DesktopServer:
             while not self._closing:
                 frame = source.readline(MAX_FRAME_BYTES + 1)
                 if not frame:
+                    self._input_closed = True
+                    self._fail_host_pending()
+                    if self._shutdown_thread:
+                        self._shutdown_thread.join(timeout=40)
                     break
                 if len(frame) > MAX_FRAME_BYTES or not frame.endswith(b"\n"):
                     self.send({"jsonrpc": "2.0", "id": None,
@@ -423,10 +705,14 @@ class DesktopServer:
         finally:
             with self._lock:
                 self._closing = True
+                self._fail_host_pending()
                 for run in list(self._runs.values()):
                     if run.status == "running":
                         self._cancel_requested.add(run.run_id)
                         self._close_approvals(run.run_id)
-            self.service.shutdown()
-            if hasattr(self.service.projects, "scheduler"):
-                self.service.projects.scheduler.stop()
+            if self._shutdown_thread:
+                self._shutdown_thread.join(timeout=40)
+            elif not self._service_stopped:
+                self.service.shutdown()
+                if hasattr(self.service.projects, "scheduler"):
+                    self.service.projects.scheduler.stop()

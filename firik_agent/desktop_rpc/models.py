@@ -1,10 +1,11 @@
 """Wire models. Exported JSON Schema is also used by the TypeScript client."""
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from firik_agent.browser.config import BrowserConfig
 
 
 class WireModel(BaseModel):
@@ -81,6 +82,125 @@ class MCPSetParams(ChatGetParams):
     enabled: bool
 
 
+class BrowserGrantState(WireModel):
+    enabled: bool = False
+    origins: list[str] = Field(default_factory=list)
+    private_origins: list[str] = Field(default_factory=list)
+    screenshots: bool = False
+    public_https: bool = True
+
+
+class BrowserTabInfo(WireModel):
+    tab_id: str
+    url: str = ""
+    title: str = ""
+    active: bool = False
+
+
+class BrowserStatusState(WireModel):
+    state: str = "uninitialized"
+    active_tab_id: str = ""
+    tab_count: int = 0
+    revision: int = 0
+    url: str = ""
+    title: str = ""
+    tabs: list[BrowserTabInfo] = Field(default_factory=list)
+    grant: BrowserGrantState = Field(default_factory=BrowserGrantState)
+
+
+class BrowserConfigureParams(ChatGetParams):
+    enabled: bool
+    origins: list[str] = Field(default_factory=list)
+    private_origins: list[str] = Field(default_factory=list)
+    screenshots: bool = False
+
+
+class BrowserUserCommandParams(ChatGetParams):
+    command: Literal[
+        "start",
+        "status",
+        "navigate",
+        "back",
+        "forward",
+        "reload",
+        "list_tabs",
+        "new_tab",
+        "select_tab",
+        "close_tab",
+        "close",
+        "request_handoff",
+        "resume_after_handoff",
+    ]
+    url: str = Field(default="", max_length=2048)
+    tab_id: str = Field(default="", max_length=64)
+
+
+class BrowserUserInputParams(ChatGetParams):
+    kind: Literal["click", "wheel", "type", "key"]
+    x: float = Field(default=0.0, ge=0.0, le=1.0)
+    y: float = Field(default=0.0, ge=0.0, le=1.0)
+    delta_x: float = Field(default=0.0, ge=-2400.0, le=2400.0)
+    delta_y: float = Field(default=0.0, ge=-2400.0, le=2400.0)
+    text: str = Field(default="", max_length=512)
+    key: str = Field(default="", max_length=64)
+
+
+class BrowserPreviewParams(ChatGetParams):
+    width: int = Field(default=960, ge=240, le=1440)
+    height: int = Field(default=600, ge=180, le=900)
+
+
+class BrowserIdentityWire(WireModel):
+    conversation_id: str = Field(min_length=1, max_length=256)
+    project_id: str = Field(default="", max_length=256)
+    run_id: str = Field(default="", max_length=256)
+    actor_id: str = Field(default="parent", min_length=1, max_length=256)
+    parent_agent_id: str = Field(default="", max_length=256)
+
+
+class BrowserGrantWire(WireModel):
+    enabled: bool = False
+    origins: list[str] = Field(default_factory=list)
+    allow_private_origins: list[str] = Field(default_factory=list)
+    allow_screenshots: bool = False
+    allow_uploads: bool = False
+    allow_downloads: bool = False
+    allow_public_https: bool = True
+
+
+class BrowserPrepareParams(WireModel):
+    identity: BrowserIdentityWire
+    grant: BrowserGrantWire
+    operation: str = Field(min_length=1, max_length=128)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class BrowserExecuteParams(WireModel):
+    execution_id: str = Field(min_length=1, max_length=128)
+    identity: BrowserIdentityWire
+    grant: BrowserGrantWire
+    operation: str = Field(min_length=1, max_length=128)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    approved_fingerprint: str | None = Field(default=None, max_length=256)
+    host_control: bool = False
+
+
+class BrowserRevokeParams(WireModel):
+    identity: BrowserIdentityWire | None = None
+    grant: BrowserGrantWire | None = None
+    close_owner: bool = False
+    close_all: bool = False
+
+
+class BrowserHostResult(WireModel):
+    ok: bool = True
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class BrowserExecutorConfigParams(WireModel):
+    config: BrowserConfig
+
+
 class SettingsState(WireModel):
     base_url: str
     default_model: str
@@ -135,6 +255,7 @@ class ChatState(WireModel):
     earlier_messages: int
     active_mcp_servers: list[str]
     run: RunState | None
+    browser: BrowserGrantState = Field(default_factory=BrowserGrantState)
 
 
 class ModelsResult(WireModel):
@@ -190,5 +311,15 @@ METHODS: dict[str, tuple[type[WireModel], type[WireModel]]] = {
     "models.list": (EmptyParams, ModelsResult),
     "mcp.set": (MCPSetParams, ChatState),
     "approval.resolve": (ApprovalResolveParams, Ack),
+    "browser.configure": (BrowserConfigureParams, BrowserStatusState),
+    "browser.userCommand": (BrowserUserCommandParams, BrowserStatusState),
+    "browser.userInput": (BrowserUserInputParams, BrowserStatusState),
     "system.shutdown": (EmptyParams, Ack),
+}
+
+HOST_METHODS: dict[str, tuple[type[WireModel], type[WireModel]]] = {
+    "browser.configureExecutor": (BrowserExecutorConfigParams, Ack),
+    "browser.prepare": (BrowserPrepareParams, BrowserHostResult),
+    "browser.execute": (BrowserExecuteParams, BrowserHostResult),
+    "browser.revoke": (BrowserRevokeParams, BrowserHostResult),
 }

@@ -7,17 +7,33 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pydantic import create_model
-from firik_agent.desktop_rpc.models import METHODS, DesktopEvent
+from firik_agent.desktop_rpc.models import (
+    HOST_METHODS,
+    METHODS,
+    BrowserPreviewParams,
+    DesktopEvent,
+)
 
 
 def export() -> dict:
-    models = {model.__name__: (model, ...) for pair in METHODS.values() for model in pair}
+    models = {
+        model.__name__: (model, ...)
+        for pair in [*METHODS.values(), *HOST_METHODS.values()]
+        for model in pair
+    }
     models["DesktopEvent"] = (DesktopEvent, ...)
+    models["BrowserPreviewParams"] = (BrowserPreviewParams, ...)
     schema = create_model("DesktopWireTypes", **models).model_json_schema()
     schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
     schema["$id"] = "https://firik.local/desktop/v1"
-    schema["x-methods"] = {name: {"params": pair[0].__name__, "result": pair[1].__name__}
-                           for name, pair in METHODS.items()}
+    schema["x-methods"] = {
+        name: {"params": pair[0].__name__, "result": pair[1].__name__}
+        for name, pair in METHODS.items()
+    }
+    schema["x-host-methods"] = {
+        name: {"params": pair[0].__name__, "result": pair[1].__name__}
+        for name, pair in HOST_METHODS.items()
+    }
     return schema
 
 
