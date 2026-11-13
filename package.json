@@ -1,6 +1,6 @@
 {
   "name": "firik-agent-workspace",
-  "version": "0.2.51",
+  "version": "0.2.52",
   "private": true,
   "packageManager": "yarn@4.18.1",
   "engines": {

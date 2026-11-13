@@ -3,7 +3,7 @@
   "productName": "Firik Agent Hybrid",
   "description": "Firik Agent hybrid desktop preview with a shared Python agent backend",
   "author": "Firik Agent contributors",
-  "version": "0.2.51",
+  "version": "0.2.52",
   "private": true,
   "type": "module",
   "main": "out/main/index.cjs",

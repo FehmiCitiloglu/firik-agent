@@ -286,7 +286,7 @@ def test_install_hybrid_desktop_linux_creates_desktop_entry_with_icon(home, monk
     assert installed_exe.read_bytes() == b"linux-hybrid"
     desktop_text = launcher.read_text()
     assert "Name=Firik Agent Hybrid (Source Install)" in desktop_text
-    assert f'Exec="{installed_exe}"' in desktop_text
+    assert f'Exec="{installer._escape_desktop_value(installed_exe)}"' in desktop_text
     assert f"Icon={installed_exe.parent / 'resources/icon.png'}" in desktop_text
     assert shlex.quote(str(installed_exe)) in (bin_dir / "firik-hybrid").read_text()
 

@@ -1,3 +1,9 @@
+## v0.2.52 değişiklikleri
+
+- TypeScript/React ve Electron tabanlı hibrit masaüstü arayüzü, paylaşılan Python JSON-RPC arka ucu (`stdio`) ve entegre TypeScript tarayıcı desteği eklendi.
+- Klasik Python/Tk arayüzünü (`make install` / `firik-gui`) korurken hibrit masaüstünü derleyip kuran `make install-hybrid`, `make dev-hybrid`, `make ui-hybrid`, `make test-hybrid`, `firik-hybrid` ve `install.py --hybrid` / `--desktop` seçenekleri eklendi.
+- GitHub Actions CI ve Release akışlarına Linux (`linux-x86_64`), macOS (`macos-arm64`, `macos-x64`) ve Windows (`windows-x64`) hibrit masaüstü derleme/paketleme işleri ve sürüm doğrulama kontrolleri eklendi.
+
 ## v0.2.51 değişiklikleri
 
 - Gömülü tarayıcıya Chrome benzeri yatay sekme çubuğu eklendi: etkin sekme vurgusu, her sekmede kapatma düğmesi, sabit yeni sekme düğmesi ve dar panellerde yatay kaydırma bulunur.
