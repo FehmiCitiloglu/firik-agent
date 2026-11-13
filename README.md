@@ -2,7 +2,7 @@
 
 Masaüstü uygulaması: `firik-gui`; agent: `firik-agent`; doğrudan API istemcisi: `firik`. Python paketi: `firik_agent`.
 
-**Hibrit desktop önizlemesi:** Electron + React/TypeScript arayüz, mevcut Python Agent'e özel stdio/IPC üzerinden bağlanır. Sohbet akışı, geçmiş, ayarlar, iptal ve MCP seçimi ilk çalışan dilimde hazırdır: `npm run desktop:dev`. [Kurulum, paketleme, doğrulama ve henüz taşınmayan özellikler](docs/HYBRID_DESKTOP_MIGRATION.md), [mimari plan ve browser geçişi](docs/HYBRID_DESKTOP_ARCHITECTURE.md). Varsayılan dağıtılan uygulama bu aşamada Python/CustomTkinter kullanmaya devam eder.
+**Hibrit desktop önizlemesi:** Electron + React/TypeScript arayüz, mevcut Python Agent'e özel stdio/IPC üzerinden bağlanır. Sohbet akışı, geçmiş, ayarlar, iptal ve MCP seçimi ilk çalışan dilimde hazırdır: `make install-hybrid` (kurulum + `firik-hybrid` başlatıcı), `make ui-hybrid` (derleyip açma) veya `npm run desktop:dev`. [Kurulum, paketleme, doğrulama ve henüz taşınmayan özellikler](docs/HYBRID_DESKTOP_MIGRATION.md), [mimari plan ve browser geçişi](docs/HYBRID_DESKTOP_ARCHITECTURE.md). Varsayılan `make install` ve `firik-gui` komutu referans Python/CustomTkinter arayüzünü kullanmaya devam eder.
 
 FIRIK'in **LLM Çıkarım API'sini terminalden kullanmak** için CLI ve Python istemcisi. Sohbetin yanında görsel anlama, OCR, ses çözümleme, embeddings, rerank, medya yükleme, kota/kredi ve istek durumu sorgularını destekler. Önceki agent, MCP, skill ve plugin özellikleri `firik-agent` komutuyla kullanılmaya devam eder.
 
@@ -31,16 +31,22 @@ Python 3.10+:
 İşletim sisteminize göre tek bir komut çalıştırmanız yeterlidir:
 
 ```bash
-# macOS / Linux:
+# macOS / Linux (Python CLI + referans Python/Tk arayüzü):
 ./install.sh
 # veya
 make install
 
+# macOS / Linux (Python CLI + TypeScript/Electron hibrit arayüzü):
+make install-hybrid
+# veya ./install.sh --hybrid
+
 # Windows (PowerShell):
 .\install.ps1
+# Hibrit arayüz için: .\install.ps1 --hybrid
 
 # Tüm Sistemler (Firiksel Python):
 python install.py
+# Hibrit arayüz için: python install.py --hybrid (ikisi için: --desktop both)
 ```
 
 Kurulum betiği masaüstü uygulamasını PyInstaller ile yerel olarak derler ve kullanıcı uygulama menüsüne ekler: macOS’ta `~/Applications`, Windows’ta Başlat menüsü, Linux’ta uygulama menüsü. Derlenen uygulama kaynak klasöründen bağımsızdır; macOS kaynak derlemesi noter onaylı değildir. Python kurulumunda Tkinter bulunmalıdır (Linux’ta ör. `python3-tk`). Derleme veya Tkinter hatası kurulumun başarısız olmasına yol açar. Hazır imzalı paketler için [GitHub Releases](https://github.com/FehmiCitiloglu/firik-agent/releases/latest) kullanılabilir.

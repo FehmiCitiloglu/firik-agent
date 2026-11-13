@@ -36,5 +36,6 @@ win:
   icon: ../../firik_agent/ui/assets/icon.ico
   target: nsis
 linux:
+  executableName: firik-agent-hybrid
   icon: ../../firik_agent/ui/assets/icon.png
   target: AppImage

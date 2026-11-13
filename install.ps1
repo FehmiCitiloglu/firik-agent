@@ -1,10 +1,14 @@
-# Firik Agent — Windows PowerShell Installer
+﻿# Firik Agent — Windows PowerShell Installer
 $ErrorActionPreference = "Stop"
 # install.py owns venv creation, command launchers, and persistent user PATH.
 $FirikInstaller = Join-Path $PSScriptRoot "install.py"
 
 Write-Host "Firik Agent Windows Kurulumu başlatılıyor..." -ForegroundColor Cyan
-Write-Host "firik, firik-agent ve firik-gui PATH'e eklenecek; venv aktivasyonu gerekmeyecek." -ForegroundColor Cyan
+if ($args -contains "--hybrid") {
+    Write-Host "firik, firik-agent, firik-gui ve firik-hybrid PATH'e eklenecek; TypeScript/Electron arayüzü kurulacak." -ForegroundColor Cyan
+} else {
+    Write-Host "firik, firik-agent ve firik-gui PATH'e eklenecek; venv aktivasyonu gerekmeyecek." -ForegroundColor Cyan
+}
 
 if (Get-Command py -ErrorAction SilentlyContinue) {
     py -3 $FirikInstaller @args

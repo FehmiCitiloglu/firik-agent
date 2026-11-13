@@ -144,6 +144,57 @@ jobs:
           fi
           rm -f "$RUNNER_TEMP/firik-signing.p12"
 
+  build-hybrid-desktop:
+    if: inputs.signing_check_only != true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: macos-arm64
+          - os: macos-15-intel
+            platform: macos-x64
+          - os: windows-2022
+            platform: windows-x64
+          - os: ubuntu-22.04
+            platform: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      FIRIK_DESKTOP_PYTHON: python
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ inputs.tag_name || github.ref_name }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '26'
+      - name: Install Python build and test dependencies
+        run: python -m pip install -e '.[dev,desktop-build]'
+      - name: Install pinned desktop dependencies
+        run: npm exec --yes --package=@yarnpkg/cli-dist@4.18.1 -- yarn install --immutable
+      - name: Build desktop, verify contracts and run hybrid unit tests
+        shell: bash
+        run: |
+          npm run desktop:build
+          git diff --ignore-cr-at-eol --exit-code -- packages/contracts/wire.schema.json packages/contracts/src/wire.ts
+          npm run desktop:check
+          python -m pytest -q tests/test_desktop_rpc.py tests/test_package_hybrid_release.py
+          npm run desktop:test
+      - name: Package hybrid desktop app
+        run: npm run desktop:package
+      - name: Archive hybrid release asset
+        run: python scripts/package_hybrid_release.py ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hybrid-desktop-${{ matrix.platform }}
+          path: release_assets/*
+          if-no-files-found: error
+
   build-python:
     if: inputs.signing_check_only != true
     runs-on: ubuntu-22.04
@@ -165,7 +216,7 @@ jobs:
 
   publish-release:
     if: inputs.signing_check_only != true
-    needs: [build-desktop, build-python]
+    needs: [build-desktop, build-hybrid-desktop, build-python]
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:
@@ -181,6 +232,11 @@ jobs:
         with:
           path: release_assets
           pattern: desktop-*
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          path: release_assets
+          pattern: hybrid-desktop-*
           merge-multiple: true
       - uses: actions/download-artifact@v4
         with:

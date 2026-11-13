@@ -177,3 +177,158 @@ def test_desktop_install_fails_when_tkinter_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(installer.subprocess, "run", lambda args, **kwargs: subprocess.CompletedProcess(args, 1))
     with pytest.raises(RuntimeError, match="Tkinter"):
         installer.install_desktop(tmp_path, tmp_path / "python", None, "linux")
+
+
+def test_install_hybrid_command_preserves_unrelated_and_updates_managed(tmp_path):
+    bin_dir = tmp_path / "bin"
+    exe = tmp_path / "app" / "Firik Agent Hybrid"
+    exe.parent.mkdir()
+    exe.write_bytes(b"electron")
+
+    bin_dir.mkdir()
+    unrelated = bin_dir / "firik-hybrid"
+    unrelated.write_text("user script")
+    with pytest.raises(RuntimeError, match="Cannot replace"):
+        installer.install_hybrid_command(exe, bin_dir, False)
+    assert unrelated.read_text() == "user script"
+
+    unrelated.unlink()
+    launcher = installer.install_hybrid_command(exe, bin_dir, False)
+    assert launcher.is_file()
+    assert str(exe) in launcher.read_text()
+    assert installer.HYBRID_LAUNCHER_MARKER in launcher.read_text()
+
+    exe_v2 = tmp_path / "app-v2" / "Firik Agent Hybrid"
+    exe_v2.parent.mkdir()
+    exe_v2.write_bytes(b"electron-v2")
+    installer.install_hybrid_command(exe_v2, bin_dir, False)
+    assert str(exe_v2) in launcher.read_text()
+
+
+def test_install_hybrid_command_windows_creates_cmd_launcher(tmp_path):
+    bin_dir = tmp_path / "FIRIK" / "bin"
+    exe = tmp_path / "app" / "Firik Agent Hybrid.exe"
+    exe.parent.mkdir()
+    exe.write_bytes(b"mz")
+    launcher = installer.install_hybrid_command(exe, bin_dir, True)
+    assert launcher.name == "firik-hybrid.cmd"
+    contents = launcher.read_text()
+    assert f'"{exe}" %*' in contents
+    assert installer.HYBRID_LAUNCHER_MARKER in contents
+
+
+def test_install_hybrid_desktop_macos_packages_and_registers_launchers(home, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / "data"))
+    (tmp_path / "package.json").write_text('{"packageManager": "yarn@4.18.1"}', encoding="utf-8")
+    bin_dir = home / ".local" / "bin"
+    calls = []
+    envs = []
+
+    monkeypatch.setattr(
+        installer.shutil,
+        "which",
+        lambda name: {"node": "/usr/local/bin/node", "npm": "/usr/local/bin/npm"}.get(name),
+    )
+
+    def run(args, **kwargs):
+        calls.append(args)
+        envs.append(kwargs.get("env"))
+        if args[:2] == ["/usr/local/bin/node", "-p"]:
+            return subprocess.CompletedProcess(args, 0, stdout="26.13.1\n", stderr="")
+        if args == ["/usr/local/bin/npm", "run", "desktop:package"]:
+            app_dir = tmp_path / "dist/hybrid-desktop/mac-arm64/Firik Agent Hybrid.app/Contents/MacOS"
+            app_dir.mkdir(parents=True)
+            (app_dir / "Firik Agent Hybrid").write_bytes(b"hybrid-bin")
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(installer.subprocess, "run", run)
+    launcher = installer.install_hybrid_desktop(tmp_path, tmp_path / ".venv/bin/python", None, "darwin", bin_dir=bin_dir)
+
+    installed_exe = home / "data/firik-agent/hybrid-desktop/Firik Agent Hybrid.app/Contents/MacOS/Firik Agent Hybrid"
+    assert installed_exe.read_bytes() == b"hybrid-bin"
+    assert launcher == home / "Applications/Firik Agent Hybrid (Source Install).app"
+    assert launcher.is_symlink()
+    assert launcher.resolve() == installed_exe.parents[2].resolve()
+    assert (bin_dir / "firik-hybrid").is_file()
+    assert shlex.quote(str(installed_exe)) in (bin_dir / "firik-hybrid").read_text()
+    assert any("--package=@yarnpkg/cli-dist@4.18.1" in arg for arg in calls[2])
+    assert calls[3] == ["/usr/local/bin/npm", "run", "desktop:package"]
+    assert envs[3]["FIRIK_DESKTOP_PYTHON"] == str(tmp_path / ".venv/bin/python")
+
+
+def test_install_hybrid_desktop_linux_creates_desktop_entry_with_icon(home, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / "data"))
+    (tmp_path / "package.json").write_text('{"packageManager": "yarn@4.18.1"}', encoding="utf-8")
+    bin_dir = home / ".local" / "bin"
+
+    monkeypatch.setattr(
+        installer.shutil,
+        "which",
+        lambda name: {"node": "/usr/bin/node", "npm": "/usr/bin/npm", "yarn": "/usr/bin/yarn"}.get(name),
+    )
+
+    def run(args, **kwargs):
+        if args[:2] == ["/usr/bin/node", "-p"]:
+            return subprocess.CompletedProcess(args, 0, stdout="22.12.0\n", stderr="")
+        if args == ["/usr/bin/yarn", "--version"]:
+            return subprocess.CompletedProcess(args, 0, stdout="4.18.1\n", stderr="")
+        if args == ["/usr/bin/npm", "run", "desktop:package"]:
+            unpacked = tmp_path / "dist/hybrid-desktop/linux-unpacked"
+            (unpacked / "resources").mkdir(parents=True)
+            (unpacked / "firik-agent-hybrid").write_bytes(b"linux-hybrid")
+            (unpacked / "resources/icon.png").write_bytes(b"png")
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(installer.subprocess, "run", run)
+    launcher = installer.install_hybrid_desktop(tmp_path, tmp_path / "python", None, "linux", bin_dir=bin_dir)
+
+    installed_exe = home / "data/firik-agent/hybrid-desktop/Firik Agent Hybrid/firik-agent-hybrid"
+    assert installed_exe.read_bytes() == b"linux-hybrid"
+    desktop_text = launcher.read_text()
+    assert "Name=Firik Agent Hybrid (Source Install)" in desktop_text
+    assert f'Exec="{installed_exe}"' in desktop_text
+    assert f"Icon={installed_exe.parent / 'resources/icon.png'}" in desktop_text
+    assert shlex.quote(str(installed_exe)) in (bin_dir / "firik-hybrid").read_text()
+
+
+def test_install_hybrid_desktop_requires_node_22_12(monkeypatch, tmp_path):
+    monkeypatch.setattr(installer.shutil, "which", lambda name: None)
+    with pytest.raises(RuntimeError, match="Node.js 22.12\\+"):
+        installer.install_hybrid_desktop(tmp_path, tmp_path / "python", None, "darwin", bin_dir=tmp_path / "bin")
+
+    monkeypatch.setattr(
+        installer.shutil,
+        "which",
+        lambda name: {"node": "/usr/bin/node", "npm": "/usr/bin/npm"}.get(name),
+    )
+    monkeypatch.setattr(
+        installer.subprocess,
+        "run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, stdout="20.11.0\n", stderr=""),
+    )
+    with pytest.raises(RuntimeError, match="Node.js >= 22.12"):
+        installer.install_hybrid_desktop(tmp_path, tmp_path / "python", None, "darwin", bin_dir=tmp_path / "bin")
+
+
+def test_main_desktop_selection_modes(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(installer, "__file__", str(tmp_path / "install.py"))
+    monkeypatch.setattr(installer.shutil, "which", lambda name: "/tools/uv")
+    monkeypatch.setattr(installer.subprocess, "run", lambda args, **kwargs: subprocess.CompletedProcess(args, 0))
+    monkeypatch.setattr(installer, "install_commands", lambda *args: None)
+    monkeypatch.setattr(installer, "configure_path", lambda *args: [])
+
+    called = []
+    monkeypatch.setattr(installer, "install_desktop", lambda *args, **kwargs: called.append("python") or tmp_path / "py")
+    monkeypatch.setattr(installer, "install_hybrid_desktop", lambda *args, **kwargs: called.append("hybrid") or tmp_path / "hy")
+
+    installer.main(["--hybrid"])
+    assert called == ["hybrid"]
+
+    called.clear()
+    installer.main(["--desktop", "both"])
+    assert called == ["python", "hybrid"]
+
+    called.clear()
+    installer.main(["--desktop", "none"])
+    assert called == []

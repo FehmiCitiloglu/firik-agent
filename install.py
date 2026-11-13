@@ -6,6 +6,9 @@ Requirements: Python 3.10+
 """
 from __future__ import annotations
 
+import argparse
+from collections.abc import Sequence
+import json
 import os
 import shlex
 import shutil
@@ -15,7 +18,52 @@ import tempfile
 from pathlib import Path
 
 MIN_PYTHON = (3, 10)
+MIN_NODE = (22, 12)
+MAX_NODE_MAJOR = 27
+DEFAULT_YARN_VERSION = "4.18.1"
 COMMANDS = ("firik", "firik-agent", "firik-gui")
+HYBRID_COMMAND = "firik-hybrid"
+HYBRID_LAUNCHER_MARKER = "Firik Agent hybrid desktop launcher"
+
+
+def _default_bin_dir(is_windows: bool) -> Path:
+    if is_windows:
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "FIRIK" / "bin"
+    return Path.home() / ".local" / "bin"
+
+
+def _hybrid_command_path(bin_dir: Path, is_windows: bool) -> Path:
+    return bin_dir / (f"{HYBRID_COMMAND}.cmd" if is_windows else HYBRID_COMMAND)
+
+
+def _is_managed_hybrid_command(path: Path, is_windows: bool) -> bool:
+    if path.is_symlink() or not path.is_file():
+        return False
+    marker = f"rem {HYBRID_LAUNCHER_MARKER}" if is_windows else f"# {HYBRID_LAUNCHER_MARKER}"
+    return marker in path.read_text(encoding="utf-8", errors="ignore").splitlines()
+
+
+def _validate_hybrid_command_target(bin_dir: Path, is_windows: bool) -> Path:
+    target = _hybrid_command_path(bin_dir, is_windows)
+    if (target.exists() or target.is_symlink()) and not _is_managed_hybrid_command(target, is_windows):
+        raise RuntimeError(f"Cannot replace existing command: {target}. Move it aside and retry.")
+    return target
+
+
+def install_hybrid_command(executable: Path, bin_dir: Path, is_windows: bool) -> Path:
+    """Install a PATH launcher for the packaged TypeScript/Electron desktop app."""
+    if not executable.is_file():
+        raise RuntimeError(f"Installed hybrid executable missing: {executable}")
+    target = _validate_hybrid_command_target(bin_dir, is_windows)
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    if is_windows:
+        contents = f'@echo off\r\nrem {HYBRID_LAUNCHER_MARKER}\r\n"{executable}" %*\r\n'
+        target.write_text(contents, encoding="utf-8")
+    else:
+        contents = f'#!/bin/sh\n# {HYBRID_LAUNCHER_MARKER}\nexec {shlex.quote(str(executable))} "$@"\n'
+        target.write_text(contents, encoding="utf-8")
+        target.chmod(0o755)
+    return target
 
 
 def install_commands(venv_dir: Path, bin_dir: Path, is_windows: bool):
@@ -45,25 +93,116 @@ def install_commands(venv_dir: Path, bin_dir: Path, is_windows: bool):
 
 
 
-def install_desktop(root_dir: Path, venv_python: Path, uv_bin: str | None, platform: str) -> Path:
-    """Build a native desktop bundle and register a per-user launcher."""
+def _validate_desktop_platform(platform: str) -> None:
     if platform not in ("darwin", "win32") and not platform.startswith("linux"):
         raise RuntimeError(f"Desktop installation is not supported on {platform}")
-    tk = subprocess.run([str(venv_python), "-c", "import tkinter"], capture_output=True, text=True)
-    if tk.returncode:
-        raise RuntimeError("Tkinter is required for the desktop app. Install the Tk package for your Python and retry.")
+
+
+def _install_desktop_build_deps(root_dir: Path, venv_python: Path, uv_bin: str | None) -> None:
     packages = ["-e", f"{root_dir}[desktop-build]"]
     if uv_bin:
         subprocess.run([uv_bin, "pip", "install", "--python", str(venv_python), *packages], check=True)
     else:
         subprocess.run([str(venv_python), "-m", "pip", "install", *packages], check=True)
+
+
+def _desktop_data_dir(platform: str, subdir: str = "desktop") -> Path:
+    if platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "FIRIK"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "firik-agent"
+    data_dir = base / subdir
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
+def _replace_artifact(source: Path, target: Path) -> None:
+    if target.is_dir() and not target.is_symlink():
+        shutil.rmtree(target)
+    elif target.exists() or target.is_symlink():
+        target.unlink()
+    if source.is_dir():
+        shutil.copytree(source, target, symlinks=True)
+    else:
+        shutil.copy2(source, target)
+
+
+def _escape_desktop_value(path: Path) -> str:
+    return (
+        str(path)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("$", "\\$")
+        .replace("`", "\\`")
+        .replace("%", "%%")
+    )
+
+
+def _register_desktop_launcher(
+    platform: str,
+    app_title: str,
+    desktop_filename: str,
+    target: Path,
+    executable: Path,
+    icon: Path | None = None,
+) -> Path:
+    if platform == "darwin":
+        applications = Path.home() / "Applications"
+        applications.mkdir(parents=True, exist_ok=True)
+        launcher = applications / f"{app_title}.app"
+        if launcher.exists() and not launcher.is_symlink():
+            raise RuntimeError(f"Cannot replace existing application: {launcher}")
+        if launcher.is_symlink():
+            if launcher.resolve() != target.resolve():
+                raise RuntimeError(f"Cannot replace unrelated application link: {launcher}")
+            launcher.unlink()
+        launcher.symlink_to(target, target_is_directory=True)
+        return launcher
+    if platform == "win32":
+        programs = Path(os.environ.get("APPDATA") or Path.home() / "AppData/Roaming") / "Microsoft/Windows/Start Menu/Programs"
+        programs.mkdir(parents=True, exist_ok=True)
+        launcher = programs / f"{app_title}.lnk"
+        env = os.environ.copy()
+        env.update(FIRIK_DESKTOP_TARGET=str(executable), FIRIK_DESKTOP_LINK=str(launcher))
+        subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:FIRIK_DESKTOP_LINK); "
+                "$s.TargetPath=$env:FIRIK_DESKTOP_TARGET; $s.WorkingDirectory=Split-Path $s.TargetPath; $s.Save()",
+            ],
+            env=env,
+            check=True,
+        )
+        return launcher
+    applications = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "applications"
+    applications.mkdir(parents=True, exist_ok=True)
+    launcher = applications / desktop_filename
+    lines = [
+        "[Desktop Entry]",
+        "Type=Application",
+        f"Name={app_title}",
+        f'Exec="{_escape_desktop_value(executable)}"',
+    ]
+    if icon is not None and icon.is_file():
+        lines.append(f"Icon={icon}")
+    lines.extend(["Terminal=false", "Categories=Utility;Development;", ""])
+    launcher.write_text("\n".join(lines), encoding="utf-8")
+    return launcher
+
+
+def install_desktop(root_dir: Path, venv_python: Path, uv_bin: str | None, platform: str) -> Path:
+    """Build the legacy Python/Tk desktop bundle and register a per-user launcher."""
+    _validate_desktop_platform(platform)
+    tk = subprocess.run([str(venv_python), "-c", "import tkinter"], capture_output=True, text=True)
+    if tk.returncode:
+        raise RuntimeError("Tkinter is required for the desktop app. Install the Tk package for your Python and retry.")
+    _install_desktop_build_deps(root_dir, venv_python, uv_bin)
     if platform.startswith("linux"):
         log("  Linux microphone support requires PortAudio (for example: sudo apt install libportaudio2).", "dim")
-    if platform == "win32":
-        data_dir = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "FIRIK" / "desktop"
-    else:
-        data_dir = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "firik-agent" / "desktop"
-    data_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = _desktop_data_dir(platform, "desktop")
     with tempfile.TemporaryDirectory(prefix="firik-desktop-") as tmp:
         temp = Path(tmp)
         env = os.environ.copy()
@@ -75,43 +214,117 @@ def install_desktop(root_dir: Path, venv_python: Path, uv_bin: str | None, platf
         source, target = temp / "dist" / name, data_dir / name
         if not source.exists():
             raise RuntimeError(f"Desktop build did not produce {source}")
-        if target.is_dir():
-            shutil.rmtree(target)
-        elif target.exists() or target.is_symlink():
-            target.unlink()
-        if source.is_dir():
-            shutil.copytree(source, target, symlinks=True)
-        else:
-            shutil.copy2(source, target)
+        _replace_artifact(source, target)
+    return _register_desktop_launcher(
+        platform,
+        "Firik Agent (Source Install)",
+        "firik-agent-source.desktop",
+        target,
+        target,
+    )
+
+
+def _find_node_toolchain(root_dir: Path) -> tuple[str, str, str]:
+    """Verify Node.js >= 22.12 and npm are available, returning (node, npm, yarn_version)."""
+    node_bin = shutil.which("node")
+    npm_bin = shutil.which("npm")
+    if not node_bin or not npm_bin:
+        raise RuntimeError("Node.js 22.12+ and npm are required for the TypeScript/Electron hybrid desktop app.")
+    probe = subprocess.run([node_bin, "-p", "process.versions.node"], capture_output=True, text=True)
+    if probe.returncode != 0:
+        raise RuntimeError("Failed to determine Node.js version.")
+    version_str = probe.stdout.strip()
+    try:
+        major, minor = (int(part) for part in version_str.split(".")[:2])
+    except ValueError as err:
+        raise RuntimeError(f"Unrecognized Node.js version string: {version_str}") from err
+    if (major, minor) < MIN_NODE:
+        raise RuntimeError(
+            f"Node.js >= {MIN_NODE[0]}.{MIN_NODE[1]} is required for the hybrid desktop app (found {version_str})."
+        )
+    if major >= MAX_NODE_MAJOR:
+        log(f"  Note: package.json targets Node < {MAX_NODE_MAJOR}; continuing with Node {version_str}.", "yellow")
+    yarn_version = DEFAULT_YARN_VERSION
+    pkg_json = root_dir / "package.json"
+    if pkg_json.is_file():
+        pkg_data = json.loads(pkg_json.read_text(encoding="utf-8"))
+        pm = pkg_data.get("packageManager", "")
+        if isinstance(pm, str) and pm.startswith("yarn@"):
+            yarn_version = pm.split("@", 1)[1]
+    return node_bin, npm_bin, yarn_version
+
+
+def _ensure_hybrid_js_dependencies(root_dir: Path, npm_bin: str, yarn_version: str) -> None:
+    yarn_bin = shutil.which("yarn")
+    if yarn_bin:
+        ver = subprocess.run([yarn_bin, "--version"], capture_output=True, text=True)
+        if ver.returncode == 0 and ver.stdout.strip().startswith(f"{yarn_version.split('.')[0]}."):
+            subprocess.run([yarn_bin, "install", "--immutable"], cwd=root_dir, check=True)
+            return
+    subprocess.run(
+        [npm_bin, "exec", "--yes", f"--package=@yarnpkg/cli-dist@{yarn_version}", "--", "yarn", "install", "--immutable"],
+        cwd=root_dir,
+        check=True,
+    )
+
+
+def _locate_hybrid_package(dist_dir: Path, platform: str) -> tuple[Path, Path]:
+    """Return (source_bundle_or_dir, relative_executable) inside dist/hybrid-desktop."""
     if platform == "darwin":
-        applications = Path.home() / "Applications"
-        applications.mkdir(parents=True, exist_ok=True)
-        launcher = applications / "Firik Agent (Source Install).app"
-        if launcher.exists() and not launcher.is_symlink():
-            raise RuntimeError(f"Cannot replace existing application: {launcher}")
-        if launcher.is_symlink():
-            if launcher.resolve() != target.resolve():
-                raise RuntimeError(f"Cannot replace unrelated application link: {launcher}")
-            launcher.unlink()
-        launcher.symlink_to(target, target_is_directory=True)
+        candidates = [dist_dir / folder / "Firik Agent Hybrid.app" for folder in ("mac-arm64", "mac-universal", "mac")]
+        candidates.extend(sorted(dist_dir.glob("mac*/Firik Agent Hybrid.app")))
+        for candidate in candidates:
+            if candidate.is_dir():
+                return candidate, Path("Contents/MacOS/Firik Agent Hybrid")
     elif platform == "win32":
-        programs = Path(os.environ.get("APPDATA") or Path.home() / "AppData/Roaming") / "Microsoft/Windows/Start Menu/Programs"
-        programs.mkdir(parents=True, exist_ok=True)
-        launcher = programs / "Firik Agent (Source Install).lnk"
-        env = os.environ.copy()
-        env.update(FIRIK_DESKTOP_TARGET=str(target), FIRIK_DESKTOP_LINK=str(launcher))
-        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:FIRIK_DESKTOP_LINK); "
-                        "$s.TargetPath=$env:FIRIK_DESKTOP_TARGET; $s.WorkingDirectory=Split-Path $s.TargetPath; $s.Save()"],
-                       env=env, check=True)
+        candidates = [dist_dir / "win-unpacked", *sorted(dist_dir.glob("win*-unpacked"))]
+        for candidate in candidates:
+            if (candidate / "Firik Agent Hybrid.exe").is_file():
+                return candidate, Path("Firik Agent Hybrid.exe")
     else:
-        applications = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "applications"
-        applications.mkdir(parents=True, exist_ok=True)
-        launcher = applications / "firik-agent-source.desktop"
-        executable = str(target).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`").replace("%", "%%")
-        launcher.write_text('[Desktop Entry]\nType=Application\nName=Firik Agent (Source Install)\n'
-                            f'Exec="{executable}"\nTerminal=false\nCategories=Utility;Development;\n', encoding="utf-8")
-    return launcher
+        candidates = [dist_dir / "linux-unpacked", *sorted(dist_dir.glob("linux*-unpacked"))]
+        for candidate in candidates:
+            if not candidate.is_dir():
+                continue
+            for exe_name in ("firik-agent-hybrid", "firik-desktop", "desktop", "Firik Agent Hybrid"):
+                if (candidate / exe_name).is_file():
+                    return candidate, Path(exe_name)
+    raise RuntimeError(f"Hybrid desktop build did not produce an application bundle in {dist_dir}")
+
+
+def install_hybrid_desktop(
+    root_dir: Path,
+    venv_python: Path,
+    uv_bin: str | None,
+    platform: str,
+    bin_dir: Path | None = None,
+) -> Path:
+    """Build the TypeScript/Electron hybrid desktop app and register its launchers."""
+    _validate_desktop_platform(platform)
+    is_windows = platform == "win32"
+    target_bin_dir = bin_dir if bin_dir is not None else _default_bin_dir(is_windows)
+    _validate_hybrid_command_target(target_bin_dir, is_windows)
+    _, npm_bin, yarn_version = _find_node_toolchain(root_dir)
+    _install_desktop_build_deps(root_dir, venv_python, uv_bin)
+    _ensure_hybrid_js_dependencies(root_dir, npm_bin, yarn_version)
+    env = os.environ.copy()
+    env["FIRIK_DESKTOP_PYTHON"] = str(venv_python)
+    subprocess.run([npm_bin, "run", "desktop:package"], cwd=root_dir, env=env, check=True)
+    source, rel_executable = _locate_hybrid_package(root_dir / "dist" / "hybrid-desktop", platform)
+    data_dir = _desktop_data_dir(platform, "hybrid-desktop")
+    target = data_dir / ("Firik Agent Hybrid.app" if platform == "darwin" else "Firik Agent Hybrid")
+    _replace_artifact(source, target)
+    executable = target / rel_executable
+    install_hybrid_command(executable, target_bin_dir, is_windows)
+    icon = target / "resources" / "icon.png" if platform.startswith("linux") else None
+    return _register_desktop_launcher(
+        platform,
+        "Firik Agent Hybrid (Source Install)",
+        "firik-agent-hybrid-source.desktop",
+        target,
+        executable,
+        icon=icon,
+    )
 
 def add_shell_path(path: Path, line: str):
     """Append an idempotent PATH entry without replacing existing shell settings."""
@@ -198,7 +411,27 @@ def check_python_version():
     log(f"✔ Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} detected", "green")
 
 
-def main():
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Firik Agent Installer")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--hybrid",
+        action="store_const",
+        dest="desktop",
+        const="hybrid",
+        help="Install the TypeScript/Electron hybrid desktop UI instead of the Python/Tk UI.",
+    )
+    group.add_argument(
+        "--desktop",
+        choices=("python", "hybrid", "both", "none"),
+        help="Choose which desktop UI to build and install (default: python).",
+    )
+    parser.set_defaults(desktop="python")
+    return parser.parse_args([] if argv is None else list(argv))
+
+
+def main(argv: Sequence[str] | None = None):
+    args = _parse_args(argv)
     root_dir = Path(__file__).resolve().parent
     os.chdir(root_dir)
 
@@ -214,12 +447,8 @@ def main():
     venv_dir = root_dir / ".venv"
 
     # Virtual environment paths
-    if is_windows:
-        venv_python = venv_dir / "Scripts" / "python.exe"
-        bin_dir = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "FIRIK" / "bin"
-    else:
-        venv_python = venv_dir / "bin" / "python"
-        bin_dir = Path.home() / ".local" / "bin"
+    venv_python = venv_dir / ("Scripts/python.exe" if is_windows else "bin/python")
+    bin_dir = _default_bin_dir(is_windows)
 
     # Step 1: Create venv
     if not venv_dir.exists():
@@ -250,9 +479,18 @@ def main():
     refresh_commands = configure_path(bin_dir, is_windows)
     log(f"✔ Commands installed in {bin_dir}", "green")
 
-    log("\n[4/4] Building and installing the desktop application...", "cyan")
-    desktop_launcher = install_desktop(root_dir, venv_python, uv_bin, sys.platform)
-    log(f"✔ Desktop application installed: {desktop_launcher}", "green")
+    python_launcher: Path | None = None
+    hybrid_launcher: Path | None = None
+    if args.desktop == "none":
+        log("\n[4/4] Skipping desktop application installation (--desktop none).", "dim")
+    else:
+        log("\n[4/4] Building and installing the desktop application...", "cyan")
+        if args.desktop in ("python", "both"):
+            python_launcher = install_desktop(root_dir, venv_python, uv_bin, sys.platform)
+            log(f"✔ Python/Tk desktop application installed: {python_launcher}", "green")
+        if args.desktop in ("hybrid", "both"):
+            hybrid_launcher = install_hybrid_desktop(root_dir, venv_python, uv_bin, sys.platform, bin_dir=bin_dir)
+            log(f"✔ TypeScript/Electron hybrid desktop installed: {hybrid_launcher}", "green")
 
     # Done! Display instructions
     log("\n" + "=" * 55, "green")
@@ -272,10 +510,16 @@ def main():
     log("\n  3. Test & Run:", "yellow")
     log("     firik --help           (Direct FIRIK API CLI)", "bold")
     log("     firik-agent            (Interactive Agent REPL)", "bold")
-    log("     firik-gui              (Desktop application from Python environment)", "bold")
-    log(f"     Desktop launcher: {desktop_launcher}", "bold")
+    log("     firik-gui              (Legacy Python/Tk reference UI)", "bold")
+    if python_launcher is not None:
+        log(f"     Python/Tk launcher:    {python_launcher}", "bold")
+    if hybrid_launcher is not None:
+        log("     firik-hybrid           (TypeScript/Electron hybrid desktop)", "bold")
+        log(f"     Hybrid launcher:       {hybrid_launcher}", "bold")
+    elif args.desktop == "python":
+        log("     Tip: run 'make install-hybrid' for the TypeScript/Electron hybrid UI.", "dim")
     log("     firik-agent --commands (List all available commands)\n", "bold")
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

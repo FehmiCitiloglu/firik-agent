@@ -69,7 +69,13 @@ npm run desktop:start
 ```
 
 Bu mod derlenmiş UI'yı `firik://app` üzerinden yükler; Python backend kaynak
-ortamından çalışır. Backend bağımlılıklarını da içine alan yerel uygulama paketi:
+ortamından çalışır (`make ui-hybrid` kısayolu da aynı adımları çalıştırır).
+Doğrudan kullanıcı kurulumu için `make install-hybrid` (veya `./install.sh --hybrid`
+/ `python install.py --hybrid`) `.venv`, Node/Yarn bağımlılıkları ve yerel
+uygulama paketini derleyip kullanıcı uygulama menüsüne (`Firik Agent Hybrid (Source Install)`)
+ve PATH üzerinde `firik-hybrid` komutuna ekler; mevcut Python/Tk `make install`
+ve `firik-gui` kurulumu referans olarak korunur. Backend bağımlılıklarını da
+içine alan yerel uygulama paketi:
 
 ```sh
 .venv/bin/python -m pip install -e '.[desktop-build]'
