@@ -13,16 +13,43 @@ REQUIRED = (
 )
 
 
+SECRET_ENV_NAMES = ("MACOS_CERTIFICATE_BASE64", "MACOS_CERTIFICATE_PASSWORD", "APPLE_APP_SPECIFIC_PASSWORD")
+SECRET_ARG_FLAGS = {"-P", "-p", "-k", "--password", "--key"}
+
+
+def _sanitize_output(text: str, args: tuple[object, ...]) -> str:
+    """Strip any secret values before surfacing command diagnostics in CI logs."""
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    secrets_to_mask: list[str] = []
+    for name in SECRET_ENV_NAMES:
+        val = os.environ.get(name, "")
+        for candidate in (val, val.strip()):
+            if candidate:
+                secrets_to_mask.append(candidate)
+    str_args = [str(arg) for arg in args]
+    for idx, token in enumerate(str_args[:-1]):
+        if token in SECRET_ARG_FLAGS and str_args[idx + 1]:
+            secrets_to_mask.append(str_args[idx + 1])
+    for secret_val in sorted(set(secrets_to_mask), key=len, reverse=True):
+        cleaned = cleaned.replace(secret_val, "***")
+    lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+    return " | ".join(lines[-5:])
+
+
 def run(*args):
     # Never include credential-bearing command lines in exception messages.
     result = subprocess.run([str(arg) for arg in args], capture_output=True, text=True)
     if result.returncode:
-        raise RuntimeError(f"{args[0]} {args[1]} failed (exit {result.returncode}); check the signing secrets")
+        detail = _sanitize_output(result.stderr or result.stdout or "", args)
+        suffix = f": {detail}" if detail else ""
+        raise RuntimeError(f"{args[0]} {args[1]} failed (exit {result.returncode}); check the signing secrets{suffix}")
     return result.stdout
 
 
 def main():
-    missing = [name for name in REQUIRED if not os.environ.get(name)]
+    missing = [name for name in REQUIRED if not os.environ.get(name, "").strip()]
     if missing:
         raise SystemExit("Missing GitHub Actions secrets: " + ", ".join(missing))
     if sys.platform != "darwin" or os.environ.get("GITHUB_ACTIONS") != "true":
@@ -49,11 +76,14 @@ def main():
         if len(matches) != 1:
             raise RuntimeError("The P12 must contain exactly one valid Developer ID Application identity and its private key")
         identity, name = matches[0]
-        if not name.endswith(f"({os.environ['APPLE_TEAM_ID']})"):
+        apple_id = os.environ["APPLE_ID"].strip()
+        apple_team_id = os.environ["APPLE_TEAM_ID"].strip()
+        app_password = os.environ["APPLE_APP_SPECIFIC_PASSWORD"].strip()
+        if not name.endswith(f"({apple_team_id})"):
             raise RuntimeError("APPLE_TEAM_ID does not match the Developer ID Application certificate")
         run("xcrun", "notarytool", "store-credentials", "firik-notary",
-            "--apple-id", os.environ["APPLE_ID"], "--team-id", os.environ["APPLE_TEAM_ID"],
-            "--password", os.environ["APPLE_APP_SPECIFIC_PASSWORD"], "--keychain", keychain)
+            "--apple-id", apple_id, "--team-id", apple_team_id,
+            "--password", app_password, "--keychain", keychain)
         with Path(os.environ["GITHUB_ENV"]).open("a") as environment:
             environment.write(f"FIRIK_CODESIGN_IDENTITY={identity}\n")
             environment.write(f"FIRIK_NOTARY_KEYCHAIN={keychain}\n")

@@ -97,12 +97,56 @@ def test_setup_preserves_search_list_and_isolates_notary_credentials(monkeypatch
 
 
 def test_failed_command_does_not_disclose_password(monkeypatch):
+    monkeypatch.setenv("APPLE_APP_SPECIFIC_PASSWORD", "env-secret-pw")
     monkeypatch.setattr(setup.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(
-        returncode=1, stdout="fake-secret-password", stderr="fake-secret-password",
+        returncode=1,
+        stdout="",
+        stderr="Error: HTTP 403 License Agreement required (fake-secret-password env-secret-pw)",
     ))
     with pytest.raises(RuntimeError) as error:
         setup.run("security", "import", "fake.p12", "-P", "fake-secret-password")
-    assert "fake-secret-password" not in str(error.value)
+    message = str(error.value)
+    assert "fake-secret-password" not in message
+    assert "env-secret-pw" not in message
+    assert "HTTP 403 License Agreement required" in message
+
+
+def test_setup_strips_whitespace_from_apple_credentials(monkeypatch, tmp_path):
+    configure(monkeypatch, tmp_path)
+    monkeypatch.setenv("APPLE_ID", "  test@example.invalid \n")
+    monkeypatch.setenv("APPLE_TEAM_ID", " TESTTEAM00 ")
+    monkeypatch.setenv("APPLE_APP_SPECIFIC_PASSWORD", " abcd-efgh-ijkl-mnop \n")
+    calls = []
+    fingerprint = "A" * 40
+    keychain = tmp_path / "firik-signing.keychain-db"
+
+    def run(*args):
+        calls.append(args)
+        if args[:3] == ("security", "list-keychains", "-d") and "-s" not in args:
+            return '    "/old/login.keychain-db"\n'
+        if args[:2] == ("security", "create-keychain"):
+            keychain.touch()
+        if args[:2] == ("security", "find-identity"):
+            return f'1) {fingerprint} "Developer ID Application: Test (TESTTEAM00)"\n'
+        return ""
+
+    monkeypatch.setattr(setup, "run", run)
+    setup.main()
+    notary_call = next(call for call in calls if call[:2] == ("xcrun", "notarytool"))
+    assert notary_call == (
+        "xcrun",
+        "notarytool",
+        "store-credentials",
+        "firik-notary",
+        "--apple-id",
+        "test@example.invalid",
+        "--team-id",
+        "TESTTEAM00",
+        "--password",
+        "abcd-efgh-ijkl-mnop",
+        "--keychain",
+        keychain,
+    )
 
 
 def test_temporary_notary_keychain_is_used_for_all_requests(monkeypatch):
