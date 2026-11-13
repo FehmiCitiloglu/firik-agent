@@ -5,9 +5,21 @@ import os
 from pathlib import Path
 import re
 import sys
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.package_hybrid_release import read_project_version
+
+
+def _sha256_file(path: Path) -> str:
+    """Compute a file's SHA-256 hex digest with Python 3.10+ stdlib support."""
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def expected_release_assets(version: str) -> list[str]:
@@ -44,7 +56,7 @@ def validate_manifest_versions(root: Path, version: str) -> None:
 
 def validate_release(root: Path, release_tag: str, *, check_assets: bool = False) -> str:
     """Validate tag alignment, manifest versions, and optionally built release assets."""
-    version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    version = read_project_version(root)
     if not re.fullmatch(r"v\d+\.\d+\.\d+", release_tag) or release_tag != f"v{version}":
         raise SystemExit(f"Tag {release_tag!r} does not match project version v{version}")
     validate_manifest_versions(root, version)
@@ -55,11 +67,7 @@ def validate_release(root: Path, release_tag: str, *, check_assets: bool = False
             path = assets / name
             if not path.is_file() or not path.stat().st_size:
                 raise SystemExit(f"Required release asset missing or empty: {name}")
-        lines = []
-        for name in sorted(expected):
-            with (assets / name).open("rb") as fh:
-                digest = hashlib.file_digest(fh, "sha256").hexdigest()
-            lines.append(f"{digest}  {name}\n")
+        lines = [f"{_sha256_file(assets / name)}  {name}\n" for name in sorted(expected)]
         (assets / "SHA256SUMS.txt").write_text("".join(lines), encoding="utf-8")
     return f"Validated {release_tag}"
 

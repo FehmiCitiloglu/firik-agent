@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 import tarfile
 import zipfile
 
@@ -96,3 +97,11 @@ def test_validate_release_checks_manifest_versions_and_hybrid_assets(tmp_path: P
     (tmp_path / "apps" / "desktop" / "package.json").write_text('{"version": "0.0.1"}\n', encoding="utf-8")
     with pytest.raises(SystemExit, match="apps/desktop/package.json"):
         validate_release.validate_release(tmp_path, "v1.2.3", check_assets=False)
+
+
+def test_validate_release_supports_python_310_without_tomllib(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_versioned_project(tmp_path, "1.2.3")
+    monkeypatch.setitem(sys.modules, "tomllib", None)
+    assert validate_release.validate_release(tmp_path, "v1.2.3", check_assets=False) == "Validated v1.2.3"
