@@ -128,11 +128,14 @@ class BrowserUserCommandParams(ChatGetParams):
         "select_tab",
         "close_tab",
         "close",
+        "resize",
         "request_handoff",
         "resume_after_handoff",
     ]
     url: str = Field(default="", max_length=2048)
     tab_id: str = Field(default="", max_length=64)
+    width: int = Field(default=0, ge=0, le=2560)
+    height: int = Field(default=0, ge=0, le=1440)
 
 
 class BrowserUserInputParams(ChatGetParams):

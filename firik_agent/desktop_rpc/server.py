@@ -419,6 +419,13 @@ class DesktopServer:
                     args["url"] = params.url
                 if params.tab_id:
                     args["tab_id"] = params.tab_id
+                if params.width > 0:
+                    args["width"] = params.width
+                if params.height > 0:
+                    args["height"] = params.height
+                if cmd == "resize" and params.width > 0 and params.height > 0 and not self.service.browser_manager.sessions(adapter.identity):
+                    raw_res = await self.service.browser_manager.host_command(adapter.identity, grant, "status", {})
+                    return self._browser_status_state(sid, raw_res)
                 if cmd in {"navigate", "new_tab"} and not self.service.browser_manager.sessions(adapter.identity):
                     await self.service.browser_manager.host_command(adapter.identity, grant, "start", {})
                 raw_res = await self.service.browser_manager.host_command(adapter.identity, grant, cmd, args)

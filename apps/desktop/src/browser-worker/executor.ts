@@ -1,7 +1,5 @@
-import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import type { BrowserPointerAction, BrowserPointerState } from '@firik/contracts/desktop-api';
 import {
   AsyncMutex,
   BrowserError,
@@ -10,197 +8,48 @@ import {
   grantsEqual,
   identityKey,
   randomId,
-  validateGrant,
+  resolveBrowserLocale,
+  resolveBrowserTimezone,
   validateIdentity,
   type BrowserConfig,
   type BrowserGrant,
   type BrowserIdentity,
 } from './models.js';
 import { BrowserSecurityPolicy, originOf, redact, sanitizedUrl } from './security.js';
+import {
+  ALLOWED_HOST_OPS,
+  BrowserArtifacts,
+  BrowserGrantGovernance,
+  FORM_OBSERVATION_SCRIPT,
+  INTERACTIONS,
+  NAVIGATIONS,
+  POINTER_ACTION_LABELS,
+  READS,
+  TARGET_STATE_SCRIPT,
+  assertBrowserEnabled,
+  assertValidHostInputShape,
+  boundedDiagnosticItems,
+  computePointerTrajectory,
+  hashValue,
+  normalizeBrowserArguments,
+  pageFunction,
+  validateHostInputArgs,
+  validateTargetState,
+  type BrowserArtifact,
+  type PreparedAction,
+} from './shared.js';
 
-export const INTERACTIONS = new Set([
-  'click',
-  'fill',
-  'type',
-  'press',
-  'select',
-  'check',
-  'hover',
-  'scroll',
-]);
-export const NAVIGATIONS = new Set(['navigate', 'back', 'forward', 'reload']);
-export const READS = new Set([
-  'status',
-  'list_tabs',
-  'snapshot',
-  'screenshot',
-  'extract_text',
-  'get_links',
-  'get_forms',
-  'get_console',
-  'get_page_errors',
-  'get_network_errors',
-  'wait_for',
-]);
-
-const FIELDS: Record<string, Set<string>> = {
-  start: new Set(['headless', 'width', 'height']),
-  status: new Set(),
-  close: new Set(),
-  list_tabs: new Set(),
-  new_tab: new Set(['url']),
-  select_tab: new Set(['tab_id']),
-  close_tab: new Set(['tab_id']),
-  navigate: new Set(['url', 'tab_id']),
-  back: new Set(['tab_id']),
-  forward: new Set(['tab_id']),
-  reload: new Set(['tab_id']),
-  wait_for: new Set(['tab_id', 'target', 'state', 'timeout_ms']),
-  snapshot: new Set(['tab_id']),
-  screenshot: new Set(['tab_id', 'full_page']),
-  extract_text: new Set(['tab_id']),
-  get_links: new Set(['tab_id']),
-  get_forms: new Set(['tab_id']),
-  get_console: new Set(['tab_id']),
-  get_page_errors: new Set(['tab_id']),
-  get_network_errors: new Set(['tab_id']),
-  click: new Set(['tab_id', 'target', 'revision']),
-  fill: new Set(['tab_id', 'target', 'revision', 'value']),
-  type: new Set(['tab_id', 'target', 'revision', 'value']),
-  press: new Set(['tab_id', 'target', 'revision', 'key']),
-  select: new Set(['tab_id', 'target', 'revision', 'values']),
-  check: new Set(['tab_id', 'target', 'revision', 'checked']),
-  hover: new Set(['tab_id', 'target', 'revision']),
-  scroll: new Set(['tab_id', 'revision', 'x', 'y']),
-  request_handoff: new Set(),
-  resume_after_handoff: new Set(),
-  upload: new Set(),
-  download: new Set(),
+export {
+  BrowserArtifacts,
+  FORM_OBSERVATION_SCRIPT,
+  INTERACTIONS,
+  NAVIGATIONS,
+  READS,
+  TARGET_STATE_SCRIPT,
+  hashValue,
+  pageFunction,
+  type BrowserArtifact,
 };
-
-const TARGET_KEYS = new Set(['ref', 'role', 'name', 'label', 'test_id', 'text', 'frame']);
-const SENSITIVE_RE =
-  /password|passwd|one.?time|otp|mfa|verification.?code|security.?code|credit.?card|cc-/i;
-
-export const TARGET_STATE_SCRIPT = `el => {
- const sensitive = e => /password|passwd|one.?time|otp|mfa|verification.?code|security.?code|credit.?card|cc-/i.test(
-  [e.type,e.name,e.id,e.autocomplete,e.getAttribute('aria-label'),...Array.from(e.labels||[]).map(l=>l.textContent)].join(' '));
- const allFields = Array.from(el.closest('form')?.elements || []);
- const fields = allFields.slice(0, 100).map(e => ({
-  name: String(e.name || e.id || e.getAttribute('aria-label') || '').slice(0,1000), type: e.type || e.tagName,
-  value: sensitive(e) ? '[REDACTED]' : String(e.value||'').slice(0,10000), sensitive: sensitive(e),
-  valueLength: String(e.value||'').length,
-  selected: Array.from(e.selectedOptions||[]).slice(0,100).map(o=>String(o.value).slice(0,1000)),
-  selectedCount: e.selectedOptions?.length || 0, checked: !!e.checked }));
- return {tag: el.tagName, html: el.outerHTML.slice(0,16000), type: el.type || '',
-  name: String(el.name || '').slice(0,1000), autocomplete: el.autocomplete || '', label: String(el.getAttribute('aria-label') || '').slice(0,1000),
-  sensitive: sensitive(el), value: sensitive(el) ? '[REDACTED]' : String(el.value||'').slice(0,10000),
-  valueLength: String(el.value||'').length, formFieldCount: allFields.length,
-  selected: Array.from(el.selectedOptions||[]).slice(0,100).map(o=>String(o.value).slice(0,1000)),
-  selectedCount: el.selectedOptions?.length || 0,
-  form: fields, formAction: el.closest('form')?.action || '', href: el.href || ''};
-}`;
-
-export const FORM_OBSERVATION_SCRIPT = `forms => forms.slice(0,50).map(f => ({
- method: f.method, action: f.action.slice(0,8192), fieldCount: f.elements.length,
- fields: Array.from(f.elements).slice(0,100).map(e=>({tag:e.tagName,type:e.type||'',
- name:(e.name||'').slice(0,256),label:(e.getAttribute('aria-label')||'').slice(0,512),required:!!e.required,disabled:!!e.disabled}))
-}))`;
-
-/**
- * Node Playwright evaluates string arguments as expressions and does not call
- * the resulting function (Python Playwright does). Wrap fixed host scripts in
- * a real function so the page receives the element/argument as intended.
- */
-export function pageFunction(source: string): (arg?: unknown) => unknown {
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
-  return new Function('arg', `return (${source})(arg);`) as (arg?: unknown) => unknown;
-}
-
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(item => canonicalJson(item)).join(',')}]`;
-  }
-  const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
-  return `{${keys.map(k => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`).join(',')}}`;
-}
-
-export function hashValue(value: unknown): string {
-  return createHash('sha256').update(canonicalJson(value)).digest('hex');
-}
-
-export interface BrowserArtifact {
-  artifact_id: string;
-  owner_key: string;
-  owner: BrowserIdentity;
-  path: string;
-  size: number;
-}
-
-export class BrowserArtifacts {
-  private tempDir: string | null = null;
-  readonly _artifacts = new Map<string, BrowserArtifact>();
-
-  save(identity: BrowserIdentity, data: Uint8Array): BrowserArtifact {
-    const owner = validateIdentity(identity);
-    const ownerKey = identityKey(owner);
-    if (!this.tempDir) {
-      this.tempDir = join(tmpdir(), `firik-browser-${randomBytes(8).toString('hex')}`);
-      mkdirSync(this.tempDir, { recursive: true, mode: 0o700 });
-    }
-    const artifact_id = `screenshot_${randomBytes(16).toString('hex')}`;
-    const path = join(this.tempDir, `${artifact_id}.png`);
-    writeFileSync(path, data, { flag: 'wx', mode: 0o600 });
-    const artifact: BrowserArtifact = {
-      artifact_id,
-      owner_key: ownerKey,
-      owner,
-      path,
-      size: data.byteLength,
-    };
-    this._artifacts.set(artifact_id, artifact);
-    return artifact;
-  }
-
-  path(identity: BrowserIdentity, artifactId: string): string {
-    const ownerKey = identityKey(validateIdentity(identity));
-    const artifact = this._artifacts.get(artifactId);
-    if (!artifact || artifact.owner_key !== ownerKey) {
-      throw new BrowserError('ownership_denied', 'Screenshot does not belong to this execution identity.');
-    }
-    return artifact.path;
-  }
-
-  removeOwner(identity: BrowserIdentity): void {
-    const ownerKey = identityKey(validateIdentity(identity));
-    for (const [id, artifact] of [...this._artifacts.entries()]) {
-      if (artifact.owner_key === ownerKey) {
-        try {
-          unlinkSync(artifact.path);
-        } catch {
-          // Ignore already removed files
-        }
-        this._artifacts.delete(id);
-      }
-    }
-  }
-
-  close(): void {
-    this._artifacts.clear();
-    if (this.tempDir) {
-      try {
-        rmSync(this.tempDir, { recursive: true, force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
-      this.tempDir = null;
-    }
-  }
-}
 
 export interface BrowserTabState {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -213,6 +62,7 @@ export interface BrowserTabState {
   console: DiagnosticBuffer;
   page_errors: DiagnosticBuffer;
   network_errors: DiagnosticBuffer;
+  pointer?: { x: number; y: number };
 }
 
 export interface BrowserSessionState {
@@ -231,19 +81,9 @@ export interface BrowserSessionState {
   actions: number;
   cancelled: boolean;
   headless: boolean;
+  viewport: { width: number; height: number };
   pending: Set<{ cancel: () => void }>;
   control_lock: AsyncMutex;
-}
-
-interface PreparedAction {
-  identity_key: string;
-  grant_digest: string;
-  identity: BrowserIdentity;
-  operation: string;
-  args_digest: string;
-  state_digest: string;
-  tab_id: string;
-  expires: number;
 }
 
 export interface BrowserExecutor {
@@ -284,6 +124,7 @@ export interface BrowserExecutor {
   artifactPath(identity: BrowserIdentity, artifactId: string): string;
   closeOwner(identity: BrowserIdentity): Promise<void>;
   closeAll(): Promise<void>;
+  setPointerSink?(sink: ((pointer: BrowserPointerState) => void) | undefined): void;
 }
 
 // The driver chooses a revision from its own browsers.json. Never substitute a
@@ -327,11 +168,13 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _playwright: any = null;
   private readonly _startupLock = new AsyncMutex();
-  readonly _prepared = new Map<string, PreparedAction>();
-  readonly _grantProviders = new Map<string, () => BrowserGrant>();
+  private readonly _governance = new BrowserGrantGovernance();
+  readonly _prepared: Map<string, PreparedAction> = this._governance.prepared;
+  readonly _grantProviders: Map<string, () => BrowserGrant> = this._governance.grantProviders;
   private readonly _redirectTasks = new Map<string, Promise<unknown>>();
   private readonly _redirectCounts = new Map<string, number>();
   private readonly _navigationErrors = new Map<string, BrowserError>();
+  private _pointerSink?: (pointer: BrowserPointerState) => void;
   readonly metrics = { calls: 0, startup_seconds: 0, action_seconds: 0, crashes: 0 };
 
   constructor(config?: Partial<BrowserConfig>, policy?: BrowserSecurityPolicy) {
@@ -340,143 +183,92 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
     this.artifacts = new BrowserArtifacts();
   }
 
-  bindGrant(identity: BrowserIdentity, grant: BrowserGrant): void {
-    const key = identityKey(validateIdentity(identity));
-    const checked = validateGrant(grant, originOf);
-    const previous = this._grantProviders.get(key)?.();
-    if (previous && !grantsEqual(previous, checked)) {
-      for (const [token, action] of this._prepared) {
-        if (action.identity_key === key) this._prepared.delete(token);
+  setPointerSink(sink: ((pointer: BrowserPointerState) => void) | undefined): void {
+    this._pointerSink = sink;
+  }
+
+  private _emitPointer(
+    session: BrowserSessionState,
+    x: number,
+    y: number,
+    action: BrowserPointerAction,
+    pressing: boolean,
+    visible = true,
+  ): void {
+    this._pointerSink?.({
+      conversation_id: session.identity.conversation_id,
+      visible,
+      x: Math.round(x),
+      y: Math.round(y),
+      viewport_width: Math.max(1, session.viewport.width),
+      viewport_height: Math.max(1, session.viewport.height),
+      action,
+      pressing,
+      label: visible ? POINTER_ACTION_LABELS[action] : undefined,
+    });
+  }
+
+  private async _movePointerSmoothly(
+    session: BrowserSessionState,
+    tab: BrowserTabState,
+    targetX: number,
+    targetY: number,
+    action: BrowserPointerAction,
+  ): Promise<void> {
+    const start = tab.pointer ?? {
+      x: Math.max(24, Math.min(240, Math.round(targetX * 0.35))),
+      y: Math.max(24, Math.min(180, Math.round(targetY * 0.35))),
+    };
+    const points = computePointerTrajectory(start, { x: targetX, y: targetY });
+    for (let i = 0; i < points.length; i++) {
+      if (session.cancelled || pageIsClosed(tab.page)) break;
+      const pt = points[i];
+      if (typeof tab.page?.mouse?.move === 'function') {
+        await tab.page.mouse.move(pt.x, pt.y);
+      }
+      tab.pointer = pt;
+      this._emitPointer(session, pt.x, pt.y, action, false, true);
+      if (i < points.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 12));
       }
     }
-    this._grantProviders.set(key, () => checked);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async _locatePointerTarget(
+    session: BrowserSessionState,
+    tab: BrowserTabState,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    locator: any,
+    action: BrowserPointerAction,
+  ): Promise<{ x: number; y: number } | null> {
+    if (typeof locator?.boundingBox !== 'function') return null;
+    const box = await locator.boundingBox().catch(() => null);
+    if (!box || box.width <= 0 || box.height <= 0) return null;
+    const x = Math.round(box.x + box.width / 2);
+    const y = Math.round(box.y + box.height / 2);
+    await this._movePointerSmoothly(session, tab, x, y, action);
+    return { x, y };
+  }
+
+  bindGrant(identity: BrowserIdentity, grant: BrowserGrant): void {
+    this._governance.bindGrant(identity, grant);
   }
 
   bindGrantProvider(identity: BrowserIdentity, provider: () => BrowserGrant): void {
-    if (typeof provider !== 'function') {
-      throw new TypeError('Browser grant provider must be callable.');
-    }
-    const key = identityKey(validateIdentity(identity));
-    this._grantProviders.set(key, provider);
+    this._governance.bindGrantProvider(identity, provider);
   }
 
   _liveGrant(identity: BrowserIdentity, fallback: BrowserGrant): BrowserGrant {
-    const key = identityKey(validateIdentity(identity));
-    const provider = this._grantProviders.get(key);
-    if (!provider) {
-      return validateGrant(fallback, originOf);
-    }
-    try {
-      const grant = provider();
-      return validateGrant(grant, originOf);
-    } catch {
-      return validateGrant({ enabled: false }, originOf);
-    }
+    return this._governance.liveGrant(identity, fallback);
   }
 
   private _enabled(grant: BrowserGrant): void {
-    if (!this.config.enabled || !grant.enabled) {
-      throw new BrowserError('permission_denied', 'Browser is disabled for this host or task.');
-    }
-    if (this.config.strict_network_isolation) {
-      throw new BrowserError(
-        'network_isolation_unavailable',
-        'Strict network isolation requires an enforceable egress boundary; host Chromium is unavailable in this mode.',
-      );
-    }
+    assertBrowserEnabled(this.config, grant);
   }
 
   _arguments(operation: string, rawArgs?: Record<string, unknown> | null): [string, Record<string, unknown>] {
-    const op = operation.replace(/^browser_/, '');
-    if (!Object.hasOwn(FIELDS, op)) {
-      throw new BrowserError('unsupported_capability', 'Unknown browser operation.');
-    }
-    const args = rawArgs ?? {};
-    if (typeof args !== 'object' || Array.isArray(args)) {
-      throw new BrowserError('invalid_tool_arguments', 'Browser arguments contain unsupported fields.');
-    }
-    const allowedFields = FIELDS[op];
-    for (const key of Object.keys(args)) {
-      if (!allowedFields.has(key)) {
-        throw new BrowserError('invalid_tool_arguments', 'Browser arguments contain unsupported fields.');
-      }
-    }
-    if ('tab_id' in args && (typeof args.tab_id !== 'string' || args.tab_id.length > 100)) {
-      throw new BrowserError('invalid_tool_arguments', 'Invalid tab identifier.');
-    }
-    if (op === 'navigate' && typeof args.url !== 'string') {
-      throw new BrowserError('invalid_tool_arguments', 'A URL is required.');
-    }
-    if (op === 'new_tab' && 'url' in args && typeof args.url !== 'string') {
-      throw new BrowserError('invalid_tool_arguments', 'Invalid URL.');
-    }
-    if (INTERACTIONS.has(op)) {
-      if (typeof args.revision !== 'number' || !Number.isInteger(args.revision) || args.revision < 1) {
-        throw new BrowserError('invalid_tool_arguments', 'Interactions require a current snapshot revision.');
-      }
-      if (op !== 'scroll' && (!args.target || typeof args.target !== 'object' || Array.isArray(args.target))) {
-        throw new BrowserError('invalid_tool_arguments', 'An explicit semantic target is required.');
-      }
-    }
-    if ('target' in args) {
-      const target = args.target as Record<string, unknown>;
-      if (!target || typeof target !== 'object' || Array.isArray(target) || Object.keys(target).length === 0) {
-        throw new BrowserError('invalid_tool_arguments', 'Invalid semantic target.');
-      }
-      for (const [k, v] of Object.entries(target)) {
-        if (!TARGET_KEYS.has(k)) {
-          throw new BrowserError('invalid_tool_arguments', 'Invalid semantic target.');
-        }
-        if (typeof v !== 'string' || v.length === 0 || v.length > 1000) {
-          throw new BrowserError('invalid_tool_arguments', 'Target fields must be bounded text.');
-        }
-      }
-      const selectors = Object.keys(target).filter(k =>
-        ['ref', 'role', 'label', 'test_id', 'text'].includes(k),
-      );
-      if (selectors.length !== 1 || ('name' in target && !('role' in target))) {
-        throw new BrowserError('invalid_tool_arguments', 'Specify exactly one semantic locator strategy.');
-      }
-    }
-    if ((op === 'fill' || op === 'type') && (typeof args.value !== 'string' || args.value.length > 10000)) {
-      throw new BrowserError('invalid_tool_arguments', 'Input value must be text of at most 10000 characters.');
-    }
-    if (op === 'press' && (typeof args.key !== 'string' || args.key.length === 0 || args.key.length > 80)) {
-      throw new BrowserError('invalid_tool_arguments', 'Invalid key.');
-    }
-    if (
-      op === 'select' &&
-      (!Array.isArray(args.values) ||
-        args.values.length < 1 ||
-        args.values.length > 50 ||
-        args.values.some(v => typeof v !== 'string' || v.length > 1000))
-    ) {
-      throw new BrowserError('invalid_tool_arguments', 'Select requires a bounded list of values.');
-    }
-    for (const boolField of ['headless', 'full_page', 'checked']) {
-      if (boolField in args && typeof args[boolField] !== 'boolean') {
-        throw new BrowserError('invalid_tool_arguments', `${boolField} must be boolean.`);
-      }
-    }
-    const bounds: [string, number, number][] = [
-      ['width', 320, 2560],
-      ['height', 240, 1440],
-      ['x', -2000, 2000],
-      ['y', -2000, 2000],
-      ['timeout_ms', 100, this.config.action_timeout_ms],
-    ];
-    for (const [field, min, max] of bounds) {
-      if (field in args) {
-        const val = args[field];
-        if (typeof val !== 'number' || !Number.isInteger(val) || val < min || val > max) {
-          throw new BrowserError('invalid_tool_arguments', `${field} is outside the supported bounds.`);
-        }
-      }
-    }
-    if ('state' in args && !['visible', 'hidden', 'attached', 'detached'].includes(String(args.state))) {
-      throw new BrowserError('invalid_tool_arguments', 'Unsupported wait state.');
-    }
-    return [op, { ...args }];
+    return normalizeBrowserArguments(operation, rawArgs, this.config.action_timeout_ms);
   }
 
   _session(identity: BrowserIdentity, grant: BrowserGrant): BrowserSessionState {
@@ -647,13 +439,14 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
       let context: any = null;
       try {
         const newContextFn = browser.newContext ?? browser.new_context;
+        const viewport = {
+          width: typeof args.width === 'number' ? args.width : this.config.viewport_width,
+          height: typeof args.height === 'number' ? args.height : this.config.viewport_height,
+        };
         context = await newContextFn.call(browser, {
-          viewport: {
-            width: typeof args.width === 'number' ? args.width : this.config.viewport_width,
-            height: typeof args.height === 'number' ? args.height : this.config.viewport_height,
-          },
-          locale: this.config.locale,
-          timezoneId: this.config.timezone_id,
+          viewport,
+          locale: resolveBrowserLocale(this.config.locale),
+          timezoneId: resolveBrowserTimezone(this.config.timezone_id),
           acceptDownloads: false,
           serviceWorkers: 'block',
           bypassCSP: false,
@@ -681,6 +474,7 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
           actions: 0,
           cancelled: false,
           headless,
+          viewport,
           pending: new Set(),
           control_lock: new AsyncMutex(),
         };
@@ -1073,23 +867,7 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
   }
 
   _boundedItems(items: unknown[], key: string): Record<string, unknown> {
-    const selected: unknown[] = [];
-    let used = 0;
-    for (const item of items) {
-      const size = JSON.stringify(item).length + 2;
-      if (used + size > this.config.max_snapshot_chars) {
-        break;
-      }
-      selected.push(item);
-      used += size;
-    }
-    const omitted = items.length - selected.length;
-    return {
-      [key]: selected,
-      truncated: omitted > 0,
-      omitted_entries: omitted,
-      untrusted: true,
-    };
+    return boundedDiagnosticItems(items, key, this.config.max_snapshot_chars);
   }
 
   sessions(identity: BrowserIdentity): Record<string, unknown>[] {
@@ -1194,54 +972,14 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
     }
     const locator = await this._locator(session, tab, args.target as Record<string, string>);
     const state = (await locator.evaluate(pageFunction(TARGET_STATE_SCRIPT))) as Record<string, unknown>;
-    const formFields = Array.isArray(state.form) ? (state.form as Record<string, unknown>[]) : [];
-    const totalFormChars = formFields.reduce((acc, field) => {
-      const nameLen = String(field.name ?? '').length;
-      const valLen = String(field.value ?? '').length;
-      const selLen = Array.isArray(field.selected)
-        ? field.selected.reduce((s: number, v: unknown) => s + String(v).length, 0)
-        : 0;
-      return acc + nameLen + valLen + selLen;
-    }, 0);
-    if (
-      Number(state.formFieldCount ?? 0) > 100 ||
-      Number(state.valueLength ?? 0) > 10000 ||
-      Number(state.selectedCount ?? 0) > 100 ||
-      formFields.some(f => Number(f.valueLength ?? 0) > 10000 || Number(f.selectedCount ?? 0) > 100) ||
-      totalFormChars > this.config.max_snapshot_chars
-    ) {
-      throw new BrowserError('form_limit', 'The complete form exceeds review limits; use manual browser control.');
-    }
-    const combinedLabels = ['type', 'name', 'autocomplete', 'label']
-      .map(k => String(state[k] ?? ''))
-      .join(' ');
-    if (
-      Boolean(state.sensitive) ||
-      SENSITIVE_RE.test(combinedLabels) ||
-      formFields.some(f => Boolean(f.sensitive))
-    ) {
-      throw new BrowserError(
-        'authentication_handoff_required',
-        'Credentials, MFA and payment details require manual browser control.',
-      );
-    }
-    if (state.href && typeof state.href === 'string') {
-      await this.policy.validate(state.href, session.grant);
-    }
-    if (state.formAction && typeof state.formAction === 'string') {
-      await this.policy.validate(state.formAction, session.grant);
-    }
+    const preview = await validateTargetState(
+      state,
+      args.target,
+      this.policy,
+      session.grant,
+      this.config.max_snapshot_chars,
+    );
     state.dom = await this._digest(tab);
-    const preview = {
-      target: args.target,
-      form: formFields.map(f => ({
-        name: redact(f.name),
-        type: f.type,
-        value: redact(f.value, 10000),
-        checked: Boolean(f.checked),
-        selected: Array.isArray(f.selected) ? f.selected.map(v => redact(v)) : [],
-      })),
-    };
     return [hashValue(state), preview];
   }
 
@@ -1263,25 +1001,15 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
     return session.control_lock.run(() =>
       tab.lock.run(async () => {
         const [digest, preview] = await this._actionState(session, tab, op, args);
-        const token = randomBytes(24).toString('base64url');
-        const now = performance.now() / 1000;
-        for (const [k, v] of [...this._prepared.entries()]) {
-          if (v.expires <= now) {
-            this._prepared.delete(k);
-          }
-        }
-        if (this._prepared.size >= 128) {
-          throw new BrowserError('browser_limit', 'Too many pending browser approvals.');
-        }
-        this._prepared.set(token, {
-          identity_key: session.identity_key,
-          grant_digest: hashValue(session.grant),
+        const token = this._governance.issueApproval({
+          identityKey: session.identity_key,
+          grant: session.grant,
           identity: session.identity,
           operation: op,
-          args_digest: hashValue(args),
-          state_digest: digest,
-          tab_id: tab.tab_id,
-          expires: now + this.config.approval_ttl_seconds,
+          args,
+          stateDigest: digest,
+          tabId: tab.tab_id,
+          ttlSeconds: this.config.approval_ttl_seconds,
         });
         const rawValue = args.value ?? args.key ?? (args.values !== undefined ? String(args.values) : '');
         return {
@@ -1326,18 +1054,7 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
     rawArgs?: Record<string, unknown> | null,
   ): Promise<Record<string, unknown>> {
     const cleanOp = operation.replace(/^browser_/, '');
-    const allowedHostOps = new Set([
-      ...NAVIGATIONS,
-      'start',
-      'status',
-      'list_tabs',
-      'new_tab',
-      'select_tab',
-      'close_tab',
-      'close',
-      'request_handoff',
-    ]);
-    if (!allowedHostOps.has(cleanOp)) {
+    if (!ALLOWED_HOST_OPS.has(cleanOp)) {
       throw new BrowserError('unsupported_capability', 'Unsupported host browser control.');
     }
     return this.dispatch(identity, grant, cleanOp, rawArgs, { hostControl: true });
@@ -1388,6 +1105,7 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
     }
     if (op === 'request_handoff') {
       session.state = 'manual_control';
+      this._emitPointer(session, 0, 0, 'idle', false, false);
       for (const [token, prep] of [...this._prepared.entries()]) {
         if (prep.identity_key === key) {
           this._prepared.delete(token);
@@ -1407,6 +1125,27 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
         if (typeof bringToFront === 'function') {
           await bringToFront.call(activeTab.page);
         }
+      }
+      return this._status(session, { host: hostControl });
+    }
+    if (op === 'resize') {
+      if (!hostControl) {
+        throw new BrowserError('host_action_required', 'Only host browser controls may resize the viewport.');
+      }
+      const viewport = {
+        width: args.width as number,
+        height: args.height as number,
+      };
+      session.viewport = viewport;
+      for (const openTab of session.tabs.values()) {
+        if (pageIsClosed(openTab.page)) continue;
+        await openTab.lock.run(async () => {
+          const setVp = openTab.page.setViewportSize ?? openTab.page.set_viewport_size;
+          if (typeof setVp === 'function') {
+            await setVp.call(openTab.page, viewport);
+          }
+          this._invalidate(openTab);
+        });
       }
       return this._status(session, { host: hostControl });
     }
@@ -1434,6 +1173,15 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
       }
       const newPageFn = session.context.newPage ?? session.context.new_page;
       const page = await newPageFn.call(session.context);
+      if (
+        session.viewport.width !== this.config.viewport_width ||
+        session.viewport.height !== this.config.viewport_height
+      ) {
+        const setVp = page.setViewportSize ?? page.set_viewport_size;
+        if (typeof setVp === 'function') {
+          await setVp.call(page, session.viewport);
+        }
+      }
       let tab = [...session.tabs.values()].find(t => t.page === page);
       if (!tab) {
         this._trackPage(session, page);
@@ -1455,6 +1203,7 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
     const tab = this._tab(session, args);
     if (op === 'select_tab') {
       session.active_tab_id = tab.tab_id;
+      this._emitPointer(session, 0, 0, 'idle', false, false);
       return { tab_id: tab.tab_id, url: sanitizedUrl(pageUrl(tab.page)) };
     }
     if (op === 'close_tab') {
@@ -1464,6 +1213,7 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
         if (session.active_tab_id === tab.tab_id) {
           session.active_tab_id = session.tabs.keys().next().value ?? '';
         }
+        this._emitPointer(session, 0, 0, 'idle', false, false);
         return { closed_tab_id: tab.tab_id };
       });
     }
@@ -1494,26 +1244,14 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
           await this.policy.validate(currentTabUrl, session.grant);
         }
         if (INTERACTIONS.has(op)) {
-          const prepared = approvedFingerprint ? this._prepared.get(approvedFingerprint) : undefined;
-          if (approvedFingerprint) {
-            this._prepared.delete(approvedFingerprint);
-          }
-          if (
-            !prepared ||
-            prepared.identity_key !== session.identity_key ||
-            prepared.grant_digest !== hashValue(session.grant) ||
-            prepared.operation !== op ||
-            prepared.args_digest !== hashValue(args) ||
-            prepared.tab_id !== tab.tab_id
-          ) {
-            throw new BrowserError(
-              'approval_required',
-              'This exact browser action requires fresh host approval.',
-            );
-          }
-          if (prepared.expires <= performance.now() / 1000) {
-            throw new BrowserError('approval_expired', 'Browser approval expired before execution.');
-          }
+          const prepared = this._governance.consumeApproval({
+            approvedFingerprint,
+            identityKey: session.identity_key,
+            grant: session.grant,
+            operation: op,
+            args,
+            tabId: tab.tab_id,
+          });
           const [digest] = await this._actionState(session, tab, op, args);
           if (digest !== prepared.state_digest) {
             throw new BrowserError(
@@ -1602,6 +1340,7 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
   ): Promise<Record<string, unknown>> {
     const page = tab.page;
     if (NAVIGATIONS.has(operation)) {
+      this._emitPointer(session, 0, 0, 'idle', false, false);
       const requested = (args.url as string | undefined) ?? pageUrl(page);
       this._redirectCounts.set(tab.tab_id, 0);
       this._navigationErrors.delete(tab.tab_id);
@@ -1818,23 +1557,42 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
           ? await this._locator(session, tab, args.target as Record<string, string>)
           : null;
       if (operation === 'click') {
+        const pt = await this._locatePointerTarget(session, tab, locator, 'click');
+        if (pt) this._emitPointer(session, pt.x, pt.y, 'click', true, true);
         await locator.click();
+        if (pt) this._emitPointer(session, pt.x, pt.y, 'click', false, true);
       } else if (operation === 'fill') {
+        const pt = await this._locatePointerTarget(session, tab, locator, 'fill');
+        if (pt) this._emitPointer(session, pt.x, pt.y, 'fill', true, true);
         await locator.fill(args.value as string);
+        if (pt) this._emitPointer(session, pt.x, pt.y, 'fill', false, true);
       } else if (operation === 'type') {
+        const pt = await this._locatePointerTarget(session, tab, locator, 'type');
+        if (pt) this._emitPointer(session, pt.x, pt.y, 'type', true, true);
         const pressSeq = locator.pressSequentially ?? locator.press_sequentially;
-        await pressSeq.call(locator, args.value as string);
+        const val = args.value as string;
+        await pressSeq.call(locator, val, ...(val.length <= 200 ? [{ delay: 8 }] : []));
+        if (pt) this._emitPointer(session, pt.x, pt.y, 'type', false, true);
       } else if (operation === 'press') {
         await locator.press(args.key as string);
       } else if (operation === 'select') {
+        const pt = await this._locatePointerTarget(session, tab, locator, 'select');
         const selectOpt = locator.selectOption ?? locator.select_option;
         await selectOpt.call(locator, args.values as string[]);
+        if (pt) this._emitPointer(session, pt.x, pt.y, 'select', false, true);
       } else if (operation === 'check') {
+        const pt = await this._locatePointerTarget(session, tab, locator, 'check');
+        if (pt) this._emitPointer(session, pt.x, pt.y, 'check', true, true);
         const setChecked = locator.setChecked ?? locator.set_checked;
         await setChecked.call(locator, typeof args.checked === 'boolean' ? args.checked : true);
+        if (pt) this._emitPointer(session, pt.x, pt.y, 'check', false, true);
       } else if (operation === 'hover') {
+        await this._locatePointerTarget(session, tab, locator, 'hover');
         await locator.hover();
       } else {
+        const sx = tab.pointer?.x ?? Math.max(1, Math.floor(session.viewport.width / 2));
+        const sy = tab.pointer?.y ?? Math.max(1, Math.floor(session.viewport.height / 2));
+        await this._movePointerSmoothly(session, tab, sx, sy, 'scroll');
         await page.mouse.wheel(
           typeof args.x === 'number' ? args.x : 0,
           typeof args.y === 'number' ? args.y : 600,
@@ -1949,21 +1707,7 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
     kind: string,
     rawArgs?: Record<string, unknown> | null,
   ): Promise<Record<string, unknown>> {
-    const fields: Record<string, Set<string>> = {
-      click: new Set(['x', 'y', 'x_ratio', 'y_ratio']),
-      scroll: new Set(['delta_x', 'delta_y']),
-      key: new Set(['key']),
-      text: new Set(['text']),
-    };
-    const args = rawArgs ?? {};
-    if (
-      !Object.hasOwn(fields, kind) ||
-      typeof args !== 'object' ||
-      Array.isArray(args) ||
-      Object.keys(args).some(k => !fields[kind].has(k))
-    ) {
-      throw new BrowserError('invalid_tool_arguments', 'Unsupported browser user input.');
-    }
+    const args = assertValidHostInputShape(kind, rawArgs);
     const initialSession = this._session(identity, grant);
     return initialSession.control_lock.run(async () => {
       const session = this._session(identity, grant);
@@ -1996,74 +1740,24 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
           throw new BrowserError('permission_changed', 'Browser input authority changed during validation.');
         }
         this._redirectCounts.set(tab.tab_id, 0);
-        if (kind === 'click') {
-          const vp =
-            (typeof tab.page.viewportSize === 'function'
-              ? tab.page.viewportSize()
-              : tab.page.viewport_size) || {
-              width: this.config.viewport_width,
-              height: this.config.viewport_height,
-            };
-          const ratioMode = 'x_ratio' in args || 'y_ratio' in args;
-          if (ratioMode && ('x' in args || 'y' in args)) {
-            throw new BrowserError('invalid_tool_arguments', 'Use either pixel or ratio click coordinates.');
-          }
-          let x = args.x;
-          let y = args.y;
-          if (ratioMode) {
-            // The panel shows a scaled screenshot of this exact viewport, so
-            // ratios map deterministically onto viewport pixels.
-            const xr = args.x_ratio;
-            const yr = args.y_ratio;
-            if (
-              typeof xr !== 'number' ||
-              typeof yr !== 'number' ||
-              !Number.isFinite(xr) ||
-              !Number.isFinite(yr) ||
-              xr < 0 ||
-              xr > 1 ||
-              yr < 0 ||
-              yr > 1
-            ) {
-              throw new BrowserError('invalid_tool_arguments', 'Click is outside the browser view.');
-            }
-            x = Math.min(vp.width - 1, Math.floor(xr * vp.width));
-            y = Math.min(vp.height - 1, Math.floor(yr * vp.height));
-          }
-          if (
-            typeof x !== 'number' ||
-            !Number.isInteger(x) ||
-            x < 0 ||
-            x >= vp.width ||
-            typeof y !== 'number' ||
-            !Number.isInteger(y) ||
-            y < 0 ||
-            y >= vp.height
-          ) {
-            throw new BrowserError('invalid_tool_arguments', 'Click is outside the browser view.');
-          }
-          await tab.page.mouse.click(x, y);
-        } else if (kind === 'scroll') {
-          if (
-            !('delta_y' in args) ||
-            Object.values(args).some(
-              v => typeof v !== 'number' || !Number.isInteger(v) || v < -2000 || v > 2000,
-            )
-          ) {
-            throw new BrowserError('invalid_tool_arguments', 'Scroll exceeds the supported bounds.');
-          }
-          await tab.page.mouse.wheel((args.delta_x as number | undefined) ?? 0, args.delta_y as number);
-        } else if (kind === 'key') {
-          if (typeof args.key !== 'string' || args.key.length < 1 || args.key.length > 80) {
-            throw new BrowserError('invalid_tool_arguments', 'Invalid browser key.');
-          }
-          await tab.page.keyboard.press(args.key);
-        } else if (kind === 'text') {
-          if (typeof args.text !== 'string' || args.text.length > 10000) {
-            throw new BrowserError('invalid_tool_arguments', 'Browser input must be bounded text.');
-          }
+        const vp =
+          (typeof tab.page.viewportSize === 'function'
+            ? tab.page.viewportSize()
+            : tab.page.viewport_size) ||
+          session.viewport || {
+            width: this.config.viewport_width,
+            height: this.config.viewport_height,
+          };
+        const parsedInput = validateHostInputArgs(kind, args, vp);
+        if (parsedInput.kind === 'click') {
+          await tab.page.mouse.click(parsedInput.x, parsedInput.y);
+        } else if (parsedInput.kind === 'scroll') {
+          await tab.page.mouse.wheel(parsedInput.deltaX, parsedInput.deltaY);
+        } else if (parsedInput.kind === 'key') {
+          await tab.page.keyboard.press(parsedInput.key);
+        } else if (parsedInput.kind === 'text') {
           const insertText = tab.page.keyboard.insertText ?? tab.page.keyboard.insert_text;
-          await insertText.call(tab.page.keyboard, args.text);
+          await insertText.call(tab.page.keyboard, parsedInput.text);
         }
         this._invalidate(tab);
         session.last_activity = Date.now() / 1000;
@@ -2168,6 +1862,7 @@ export class PlaywrightBrowserExecutor implements BrowserExecutor {
     }
     session.cancelled = true;
     session.state = 'closing';
+    this._emitPointer(session, 0, 0, 'idle', false, false);
     for (const [token, prep] of [...this._prepared.entries()]) {
       if (prep.identity_key === key) {
         this._prepared.delete(token);

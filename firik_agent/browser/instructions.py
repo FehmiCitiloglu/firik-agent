@@ -18,7 +18,8 @@ def browser_instructions(schemas: Sequence[Mapping[str, Any]]) -> str:
         "Tarayıcı seçimi: browser_* araçları Firik'in bu oturuma ait kendi Chromium "
         "tarayıcısını yönetir. Masaüstü uygulamasında sohbetin yanındaki entegre "
         "tarayıcı paneli aynı oturumu gösterir; 'yandaki tarayıcı' bu paneldir. "
-        "Masaüstündeki bu panel headless Chromium kullanır ve ayrı bir sistem penceresi olarak görünmez. "
+        "Bu panel ayrı bir sistem penceresi olarak görünmez ve masaüstü uygulamasının "
+        "yanında gömülü/önizlemeli olarak çalışır. "
         "Paneli keşfetmek için işletim sistemi pencerelerini listeleme veya computer-use "
         "ekran görüntüleri alma; Finder dışında pencere bulunmaması bu tarayıcının "
         "olmadığını göstermez. Kullanıcı genel olarak 'tarayıcıda yap', 'siteyi aç' veya "
@@ -40,11 +41,21 @@ def browser_instructions(schemas: Sequence[Mapping[str, Any]]) -> str:
         )
     if "browser_navigate" in names:
         instructions += "Kullanıcının istediği yeni URL için browser_navigate ile URL'yi aç. "
+    if "browser_hover" in names:
+        instructions += (
+            "Üzerine gelme gerektiren menü ve ipuçları için browser_hover kullan; "
+            "anlamsal etkileşimler yandaki panelde fare imlecini görünür biçimde hedef öğeye taşır. "
+        )
     instructions += (
         "Sayfa gözlemi için DOM/metin verisini kullan. Bir ekran görüntüsüne ait "
         "dosya yolu veya 'görüntü döndü' yer tutucusu görüntünün pikselleri değildir; "
         "bunlardan görüntüyü gördüğünü iddia etme veya aynı ekran görüntüsünü "
         "tekrar tekrar isteme. "
+    )
+    handoff_note = (
+        "browser_request_handoff ile manuel kontrol devrini kullan"
+        if "browser_request_handoff" in names
+        else "mevcut manuel kontrol devrini kullan"
     )
     instructions += (
         "Kullanıcı özellikle sistem tarayıcısını, Chrome/Safari'yi, kendi profilini veya "
@@ -54,8 +65,8 @@ def browser_instructions(schemas: Sequence[Mapping[str, Any]]) -> str:
         "computer-use, sistem tarayıcısı, shell ya da başka bir araca geçme. "
         "Erişilemeyen siteyi atlayıp bağımsız izinli sitelerde araştırmaya devam et; "
         "erişilemeyen kaynaktan bilgi edinmiş gibi davranma. Sonucu belirsiz gönderme "
-        "ve tıklama işlemlerini sayfa durumunu incelemeden tekrarlama. CAPTCHA veya "
-        "insan doğrulamasına takılan siteyi de atla; o kaynak görev için zorunluysa "
-        "kullanıcıya durumu bildir ve mevcut manuel kontrol devrini kullan."
+        "ve tıklama işlemlerini sayfa durumunu incelemeden tekrarlama. CAPTCHA, "
+        "insan doğrulaması veya oturum açma duvarına takılan siteyi kendin aşmaya çalışma; "
+        f"siteyi atla ya da görev için zorunluysa kullanıcıya durumu bildir ve {handoff_note}."
     )
     return instructions

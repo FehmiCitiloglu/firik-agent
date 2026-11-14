@@ -56,6 +56,65 @@ export interface BrowserConfig {
   timezone_id: string;
 }
 
+const LOCALE_RE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/;
+
+export function resolveBrowserLocale(value = 'auto'): string {
+  const cleaned = String(value ?? '').trim();
+  if (cleaned && cleaned.toLowerCase() !== 'auto') {
+    return cleaned;
+  }
+  const candidates: string[] = [
+    process.env.FIRIK_BROWSER_LOCALE ?? '',
+    process.env.LC_ALL ?? '',
+    process.env.LC_MESSAGES ?? '',
+    process.env.LANG ?? '',
+  ];
+  try {
+    const intlLocale = Intl.DateTimeFormat().resolvedOptions().locale;
+    if (intlLocale) candidates.push(intlLocale);
+  } catch {
+    // ignore Intl lookup errors
+  }
+  for (const raw of candidates) {
+    const tag = String(raw).split('.', 1)[0].split('@', 1)[0].trim().replace(/_/g, '-');
+    if (!tag || tag.toUpperCase() === 'C' || tag.toUpperCase() === 'POSIX') continue;
+    if (!LOCALE_RE.test(tag)) continue;
+    try {
+      const [canonical] = Intl.getCanonicalLocales(tag);
+      if (canonical) return canonical;
+    } catch {
+      // ignore invalid locale candidate
+    }
+  }
+  return 'en-US';
+}
+
+export function resolveBrowserTimezone(value = 'auto'): string {
+  const cleaned = String(value ?? '').trim();
+  if (cleaned && cleaned.toLowerCase() !== 'auto') {
+    return cleaned;
+  }
+  const candidates: string[] = [];
+  const tzEnv = (process.env.TZ ?? '').trim().replace(/^:/, '');
+  if (tzEnv) candidates.push(tzEnv);
+  try {
+    const intlTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (intlTz) candidates.push(intlTz);
+  } catch {
+    // ignore Intl lookup errors
+  }
+  for (const candidate of candidates) {
+    if (!candidate || candidate.length > 64) continue;
+    try {
+      new Intl.DateTimeFormat(undefined, { timeZone: candidate });
+      return candidate;
+    } catch {
+      // ignore invalid timezone candidate
+    }
+  }
+  return 'UTC';
+}
+
 export function defaultBrowserConfig(overrides?: Partial<BrowserConfig>): BrowserConfig {
   const cfg: BrowserConfig = {
     enabled: false,
@@ -73,8 +132,8 @@ export function defaultBrowserConfig(overrides?: Partial<BrowserConfig>): Browse
     approval_ttl_seconds: 60,
     viewport_width: 1280,
     viewport_height: 800,
-    locale: 'en-US',
-    timezone_id: 'UTC',
+    locale: 'auto',
+    timezone_id: 'auto',
   };
   if (overrides) {
     for (const key of Object.keys(overrides) as (keyof BrowserConfig)[]) {

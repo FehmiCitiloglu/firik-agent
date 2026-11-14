@@ -17,7 +17,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 from firik_agent.browser.artifacts import BrowserArtifacts
-from firik_agent.browser.config import BrowserConfig
+from firik_agent.browser.config import BrowserConfig, resolve_browser_locale, resolve_browser_timezone
 from firik_agent.browser.models import BrowserError, BrowserGrant, BrowserIdentity, BrowserSession, BrowserTab, DiagnosticBuffer
 from firik_agent.browser.security import BrowserSecurityPolicy, origin_of, redact, sanitized_url
 
@@ -28,7 +28,7 @@ READS = frozenset({"status", "list_tabs", "snapshot", "screenshot", "extract_tex
                   "get_console", "get_page_errors", "get_network_errors", "wait_for"})
 _FIELDS = {
     "start": {"headless", "width", "height"}, "status": set(), "close": set(), "list_tabs": set(),
-    "new_tab": {"url"}, "select_tab": {"tab_id"}, "close_tab": {"tab_id"},
+    "new_tab": {"url"}, "select_tab": {"tab_id"}, "close_tab": {"tab_id"}, "resize": {"width", "height"},
     "navigate": {"url", "tab_id"}, "back": {"tab_id"}, "forward": {"tab_id"}, "reload": {"tab_id"},
     "wait_for": {"tab_id", "target", "state", "timeout_ms"},
     "snapshot": {"tab_id"}, "screenshot": {"tab_id", "full_page"}, "extract_text": {"tab_id"},
@@ -163,6 +163,8 @@ class BrowserManager:
         for field, minimum, maximum in (("width", 320, 2560), ("height", 240, 1440), ("x", -2000, 2000), ("y", -2000, 2000), ("timeout_ms", 100, self.config.action_timeout_ms)):
             if field in args and (type(args[field]) is not int or not minimum <= args[field] <= maximum):
                 raise BrowserError("invalid_tool_arguments", f"{field} is outside the supported bounds.")
+        if operation == "resize" and (type(args.get("width")) is not int or type(args.get("height")) is not int):
+            raise BrowserError("invalid_tool_arguments", "Resize requires integer width and height.")
         if "state" in args and args["state"] not in {"visible", "hidden", "attached", "detached"}:
             raise BrowserError("invalid_tool_arguments", "Unsupported wait state.")
         return operation, dict(args)
@@ -258,14 +260,15 @@ class BrowserManager:
             browser = await self._browser(headless)
             context = None
             try:
+                viewport = {"width": args.get("width", self.config.viewport_width), "height": args.get("height", self.config.viewport_height)}
                 context = await browser.new_context(
-                    viewport={"width": args.get("width", self.config.viewport_width), "height": args.get("height", self.config.viewport_height)},
-                    locale=self.config.locale, timezone_id=self.config.timezone_id,
+                    viewport=viewport,
+                    locale=resolve_browser_locale(self.config.locale), timezone_id=resolve_browser_timezone(self.config.timezone_id),
                     accept_downloads=False, service_workers="block", bypass_csp=False,
                 )
                 context.set_default_timeout(self.config.action_timeout_ms)
                 context.set_default_navigation_timeout(self.config.navigation_timeout_ms)
-                session = BrowserSession(identity, context, grant, headless=headless)
+                session = BrowserSession(identity, context, grant, headless=headless, viewport=(viewport["width"], viewport["height"]))
                 await context.route("**/*", lambda route: self._route(session, route))
                 # WebSockets cannot bypass HTTP routing. This core blocks all of them.
                 if not hasattr(context, "route_web_socket"):
@@ -590,7 +593,7 @@ class BrowserManager:
                            operation: str, arguments: dict | None = None) -> dict:
         """Trusted UI navigation. This entry point is never a model tool."""
         operation = operation.removeprefix("browser_")
-        if operation not in NAVIGATIONS | {"start", "status", "list_tabs", "new_tab", "select_tab", "close_tab", "close", "request_handoff"}:
+        if operation not in NAVIGATIONS | {"start", "status", "list_tabs", "new_tab", "select_tab", "close_tab", "close", "resize", "request_handoff"}:
             raise BrowserError("unsupported_capability", "Unsupported host browser control.")
         session = self._sessions.get(identity)
         if session is not None and operation != "close":
@@ -633,12 +636,30 @@ class BrowserManager:
         if operation == "list_tabs":
             return {"tabs": [{"tab_id": tab.tab_id, "url": sanitized_url(tab.page.url), "title": redact(await tab.page.title()), "active": tab.tab_id == session.active_tab_id}
                              for tab in session.tabs.values() if not tab.page.is_closed()]}
+        if operation == "resize":
+            if not host_control:
+                raise BrowserError("host_action_required", "Only host browser controls may resize the viewport.")
+            viewport = {"width": args["width"], "height": args["height"]}
+            session.viewport = (args["width"], args["height"])
+            for open_tab in list(session.tabs.values()):
+                if open_tab.page.is_closed():
+                    continue
+                async with open_tab.lock:
+                    set_vp = getattr(open_tab.page, "set_viewport_size", None)
+                    if callable(set_vp):
+                        await set_vp(viewport)
+                    self._invalidate(open_tab)
+            return self._status(session, host=host_control)
         if operation == "new_tab":
             if len(session.tabs) >= self.config.max_tabs_per_session:
                 raise BrowserError("browser_limit", "Maximum tabs per session reached.")
             if args.get("url"):
                 await self.policy.validate(args["url"], grant)
             page = await session.context.new_page()
+            if session.viewport != (self.config.viewport_width, self.config.viewport_height):
+                set_vp = getattr(page, "set_viewport_size", None)
+                if callable(set_vp):
+                    await set_vp({"width": session.viewport[0], "height": session.viewport[1]})
             tab = next(t for t in session.tabs.values() if t.page is page)
             session.active_tab_id = tab.tab_id
             if args.get("url"):

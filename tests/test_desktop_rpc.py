@@ -398,3 +398,84 @@ def test_remote_browser_retains_owner_when_close_ack_is_lost():
     fail_close = False
     asyncio.run(manager.close_owner(identity))
     assert manager.sessions(identity) == []
+
+
+def test_browser_resize_command_contract_and_uninitialized_handling(desktop):
+    server, _, output, _ = desktop
+    sid = create(server, output)
+    original_send = server.send
+    executed = []
+
+    def intercept_send(msg):
+        original_send(msg)
+        if not isinstance(msg, dict):
+            return
+        method = msg.get("method")
+        if method == "browser.configureExecutor":
+            server.handle({"jsonrpc": "2.0", "id": msg["id"], "result": {"ok": True}})
+        elif method == "browser.revoke":
+            server.handle({"jsonrpc": "2.0", "id": msg["id"], "result": {"ok": True, "payload": {}}})
+        elif method == "browser.execute":
+            params = msg.get("params", {})
+            op = params.get("operation")
+            executed.append((op, params.get("arguments", {})))
+            if op == "status" and len([x for x in executed if x[0] == "start"]) == 0:
+                payload = {"state": "uninitialized", "tab_count": 0}
+            else:
+                payload = {
+                    "state": "ready",
+                    "session_id": "s1",
+                    "context_id": "c1",
+                    "active_tab_id": "t1",
+                    "tab_count": 1,
+                }
+            server.handle({"jsonrpc": "2.0", "id": msg["id"], "result": {"ok": True, "payload": payload}})
+
+    server.send = intercept_send
+    server.handle({
+        "jsonrpc": "2.0",
+        "id": 10,
+        "method": "browser.configure",
+        "params": {"conversation_id": sid, "enabled": True, "origins": ["https://example.com"], "private_origins": [], "screenshots": True},
+    })
+    wait_until(lambda: any(row.get("id") == 10 for row in messages(output)))
+
+    server.handle({
+        "jsonrpc": "2.0",
+        "id": 11,
+        "method": "browser.userCommand",
+        "params": {"conversation_id": sid, "command": "resize", "width": 640, "height": 480},
+    })
+    wait_until(lambda: any(row.get("id") == 11 for row in messages(output)))
+    uninit = next(row for row in reversed(messages(output)) if row.get("id") == 11)
+    assert uninit["result"]["state"] == "uninitialized"
+    assert executed[-1][0] == "status"
+
+    server.handle({
+        "jsonrpc": "2.0",
+        "id": 12,
+        "method": "browser.userCommand",
+        "params": {"conversation_id": sid, "command": "start"},
+    })
+    wait_until(lambda: any(row.get("id") == 12 for row in messages(output)))
+
+    server.handle({
+        "jsonrpc": "2.0",
+        "id": 13,
+        "method": "browser.userCommand",
+        "params": {"conversation_id": sid, "command": "resize", "width": 700, "height": 500},
+    })
+    wait_until(lambda: any(row.get("id") == 13 for row in messages(output)))
+    resized = next(row for row in reversed(messages(output)) if row.get("id") == 13)
+    assert resized["result"]["state"] == "ready"
+    assert ("resize", {"width": 700, "height": 500}) in executed
+
+    server.handle({
+        "jsonrpc": "2.0",
+        "id": 14,
+        "method": "browser.userCommand",
+        "params": {"conversation_id": sid, "command": "resize", "width": 99999, "height": 500},
+    })
+    wait_until(lambda: any(row.get("id") == 14 for row in messages(output)))
+    invalid = next(row for row in reversed(messages(output)) if row.get("id") == 14)
+    assert "error" in invalid

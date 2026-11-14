@@ -178,14 +178,14 @@
           "type": "integer"
         },
         "locale": {
-          "default": "en-US",
+          "default": "auto",
           "maxLength": 32,
           "minLength": 2,
           "title": "Locale",
           "type": "string"
         },
         "timezone_id": {
-          "default": "UTC",
+          "default": "auto",
           "maxLength": 64,
           "minLength": 1,
           "title": "Timezone Id",
@@ -638,6 +638,7 @@
             "select_tab",
             "close_tab",
             "close",
+            "resize",
             "request_handoff",
             "resume_after_handoff"
           ],
@@ -655,6 +656,20 @@
           "maxLength": 64,
           "title": "Tab Id",
           "type": "string"
+        },
+        "width": {
+          "default": 0,
+          "maximum": 2560,
+          "minimum": 0,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "default": 0,
+          "maximum": 1440,
+          "minimum": 0,
+          "title": "Height",
+          "type": "integer"
         }
       },
       "required": [

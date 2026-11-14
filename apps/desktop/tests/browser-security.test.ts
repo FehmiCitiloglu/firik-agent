@@ -126,6 +126,15 @@ describe('Browser security and URL policy', () => {
     expect(normalizeAddressEntry('firik agent nedir')).toBe(
       'https://www.google.com/search?q=firik%20agent%20nedir',
     );
+    expect(normalizeAddressEntry('firik agent nedir', 'duckduckgo')).toBe(
+      'https://duckduckgo.com/?q=firik%20agent%20nedir',
+    );
+    expect(normalizeAddressEntry('firik agent nedir', 'startpage')).toBe(
+      'https://www.startpage.com/sp/search?query=firik%20agent%20nedir',
+    );
+    expect(normalizeAddressEntry('firik agent nedir', 'bing')).toBe(
+      'https://www.bing.com/search?q=firik%20agent%20nedir',
+    );
     expect(() => normalizeAddressEntry('javascript:alert(1)')).toThrow();
     expect(() => normalizeAddressEntry('file:///etc/passwd')).toThrow();
     expect(() => normalizeAddressEntry('data:text/html,hi')).toThrow();

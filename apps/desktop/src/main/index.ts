@@ -14,7 +14,9 @@ import { existsSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseParams, parsePreviewParams, PROTOCOL_VERSION, type Method } from '@firik/contracts';
-import { BrowserHost } from './browser-host.js';
+import type { BrowserViewLayoutParams } from '@firik/contracts/desktop-api';
+import { BrowserHost, type BrowserEngine } from './browser-host.js';
+import { ElectronBrowserExecutor } from './electron-browser-executor.js';
 import { BackendClient } from './rpc-client.js';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'firik', privileges: {
@@ -38,6 +40,44 @@ function trustedURL(value: string): boolean {
   } catch { return false; }
 }
 
+function assertTrustedSender(event: Electron.IpcMainInvokeEvent): void {
+  if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
+      || !trustedURL(event.senderFrame.url)) {
+    throw new Error('Geçersiz masaüstü istemcisi.');
+  }
+}
+
+function clampLayoutInt(value: unknown, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error('Geçersiz tarayıcı görünüm boyutu.');
+  }
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function parseViewLayoutParams(input: unknown): BrowserViewLayoutParams {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Geçersiz görünüm yerleşimi.');
+  }
+  const obj = input as Record<string, unknown>;
+  const convId = obj.conversation_id;
+  if (convId !== null && (typeof convId !== 'string' || !convId.trim() || convId.length > 128)) {
+    throw new Error('Geçersiz sohbet kimliği.');
+  }
+  if (typeof obj.visible !== 'boolean' || typeof obj.obscured !== 'boolean' || typeof obj.fit_viewport !== 'boolean') {
+    throw new Error('Geçersiz görünüm bayrakları.');
+  }
+  return {
+    conversation_id: convId,
+    visible: obj.visible,
+    obscured: obj.obscured,
+    x: clampLayoutInt(obj.x, -4096, 8192),
+    y: clampLayoutInt(obj.y, -4096, 8192),
+    width: clampLayoutInt(obj.width, 0, 8192),
+    height: clampLayoutInt(obj.height, 0, 8192),
+    fit_viewport: obj.fit_viewport,
+  };
+}
+
 function startBackend() {
   const executable = process.platform === 'win32' ? 'firik-backend.exe' : 'firik-backend';
   const localPython = join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
@@ -46,14 +86,43 @@ function startBackend() {
   const args = app.isPackaged ? [] : ['-m', 'firik_agent.desktop_rpc'];
   if (process.env.FIRIK_DESKTOP_CONFIG) args.push('--config', process.env.FIRIK_DESKTOP_CONFIG);
   const workerPath = resolve(__dirname, '../browser-worker/index.cjs').replace('app.asar', 'app.asar.unpacked');
+  const systemLocale = app.getPreferredSystemLanguages?.()[0] || app.getLocale?.() || undefined;
+  if (systemLocale && !process.env.FIRIK_BROWSER_LOCALE) {
+    process.env.FIRIK_BROWSER_LOCALE = systemLocale;
+  }
+  const sendBrowserPointer = (pointer: unknown): void => {
+    if (!window || window.isDestroyed()) return;
+    window.webContents.send('firik:browser.pointer', pointer);
+  };
+  const embeddedExecutor = new ElectronBrowserExecutor({
+    getParentWindow: () => window,
+    onPointer: pointer => {
+      if (browserHost?.getEngine() === 'embedded') {
+        sendBrowserPointer(pointer);
+      }
+    },
+  });
+  const initialEngine: BrowserEngine = process.env.FIRIK_BROWSER_ENGINE === 'playwright' ? 'playwright' : 'embedded';
   browserHost = new BrowserHost({
+    engine: initialEngine,
+    embeddedExecutor,
     workerPath,
     browsersPath: app.isPackaged ? join(process.resourcesPath, 'browser') : join(root, 'build/hybrid-browser'),
+    defaultLocale: systemLocale,
     utilityProcess,
     MessageChannelMain,
+    onPointer: pointer => {
+      if (browserHost.getEngine() === 'playwright') {
+        sendBrowserPointer(pointer);
+      }
+    },
   });
   backend = new BackendClient(command, args, app.isPackaged ? app.getPath('userData') : root,
-    { ...process.env, PYTHONUNBUFFERED: '1' });
+    {
+      ...process.env,
+      PYTHONUNBUFFERED: '1',
+      ...(systemLocale && !process.env.FIRIK_BROWSER_LOCALE ? { FIRIK_BROWSER_LOCALE: systemLocale } : {}),
+    });
   backend.setHostHandler(async (method, params) => {
     if (method === 'browser.configureExecutor') {
       return browserHost.configure((params as { config: Parameters<BrowserHost['configure']>[0] }).config);
@@ -103,8 +172,7 @@ function registerIPC() {
   for (const method of methods) {
     ipcMain.handle(`firik:${method}`, async (event, input: unknown) => {
       if (closing) throw new Error('Uygulama kapatılıyor.');
-      if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
-          || !trustedURL(event.senderFrame.url)) throw new Error('Geçersiz masaüstü istemcisi.');
+      assertTrustedSender(event);
       const params = parseParams(method, input);
       await ready;
       return backend.request(method, params);
@@ -112,15 +180,45 @@ function registerIPC() {
   }
   ipcMain.handle('firik:browser.preview', async (event, input: unknown) => {
     if (closing) return null;
-    if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
-        || !trustedURL(event.senderFrame.url)) throw new Error('Geçersiz masaüstü istemcisi.');
+    assertTrustedSender(event);
     const params = parsePreviewParams(input);
     await ready;
     return browserHost.captureUserPreview(params.conversation_id);
   });
+  ipcMain.handle('firik:browser.setViewLayout', async (event, input: unknown) => {
+    if (closing) return;
+    assertTrustedSender(event);
+    const params = parseViewLayoutParams(input);
+    browserHost?.setEmbeddedLayout(params);
+  });
+  ipcMain.handle('firik:browser.getEngine', async event => {
+    assertTrustedSender(event);
+    return browserHost?.getEngine() ?? 'embedded';
+  });
+  ipcMain.handle('firik:browser.setEngine', async (event, input: unknown) => {
+    if (closing) throw new Error('Uygulama kapatılıyor.');
+    assertTrustedSender(event);
+    if (input !== 'embedded' && input !== 'playwright') {
+      throw new Error('Geçersiz tarayıcı motoru.');
+    }
+    await ready;
+    const applied = await browserHost.setEngine(input);
+    if (window && !window.isDestroyed()) {
+      window.webContents.send('firik:browser.pointer', {
+        conversation_id: '',
+        visible: false,
+        x: 0,
+        y: 0,
+        viewport_width: 0,
+        viewport_height: 0,
+        action: 'idle',
+        pressing: false,
+      });
+    }
+    return applied;
+  });
   ipcMain.handle('firik:link.open', async (event, input: unknown) => {
-    if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
-        || !trustedURL(event.senderFrame.url)) throw new Error('Geçersiz istemci.');
+    assertTrustedSender(event);
     if (typeof input !== 'string' || input.length > 4096) throw new Error('Geçersiz bağlantı.');
     const url = new URL(input);
     if (url.protocol !== 'https:' || !url.hostname || url.username || url.password)

@@ -1,14 +1,22 @@
 import { StrictMode, Suspense, lazy, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, ChevronDown, Command, Globe, LoaderCircle, MessageSquare, Plus, RefreshCw,
+import { ArrowUp, ChevronDown, Command, Globe, LoaderCircle, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Square, Terminal, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatState, DesktopEvent, Snapshot } from '@firik/contracts';
 import { BrowserPanel } from './browser-panel.js';
 import { Button } from './components/ui/button.js';
-import { disconnect, showError, useUI } from './store.js';
+import {
+  BROWSER_RESIZER_WIDTH,
+  MIN_BROWSER_PANEL_WIDTH,
+  MIN_CHAT_COLUMN_WIDTH,
+  clampBrowserPanelWidth,
+  disconnect,
+  showError,
+  useUI,
+} from './store.js';
 import './style.css';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity,
@@ -26,14 +34,19 @@ function App() {
   const disconnected = useUI(state => state.disconnected);
   const settingsOpen = useUI(state => state.settingsOpen);
   const browserOpen = useUI(state => state.browserOpen);
+  const browserPanelWidth = useUI(state => state.browserPanelWidth);
+  const sidebarCollapsed = useUI(state => state.sidebarCollapsed);
   const snapshot = useQuery({ queryKey: ['snapshot'], queryFn: () => window.firik.snapshot({}) });
   const conversation = useQuery({ queryKey: ['chat', active], queryFn: () => window.firik.chat.get({ conversation_id: active! }), enabled: !!active });
   const [search, setSearch] = useState('');
   const [sending, setSending] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [stage, setStage] = useState<Record<string, string>>({});
+  const [workspaceWidth, setWorkspaceWidth] = useState<number | undefined>(undefined);
+  const [resizingBrowser, setResizingBrowser] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   const scrollArea = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const sequence = useRef({ instance: '', value: 0 });
 
@@ -156,8 +169,53 @@ function App() {
   const busy = run?.status === 'running';
   const pendingApprovals = Object.values(approvals).filter(row => row.conversation_id === active);
 
-  return <div className="app-shell">
-    <aside className="sidebar">
+  const browserEngine = useUI(state => state.browserEngine);
+
+  useEffect(() => {
+    window.firik?.browser?.getEngine?.()
+      .then(mode => useUI.getState().setBrowserEngine(mode))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!browserOpen || !active || browserEngine !== 'embedded') {
+      void window.firik?.browser?.setViewLayout?.({
+        conversation_id: active ?? null,
+        visible: false,
+        obscured: false,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        fit_viewport: true,
+      }).catch(() => {});
+    }
+  }, [active, browserEngine, browserOpen]);
+
+  useEffect(() => {
+    const element = workspaceRef.current;
+    if (!element) {
+      setWorkspaceWidth(undefined);
+      return;
+    }
+    const measure = () => {
+      const next = element.clientWidth;
+      if (next > 0) setWorkspaceWidth(next);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [Boolean(data)]);
+
+  const effectiveBrowserWidth = clampBrowserPanelWidth(browserPanelWidth, workspaceWidth);
+  const maxBrowserPanelWidth = workspaceWidth
+    ? Math.max(MIN_BROWSER_PANEL_WIDTH, Math.floor(workspaceWidth - MIN_CHAT_COLUMN_WIDTH - BROWSER_RESIZER_WIDTH))
+    : 960;
+
+  return <div className={`app-shell ${resizingBrowser ? 'resizing' : ''}`}>
+    <aside className={sidebarCollapsed ? 'sidebar collapsed' : 'sidebar'}>
       <div className="brand"><div className="brand-icon">f<span>·</span></div><div><strong>firik<span>agent</span></strong><div className="brand-caption">KİŞİSEL ÇALIŞMA ALANINIZ</div></div></div>
       <Button className="new-chat" onClick={() => void newChat()} disabled={!data || disconnected}><Plus size={17} /> Yeni sohbet <span className="shortcut"><Command size={11} /> N</span></Button>
       <div className="history-search"><Search size={14} /><input aria-label="Sohbetlerde ara" placeholder="Sohbetlerde ara" value={search} onChange={e => setSearch(e.target.value)} /></div>
@@ -175,7 +233,19 @@ function App() {
     </aside>
 
     <main className="main-content">
-      <header className="topbar"><div className="page-title"><span className="breadcrumb">Çalışma alanı</span><ChevronDown size={12} /><span>{chat?.title ?? 'Yeni sohbet'}</span></div>
+      <header className="topbar">
+        <div className="topbar-left">
+          <Button
+            variant="ghost"
+            className="sidebar-toggle"
+            aria-label={sidebarCollapsed ? 'Kenar çubuğunu göster' : 'Kenar çubuğunu gizle'}
+            title={sidebarCollapsed ? 'Kenar çubuğunu göster' : 'Kenar çubuğunu gizle'}
+            onClick={() => useUI.getState().toggleSidebar()}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </Button>
+          <div className="page-title"><span className="breadcrumb">Çalışma alanı</span><ChevronDown size={12} /><span>{chat?.title ?? 'Yeni sohbet'}</span></div>
+        </div>
         <div className="topbar-right"><span className="local-badge"><span /> Masaüstü</span>
           <Button variant={browserOpen ? 'outline' : 'ghost'} aria-label="Tarayıcı panelini aç" disabled={!active || disconnected} onClick={() => useUI.setState({ browserOpen: !browserOpen })}><Globe size={15} /> Tarayıcı</Button>
           <Button variant="ghost" aria-label="Model listesini yenile" title="Model listesini yenile" disabled={!data || disconnected} onClick={() => {
@@ -187,7 +257,7 @@ function App() {
       {snapshot.isError && <div className="startup-error" role="alert"><Terminal size={30} /><h2>Çekirdek başlatılamadı</h2><p>{snapshot.error.message}</p><p>Python bağımlılıklarını kontrol edip uygulamayı yeniden başlatın.</p></div>}
       {!data && !snapshot.isError && <div className="loading-state"><LoaderCircle size={24} className="spin" /><p>Çalışma alanınız hazırlanıyor…</p></div>}
 
-      {data && <div className="workspace-body">
+      {data && <div className="workspace-body" ref={workspaceRef}>
         <div className="chat-column">
         <div className="messages-area" ref={scrollArea} onScroll={() => {
           const element = scrollArea.current;
@@ -248,12 +318,69 @@ function App() {
         </div>
         </div>
         {browserOpen && active && (
-          <BrowserPanel
-            key={active}
-            conversationId={active}
-            initialGrant={chat?.browser}
-            onClose={() => useUI.setState({ browserOpen: false })}
-          />
+          <>
+            <div
+              role="separator"
+              tabIndex={0}
+              aria-orientation="vertical"
+              aria-label="Tarayıcı paneli genişliğini ayarla"
+              aria-valuemin={MIN_BROWSER_PANEL_WIDTH}
+              aria-valuemax={maxBrowserPanelWidth}
+              aria-valuenow={effectiveBrowserWidth}
+              className={`browser-resizer ${resizingBrowser ? 'active' : ''}`}
+              onDoubleClick={() => useUI.getState().resetBrowserPanelWidth(workspaceWidth)}
+              onKeyDown={event => {
+                const step = event.shiftKey ? 40 : 16;
+                if (event.key === 'ArrowLeft') {
+                  event.preventDefault();
+                  useUI.getState().setBrowserPanelWidth(effectiveBrowserWidth + step, workspaceWidth);
+                } else if (event.key === 'ArrowRight') {
+                  event.preventDefault();
+                  useUI.getState().setBrowserPanelWidth(effectiveBrowserWidth - step, workspaceWidth);
+                } else if (event.key === 'Home') {
+                  event.preventDefault();
+                  useUI.getState().resetBrowserPanelWidth(workspaceWidth);
+                }
+              }}
+              onPointerDown={event => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                const startX = event.clientX;
+                const startWidth = effectiveBrowserWidth;
+                const currentWorkspaceWidth = workspaceRef.current?.clientWidth ?? workspaceWidth;
+                setResizingBrowser(true);
+                const target = event.currentTarget;
+                if (typeof target.setPointerCapture === 'function') {
+                  try {
+                    target.setPointerCapture(event.pointerId);
+                  } catch {
+                    // ignore synthetic pointer capture failure
+                  }
+                }
+                const onMove = (moveEvent: PointerEvent) => {
+                  const deltaX = startX - moveEvent.clientX;
+                  useUI.getState().setBrowserPanelWidth(startWidth + deltaX, currentWorkspaceWidth);
+                };
+                const onUp = () => {
+                  setResizingBrowser(false);
+                  window.removeEventListener('pointermove', onMove);
+                  window.removeEventListener('pointerup', onUp);
+                  window.removeEventListener('pointercancel', onUp);
+                };
+                window.addEventListener('pointermove', onMove);
+                window.addEventListener('pointerup', onUp);
+                window.addEventListener('pointercancel', onUp);
+              }}
+            />
+            <BrowserPanel
+              key={active}
+              conversationId={active}
+              initialGrant={chat?.browser}
+              width={effectiveBrowserWidth}
+              obscured={settingsOpen || toolsOpen}
+              onClose={() => useUI.setState({ browserOpen: false })}
+            />
+          </>
         )}
         {settingsOpen && <Suspense fallback={null}><SettingsDialog snapshot={data} /></Suspense>}
       </div>}

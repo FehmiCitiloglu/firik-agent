@@ -86,14 +86,21 @@ try {
   await page.getByText('Yerel doğrulama yanıtı: Merhaba hibrit!', { exact: true }).waitFor();
   checks.push('conversation switching keeps independent histories');
 
-  // Exercise the product controls and the real utilityProcess worker, using
-  // a private-origin grant to this one loopback fixture only.
+  // Exercise the product controls and either the default embedded WebContentsView
+  // engine or (when FIRIK_BROWSER_ENGINE=playwright) the utilityProcess worker,
+  // using a private-origin grant to this one loopback fixture only.
+  const engineMode = process.env.FIRIK_BROWSER_ENGINE === 'playwright' ? 'playwright' : 'embedded';
   await page.getByRole('button', { name: /Tarayıcı/ }).click();
   const panel = page.getByRole('complementary', { name: 'Tarayıcı paneli' });
   const preview = panel.locator('.browser-preview-image');
+  const nativeHost = panel.getByTestId('embedded-browser-viewport');
   await panel.getByText('Tarayıcı bu sohbet için kapalı').waitFor();
   await panel.getByRole('button', { name: 'Tarayıcıyı ve canlı görünümü etkinleştir' }).click();
   await panel.getByText('Tarayıcı hazır').waitFor({ timeout: 10000 });
+  assert.equal(
+    await panel.locator('.browser-engine-badge').innerText(),
+    engineMode === 'embedded' ? 'Canlı' : 'Önizleme',
+  );
   await panel.getByRole('button', { name: 'Tarayıcı izinleri' }).click();
   await panel.getByLabel('İzin verilen kökenler (her satıra bir tam http/https kökeni)').fill(browserOrigin);
   await panel.getByLabel('Yerel / özel ağ kökenleri (yukarıdaki listede de yer almalıdır)').fill(browserOrigin);
@@ -101,23 +108,105 @@ try {
   await panel.getByRole('textbox', { name: 'Adres veya arama' }).fill(`${browserOrigin}/browser-fixture`);
   await panel.getByRole('button', { name: 'Git', exact: true }).click();
   await panel.getByRole('tab', { name: 'Firik yerel sayfa' }).waitFor({ timeout: 20000 });
-  await preview.waitFor();
-  await page.waitForFunction(() => document.querySelector('.browser-preview-image')?.naturalWidth === 1280);
+
   const processes = await app.evaluate(({ app }) => app.getAppMetrics().map(process => process.name));
-  assert(processes.includes('Firik Browser Worker'));
-  checks.push('real TypeScript utilityProcess Chromium navigation and binary preview with explicit loopback origin');
+  if (engineMode === 'playwright') {
+    await preview.waitFor();
+    await page.waitForFunction(() => document.querySelector('.browser-preview-image')?.naturalWidth === 1280);
+    assert(processes.includes('Firik Browser Worker'));
+    checks.push('real TypeScript utilityProcess Chromium navigation and binary preview with explicit loopback origin');
+  } else {
+    await nativeHost.waitFor();
+    assert.equal(await preview.count(), 0);
+    assert(!processes.includes('Firik Browser Worker'));
+    // Wait until Electron WebContentsView is attached, visible, sized to the viewport, and sanitized UA
+    await page.waitForFunction(() => document.querySelector('[data-testid="embedded-browser-viewport"]'));
+    let viewState = null;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      viewState = await app.evaluate(({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        const children = win.contentView.children.map(v => ({
+          visible: v.getVisible(),
+          bounds: v.getBounds(),
+          url: v.webContents?.getURL?.() ?? '',
+          ua: v.webContents?.getUserAgent?.() ?? '',
+        }));
+        return children;
+      });
+      if (viewState.some(v => v.visible && v.url.endsWith('/browser-fixture') && v.bounds.width > 100)) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    const activeView = viewState.find(v => v.visible);
+    assert(activeView, `Expected visible WebContentsView, got ${JSON.stringify(viewState)}`);
+    assert(activeView.url.endsWith('/browser-fixture'));
+    assert(!activeView.ua.includes('Electron/'));
+    assert(!activeView.ua.includes('firik-desktop/'));
+    const hostBox = await nativeHost.boundingBox();
+    assert(hostBox);
+    assert(Math.abs(activeView.bounds.x - Math.round(hostBox.x)) <= 3);
+    assert(Math.abs(activeView.bounds.y - Math.round(hostBox.y)) <= 3);
+    assert(Math.abs(activeView.bounds.width - Math.round(hostBox.width)) <= 3);
+    assert(Math.abs(activeView.bounds.height - Math.round(hostBox.height)) <= 3);
+
+    // Drag .browser-resizer to confirm live 60fps panel + WebContentsView resize
+    const resizerBox = await page.getByRole('separator', { name: 'Tarayıcı paneli genişliğini ayarla' }).boundingBox();
+    assert(resizerBox);
+    await page.mouse.move(resizerBox.x + resizerBox.width / 2, resizerBox.y + resizerBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(resizerBox.x - 100, resizerBox.y + resizerBox.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+    const resizedView = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].contentView.children
+        .map(v => ({ visible: v.getVisible(), bounds: v.getBounds() }))
+        .find(v => v.visible),
+    );
+    assert(resizedView && resizedView.bounds.width >= activeView.bounds.width + 60);
+
+    // Opening modal hides WebContentsView cleanly (z-order protection), closing restores it
+    await page.getByRole('button', { name: 'Ayarlar', exact: true }).click();
+    await page.getByRole('dialog').waitFor();
+    await page.waitForTimeout(150);
+    const obscuredCount = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].contentView.children.filter(v => v.getVisible()).length,
+    );
+    assert.equal(obscuredCount, 0);
+    await page.getByRole('button', { name: 'Ayarları kapat', exact: true }).click();
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    await page.waitForTimeout(150);
+    const restoredCount = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].contentView.children.filter(v => v.getVisible()).length,
+    );
+    assert.equal(restoredCount, 1);
+
+    checks.push('embedded WebContentsView attaches, resizes live via resizer, hides behind modals, and removes Electron UA token');
+  }
   await page.screenshot({ path: join(output, '04-browser-panel.png') });
 
   await panel.getByRole('button', { name: 'Kontrolü al', exact: true }).click();
   await panel.getByRole('button', { name: 'Ajana geri ver', exact: true }).waitFor();
-  await preview.waitFor();
-  const bounds = await preview.boundingBox();
-  assert(bounds);
-  await preview.click({ position: { x: bounds.width * 150 / 1280, y: bounds.height * 170 / 800 } });
-  await preview.waitFor();
+  if (engineMode === 'playwright') {
+    await preview.waitFor();
+    const bounds = await preview.boundingBox();
+    assert(bounds);
+    await preview.click({ position: { x: bounds.width * 150 / 1280, y: bounds.height * 170 / 800 } });
+    await preview.waitFor();
+  } else {
+    // Focus #note directly inside the live embedded WebContentsView
+    await app.evaluate(async ({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      const view = win.contentView.children.find(v => v.getVisible());
+      if (view) {
+        view.webContents.focus();
+        await view.webContents.executeJavaScript('document.getElementById("note")?.focus()');
+      }
+    });
+  }
   await panel.getByRole('textbox', { name: 'Elle kontrol metin girişi' }).fill('Elle yazıldı');
   await panel.getByRole('button', { name: 'Yaz', exact: true }).click();
-  await preview.waitFor();
+  if (engineMode === 'playwright') {
+    await preview.waitFor();
+  }
   await panel.getByRole('button', { name: 'Ajana geri ver', exact: true }).click();
   await panel.getByRole('button', { name: 'Kontrolü al', exact: true }).waitFor();
   await page.getByRole('textbox', { name: 'Mesajınız' }).fill('Tarayıcıdaki sayfayı oku');
@@ -139,14 +228,16 @@ try {
   const afterApproval = await (await fetch(`${browserOrigin}/fixture-state`)).json();
   assert.equal(afterApproval.browser_actions, 1);
   assert(afterApproval.tools.every(tool => !tool.error && !tool.private_value_leaked));
-  checks.push('Python native browser_click waits for exact UI approval and executes once in the TypeScript worker');
+  checks.push('Python native browser_click waits for exact UI approval and executes once in the active browser engine');
 
   await panel.getByRole('button', { name: 'Yeni sekme aç' }).click();
   await page.waitForFunction(() => document.querySelectorAll('.browser-tab').length === 2);
   await page.waitForFunction(() => document.querySelector('input[aria-label="Adres veya arama"]')?.value === '');
   await panel.getByRole('tab').first().click();
   await page.waitForFunction(url => document.querySelector('input[aria-label="Adres veya arama"]')?.value === url, `${browserOrigin}/browser-fixture`);
-  await preview.waitFor();
+  if (engineMode === 'playwright') {
+    await preview.waitFor();
+  }
   checks.push('tab switching restores the correct active address and page');
 
   await panel.getByRole('button', { name: 'Tarayıcı izinleri' }).click();
@@ -154,14 +245,25 @@ try {
   await panel.getByRole('button', { name: 'İzinleri kaydet' }).click();
   await panel.getByText('Canlı önizleme kapalı').waitFor();
   assert.equal(await preview.count(), 0);
+  if (engineMode === 'embedded') {
+    await page.waitForTimeout(100);
+    const hiddenAfterRevoke = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].contentView.children.filter(v => v.getVisible()).length,
+    );
+    assert.equal(hiddenAfterRevoke, 0);
+  }
   await page.getByRole('button', { name: 'Uzun yanıtı durdur', exact: true }).click();
   await panel.getByText('Tarayıcı bu sohbet için kapalı').waitFor();
   assert.equal(await preview.count(), 0);
   await page.getByRole('button', { name: 'Merhaba hibrit', exact: true }).click();
   await panel.getByText('Canlı önizleme kapalı').waitFor();
   await panel.getByRole('button', { name: 'Canlı görünümü aç', exact: true }).click();
-  await preview.waitFor();
-  checks.push('preview revocation clears frames and conversation switching does not share browser grants or images');
+  if (engineMode === 'playwright') {
+    await preview.waitFor();
+  } else {
+    await nativeHost.waitFor();
+  }
+  checks.push('preview revocation clears frames/views and conversation switching does not share browser grants');
 
   assert.deepEqual(errors, []);
   await app.close();

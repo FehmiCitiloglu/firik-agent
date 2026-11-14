@@ -5,6 +5,8 @@ import {
   WorkerRequestDispatcher,
   defaultBrowserConfig,
   originOf,
+  resolveBrowserLocale,
+  resolveBrowserTimezone,
   validateGrant,
   validateIdentity,
 } from '../src/browser-worker/index.js';
@@ -358,5 +360,118 @@ describe('Browser worker runtime and BrowserHost governance', () => {
     expect(binary!.byteLength).toBeGreaterThan(8);
 
     await host.shutdown();
+  });
+
+  it('resolves host locale/timezone and resizes host browser viewports without exposing resize to models', async () => {
+    const prevLocale = process.env.FIRIK_BROWSER_LOCALE;
+    const prevLang = process.env.LANG;
+    const prevTz = process.env.TZ;
+    try {
+      process.env.FIRIK_BROWSER_LOCALE = 'tr_TR.UTF-8';
+      process.env.TZ = 'Europe/Istanbul';
+      expect(resolveBrowserLocale('auto')).toBe('tr-TR');
+      expect(resolveBrowserTimezone('auto')).toBe('Europe/Istanbul');
+      expect(resolveBrowserLocale('de-DE')).toBe('de-DE');
+      expect(resolveBrowserTimezone('Europe/Berlin')).toBe('Europe/Berlin');
+
+      delete process.env.FIRIK_BROWSER_LOCALE;
+      process.env.LANG = 'C.UTF-8';
+      expect(resolveBrowserLocale('auto')).not.toBe('C');
+
+      process.env.FIRIK_BROWSER_LOCALE = 'tr-TR';
+      const contextCalls: Array<{ locale?: string; timezoneId?: string; viewport?: { width: number; height: number } }> = [];
+      const viewportCalls: Array<{ width: number; height: number }> = [];
+      const clickCoords: Array<[number, number]> = [];
+      const createResizablePage = (initialViewport: { width: number; height: number }) => {
+        let vp = { ...initialViewport };
+        return {
+          url: () => 'https://example.com/',
+          title: async () => 'Fixture',
+          isClosed: () => false,
+          on() {},
+          mainFrame: () => ({ url: () => 'https://example.com/' }),
+          frames: () => [{ url: () => 'https://example.com/' }],
+          viewportSize: () => vp,
+          async setViewportSize(next: { width: number; height: number }) {
+            vp = { ...next };
+            viewportCalls.push(vp);
+          },
+          mouse: {
+            click: async (x: number, y: number) => {
+              clickCoords.push([x, y]);
+            },
+            wheel: async () => {},
+          },
+          keyboard: { insertText: async () => {}, press: async () => {} },
+          async goto() {
+            return { status: () => 200, request: () => ({ redirectedFrom: () => null }) };
+          },
+          async ariaSnapshot() {
+            return '- document';
+          },
+          async screenshot() {
+            return Buffer.from('\x89PNG\r\n\x1a\n', 'binary');
+          },
+          async close() {},
+        };
+      };
+
+      const executor = new PlaywrightBrowserExecutor(defaultBrowserConfig({ enabled: true }), policy);
+      executor._playwright = {
+        chromium: {
+          launch: async () => ({
+            version: () => '156.0.fake',
+            on() {},
+            isConnected: () => true,
+            close: async () => {},
+            newContext: async (opts: { locale?: string; timezoneId?: string; viewport: { width: number; height: number } }) => {
+              contextCalls.push(opts);
+              return {
+                setDefaultTimeout() {},
+                setDefaultNavigationTimeout() {},
+                route: async () => {},
+                routeWebSocket: async () => {},
+                on() {},
+                newPage: async () => createResizablePage(opts.viewport),
+                close: async () => {},
+              };
+            },
+          }),
+        },
+        stop: async () => {},
+      };
+
+      const identity = validateIdentity({ conversation_id: 'c-resize', actor_id: 'parent' });
+      await executor.hostCommand(identity, grant, 'start');
+      expect(contextCalls[0].locale).toBe('tr-TR');
+      expect(contextCalls[0].timezoneId).toBe('Europe/Istanbul');
+
+      await expect(
+        executor.dispatch(identity, grant, 'resize', { width: 700, height: 500 }),
+      ).rejects.toMatchObject({ code: 'host_action_required' });
+
+      const resized = await executor.hostCommand(identity, grant, 'resize', { width: 700, height: 500 });
+      expect(resized.revision).toBe(1);
+      expect(viewportCalls).toEqual([{ width: 700, height: 500 }]);
+
+      await executor.hostCommand(identity, grant, 'request_handoff');
+      await executor.hostInput(identity, grant, 'click', { x_ratio: 0.5, y_ratio: 0.5 });
+      expect(clickCoords).toEqual([[350, 250]]);
+
+      await executor.hostCommand(identity, grant, 'new_tab');
+      expect(viewportCalls).toEqual([
+        { width: 700, height: 500 },
+        { width: 700, height: 500 },
+      ]);
+
+      await executor.closeAll();
+    } finally {
+      if (prevLocale === undefined) delete process.env.FIRIK_BROWSER_LOCALE;
+      else process.env.FIRIK_BROWSER_LOCALE = prevLocale;
+      if (prevLang === undefined) delete process.env.LANG;
+      else process.env.LANG = prevLang;
+      if (prevTz === undefined) delete process.env.TZ;
+      else process.env.TZ = prevTz;
+    }
   });
 });

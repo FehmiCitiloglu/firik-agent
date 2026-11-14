@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { parseParams, parseResult, parseEvent } from '@firik/contracts';
-import { disconnect, useUI } from '../src/renderer/store.js';
+import {
+  DEFAULT_BROWSER_PANEL_WIDTH,
+  clampBrowserPanelWidth,
+  disconnect,
+  useUI,
+} from '../src/renderer/store.js';
 
 describe('desktop wire boundary', () => {
   it('rejects extra authority fields and incompatible protocol versions', () => {
@@ -32,5 +37,49 @@ describe('desktop wire boundary', () => {
     expect(useUI.getState().runs['lost-chat'].status).toBe('failed');
     expect(useUI.getState().approvals).toEqual({});
     expect(useUI.getState().disconnected).toBe(true);
+  });
+  it('clamps browser panel width cleanly and validates resize contracts', () => {
+    expect(useUI.getState().browserPanelWidth).toBe(DEFAULT_BROWSER_PANEL_WIDTH);
+    expect(useUI.getState().searchEngine).toBe('duckduckgo');
+    expect(useUI.getState().browserFitViewport).toBe(false);
+    expect(useUI.getState().browserEngine).toBe('embedded');
+
+    expect(clampBrowserPanelWidth(120, 1000)).toBe(320);
+    expect(clampBrowserPanelWidth(900, 1000)).toBe(734);
+    expect(clampBrowserPanelWidth(Number.NaN)).toBe(DEFAULT_BROWSER_PANEL_WIDTH);
+
+    useUI.getState().setBrowserPanelWidth(640, 1100);
+    expect(useUI.getState().browserPanelWidth).toBe(640);
+    useUI.getState().resetBrowserPanelWidth(1100);
+    expect(useUI.getState().browserPanelWidth).toBe(DEFAULT_BROWSER_PANEL_WIDTH);
+    useUI.getState().toggleSidebar();
+    expect(useUI.getState().sidebarCollapsed).toBe(true);
+    useUI.getState().setSearchEngine('startpage');
+    expect(useUI.getState().searchEngine).toBe('startpage');
+    useUI.getState().setBrowserFitViewport(true);
+    expect(useUI.getState().browserFitViewport).toBe(true);
+    useUI.getState().setBrowserEngine('playwright');
+    expect(useUI.getState().browserEngine).toBe('playwright');
+
+    useUI.getState().toggleSidebar(false);
+    useUI.getState().setSearchEngine('duckduckgo');
+    useUI.getState().setBrowserFitViewport(false);
+    useUI.getState().setBrowserEngine('embedded');
+
+    expect(
+      parseParams('browser.userCommand', {
+        conversation_id: 'chat',
+        command: 'resize',
+        width: 640,
+        height: 480,
+      }),
+    ).toMatchObject({ command: 'resize', width: 640, height: 480 });
+    expect(() =>
+      parseParams('browser.userCommand', {
+        conversation_id: 'chat',
+        command: 'resize',
+        width: 99999,
+      }),
+    ).toThrow();
   });
 });

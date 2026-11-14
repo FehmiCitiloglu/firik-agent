@@ -156,6 +156,7 @@ def test_helper_does_not_promote_unavailable_navigation():
     {"browser_snapshot"}, {"browser_navigate"},
     {"browser_status", "browser_list_tabs", "browser_snapshot"},
     {"browser_status", "browser_start", "browser_navigate"},
+    {"browser_status", "browser_navigate", "browser_snapshot", "browser_hover", "browser_request_handoff"},
 ])
 def test_browser_guidance_names_only_available_tools(names):
     import re
@@ -164,3 +165,7 @@ def test_browser_guidance_names_only_available_tools(names):
     assert "Chrome/Safari" in guidance and "bu açık tercihi izle" in guidance
     if "browser_snapshot" in names:
         assert "yeniden başlatma veya başka adrese gitme" in guidance
+    if "browser_hover" in names:
+        assert "browser_hover" in guidance and "fare imlecini" in guidance
+    if "browser_request_handoff" in names:
+        assert "browser_request_handoff" in guidance and "oturum açma duvarına" in guidance

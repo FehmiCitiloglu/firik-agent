@@ -118,5 +118,6 @@ class BrowserSession:
     actions: int = 0
     cancelled: bool = False
     headless: bool = True
+    viewport: tuple[int, int] = (1280, 800)
     pending: set = field(default_factory=set)
     control_lock: asyncio.Lock = field(default_factory=asyncio.Lock)

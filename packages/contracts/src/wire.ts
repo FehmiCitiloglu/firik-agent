@@ -97,10 +97,13 @@ export type Command =
   | 'select_tab'
   | 'close_tab'
   | 'close'
+  | 'resize'
   | 'request_handoff'
   | 'resume_after_handoff';
 export type Url2 = string;
 export type TabId1 = string;
+export type Width = number;
+export type Height = number;
 export type ConversationId9 = string;
 export type Kind = 'click' | 'wheel' | 'type' | 'key';
 export type X = number;
@@ -156,8 +159,8 @@ export type Content1 = string | null;
 export type ToolName1 = string | null;
 export type ApprovalId2 = string | null;
 export type ConversationId12 = string;
-export type Width = number;
-export type Height = number;
+export type Width1 = number;
+export type Height1 = number;
 
 export interface DesktopWireTypes {
   HelloParams: HelloParams;
@@ -336,6 +339,8 @@ export interface BrowserUserCommandParams {
   command: Command;
   url?: Url2;
   tab_id?: TabId1;
+  width?: Width;
+  height?: Height;
 }
 export interface BrowserUserInputParams {
   conversation_id: ConversationId9;
@@ -434,8 +439,8 @@ export interface DesktopEvent {
 }
 export interface BrowserPreviewParams {
   conversation_id: ConversationId12;
-  width?: Width;
-  height?: Height;
+  width?: Width1;
+  height?: Height1;
 }
 
 export interface DesktopMethods {

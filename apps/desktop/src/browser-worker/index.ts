@@ -1,5 +1,5 @@
 import { parentPort as nodeParentPort } from 'node:worker_threads';
-import { PlaywrightBrowserExecutor } from './executor.js';
+import { PlaywrightBrowserExecutor, type BrowserExecutor } from './executor.js';
 import { BrowserError, defaultBrowserConfig, type BrowserConfig, type BrowserGrant, type BrowserIdentity } from './models.js';
 
 export * from './models.js';
@@ -65,9 +65,9 @@ export interface WorkerResponseEnvelope {
 }
 
 export class WorkerRequestDispatcher {
-  readonly executor: PlaywrightBrowserExecutor;
+  readonly executor: BrowserExecutor;
 
-  constructor(executor?: PlaywrightBrowserExecutor) {
+  constructor(executor?: BrowserExecutor) {
     this.executor = executor ?? new PlaywrightBrowserExecutor({ enabled: true });
   }
 
@@ -194,7 +194,18 @@ interface PortLike {
   start?: () => void;
 }
 
+function wirePointerSink(dispatcher: WorkerRequestDispatcher, target: Pick<PortLike, 'postMessage'>): void {
+  dispatcher.executor.setPointerSink?.(pointer => {
+    try {
+      target.postMessage({ type: 'pointer', pointer });
+    } catch {
+      // Ignore closed port during teardown
+    }
+  });
+}
+
 function attachPort(port: PortLike, dispatcher: WorkerRequestDispatcher): void {
+  wirePointerSink(dispatcher, port);
   port.on('message', (raw: unknown) => {
     const data =
       raw && typeof raw === 'object' && 'data' in raw && !('id' in raw && 'payload' in raw)
@@ -220,6 +231,7 @@ if (electronParentPort && typeof electronParentPort.once === 'function') {
   });
 } else if (nodeParentPort) {
   const dispatcher = new WorkerRequestDispatcher();
+  wirePointerSink(dispatcher, nodeParentPort);
   nodeParentPort.on('message', (msg: unknown) => {
     if (msg && typeof msg === 'object' && 'type' in msg && (msg as { type: string }).type === 'init_port' && 'port' in msg) {
       attachPort((msg as { port: PortLike }).port, dispatcher);

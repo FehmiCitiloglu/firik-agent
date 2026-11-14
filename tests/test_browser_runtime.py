@@ -283,3 +283,49 @@ async def test_host_navigation_remains_available_after_agent_action_budget_is_ex
     assert session.actions==1
     manager._execute.assert_awaited_once()
     await manager.close_all()
+
+
+@pytest.mark.asyncio
+async def test_browser_resize_and_auto_locale_timezone(monkeypatch):
+    from firik_agent.browser.config import resolve_browser_locale, resolve_browser_timezone
+    monkeypatch.setenv("FIRIK_BROWSER_LOCALE", "tr_TR.UTF-8")
+    monkeypatch.setenv("TZ", "Europe/Istanbul")
+    assert resolve_browser_locale("auto") == "tr-TR"
+    assert resolve_browser_timezone("auto") == "Europe/Istanbul"
+    assert resolve_browser_locale("fr-FR") == "fr-FR"
+    assert resolve_browser_timezone("America/New_York") == "America/New_York"
+
+    cfg = BrowserConfig(enabled=True)
+    assert cfg.locale == "auto" and cfg.timezone_id == "auto"
+
+    manager = BrowserManager(cfg)
+    owner = BrowserIdentity("resize-owner")
+    session, tab = fixture_session(manager, owner)
+    tab.page.set_viewport_size = AsyncMock()
+    new_page = Mock()
+    new_page.is_closed.return_value = False
+    new_page.url = "about:blank"
+    new_page.set_viewport_size = AsyncMock()
+    session.context.new_page = AsyncMock(side_effect=lambda: _attach_new_tab(manager, session, new_page))
+
+    with pytest.raises(BrowserError) as error:
+        await manager.dispatch(owner, BrowserGrant(enabled=True), "resize", {"width": 720, "height": 540})
+    assert error.value.code == "host_action_required"
+    tab.page.set_viewport_size.assert_not_awaited()
+
+    res = await manager.host_command(owner, BrowserGrant(enabled=True), "resize", {"width": 720, "height": 540})
+    assert res["state"] == "ready"
+    assert tab.revision == 1
+    assert session.viewport == (720, 540)
+    tab.page.set_viewport_size.assert_awaited_once_with({"width": 720, "height": 540})
+
+    created = await manager.host_command(owner, BrowserGrant(enabled=True), "new_tab", {})
+    assert created["tab_id"] in session.tabs
+    new_page.set_viewport_size.assert_awaited_once_with({"width": 720, "height": 540})
+    await manager.close_all()
+
+
+def _attach_new_tab(manager, session, page):
+    tab = BrowserTab(page)
+    session.tabs[tab.tab_id] = tab
+    return page
