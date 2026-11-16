@@ -1,0 +1,49 @@
+/* Keep small UI text readable on 1x displays. Resolution queries also update
+   when a window moves between Retina and external displays; do not force a
+   device scale factor or bitmap-scale the entire application. */
+@media (max-resolution: 1.5dppx) {
+  :root { -webkit-font-smoothing: auto; text-rendering: auto; }
+
+  .markdown, .workspace-message .markdown { font-size: 16px; line-height: 1.75; }
+  .composer textarea { font-size: 15px; }
+  .history-item, .page-title, .message-author { font-size: 13px; }
+  .model-controls select, .tools-trigger { font-size: 12px; min-height: 32px; }
+  .model-controls select { max-width: 250px; }
+  .brand-caption, .section-caption, .eyebrow, .backend-status,
+  .preview-badge, .composer-hint, .local-badge, .tools-trigger > span,
+  .tools-popover label > span, .working-label, .key-state {
+    font-size: 11px;
+  }
+  .brand-caption { letter-spacing: .8px; }
+  .section-caption { letter-spacing: 1px; }
+  .composer-hint { color: #8b9ba6; }
+
+  .history-search input, .history-empty, .suggestions > button,
+  .key-notice, .tools-popover label, .tools-popover p,
+  .dialog-content > p, .form-note { font-size: 13px; }
+  .settings-form label, .settings-form input { font-size: 14px; }
+  .markdown pre, .markdown table { font-size: 13px; }
+  .markdown code { font-size: 13px; }
+
+  .browser-state-badge, .browser-engine-badge, .browser-pointer-pill,
+  .browser-agent-cursor-label { font-size: 12px; }
+  .browser-settings-drawer, .browser-field textarea, .browser-field select,
+  .browser-nav input, .browser-manual-bar input { font-size: 13px; }
+
+  .coding-history-text small, .coding-new-session .shortcut,
+  .git-tools button span { font-size: 12px; }
+  .coding-configuration label, .coding-mode-description,
+  .coding-composer-footer, .coding-inspector-heading,
+  .coding-evidence article, .git-tools button { font-size: 13px; }
+
+  .mcp-dialog .mcp-status { font-size: 12px; }
+  .mcp-dialog .mcp-help, .mcp-dialog .mcp-endpoint,
+  .mcp-dialog .mcp-card-actions .button { font-size: 13px; }
+}
+
+@media (max-resolution: 1.5dppx) and (max-height: 720px) {
+  .sidebar { padding-top: 20px; }
+  .brand { margin-bottom: 20px; }
+  .workspace-navigation button { padding-block: 8px; }
+  .history-search { margin-block: 16px 18px; }
+}

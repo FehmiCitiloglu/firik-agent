@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   MessageChannelMain,
@@ -18,6 +19,7 @@ import type { BrowserViewLayoutParams } from '@firik/contracts/desktop-api';
 import { BrowserHost, type BrowserEngine } from './browser-host.js';
 import { ElectronBrowserExecutor } from './electron-browser-executor.js';
 import { BackendClient } from './rpc-client.js';
+import { createProjectDirectoryPicker } from './project-directory-picker.js';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'firik', privileges: {
   standard: true, secure: true, supportFetchAPI: true, corsEnabled: true,
@@ -153,6 +155,16 @@ function startBackend() {
 }
 
 function registerIPC() {
+  const selectProjectDirectory = createProjectDirectoryPicker(options => {
+    const parent = window;
+    if (!parent || parent.isDestroyed()) throw new Error('Proje klasörü seçimi için uygulama penceresi açık olmalıdır.');
+    return dialog.showOpenDialog(parent, options);
+  });
+  ipcMain.handle('firik:desktop.selectProjectDirectory', async (event, input: unknown) => {
+    if (closing) throw new Error('Uygulama kapatılıyor.');
+    assertTrustedSender(event);
+    return selectProjectDirectory(input);
+  });
   const methods: Method[] = [
     'state.snapshot',
     'chat.create',
@@ -164,7 +176,14 @@ function registerIPC() {
     'credentials.set',
     'models.list',
     'mcp.set',
+    'mcp.list', 'mcp.save', 'mcp.remove', 'mcp.command',
     'approval.resolve',
+    'projects.list', 'projects.create', 'projects.files', 'projects.read',
+    'coding.open', 'coding.get', 'coding.history', 'coding.start', 'coding.control',
+    'coding.preferences', 'coding.preferences.update',
+    'terminal.list', 'terminal.start', 'terminal.cancel',
+    'git.overview', 'git.preview', 'git.execute',
+    'voice.get', 'voice.command', 'voice.settings',
     'browser.configure',
     'browser.userCommand',
     'browser.userInput',

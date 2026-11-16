@@ -1,0 +1,53 @@
+.coding-terminal { flex-shrink: 0; min-width: 0; border: 1px solid #30463a; border-radius: 9px; background: #0d1511; overflow: hidden; }
+.coding-terminal.open { display: flex; flex-direction: column; height: 310px; max-height: 49%; }
+.terminal-heading { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 2px 6px; flex-shrink: 0; border-bottom: 1px solid transparent; }
+.coding-terminal.open .terminal-heading { border-bottom-color: #293b31; }
+.terminal-heading .button { min-height: 28px; padding: 4px 8px; font-size: 12px; }
+.terminal-summary { display: flex; align-items: center; flex: 1; min-width: 0; gap: 6px; color: #91a89b; font-size: 11px; }
+.terminal-heading .terminal-stop { color: #f3b4ad; border-color: #74453e; }
+.terminal-body { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.terminal-body[hidden] { display: none; }
+.terminal-body > .workspace-error { flex-shrink: 0; margin: 4px 8px; padding: 5px 8px; font-size: 12px; }
+.terminal-content { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.terminal-history { width: 180px; flex-shrink: 0; min-height: 0; overflow: auto; border-right: 1px solid #293b31; padding: 5px; }
+.terminal-history > button { display: grid; gap: 5px; width: 100%; background: transparent; color: #bbd0c2; text-align: left; border: 1px solid transparent; border-radius: 5px; padding: 7px; cursor: pointer; }
+.terminal-history > button.selected { border-color: #365640; background: #1a3022; }
+.terminal-history > button:hover { background: #192c20; }
+.terminal-history span { color: #849f8e; font-size: 10px; }
+.terminal-history code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+.terminal-history > p { color: #82998b; font-size: 11px; padding: 4px 6px; }
+.terminal-result { min-width: 0; min-height: 0; display: flex; flex: 1; flex-direction: column; padding: 7px 10px; }
+.terminal-result-heading { display: flex; align-items: center; gap: 8px; min-width: 0; flex-shrink: 0; }
+.terminal-result-heading > code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c8e6d2; font-size: 12px; }
+.terminal-result-state { color: #b7d4c0; font-size: 10px; white-space: nowrap; }
+.terminal-result-state[data-error=true] { color: #f3b4ad; }
+.terminal-metadata { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 10px; flex-shrink: 0; font-size: 10px; color: #82998b; margin-block: 3px; }
+.terminal-metadata > span { overflow-wrap: anywhere; }
+.terminal-metadata .button { min-height: 22px; font-size: 10px; padding: 2px 5px; }
+.terminal-output { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; }
+.terminal-output section > strong { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: .6px; color: #6f9680; margin-block: 5px 2px; }
+.project-workspace .terminal-output pre { max-height: none; margin: 0; padding: 0; overflow: visible; color: #c5ddcc; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; tab-size: 4; }
+.project-workspace .terminal-stderr, .project-workspace .terminal-stderr pre { color: #efbd9f; }
+.terminal-output > p, .terminal-empty { font-size: 12px; color: #91a89b; line-height: 1.6; margin: 8px 0; }
+.terminal-latest { align-self: center; flex-shrink: 0; padding: 2px 7px; min-height: 24px; font-size: 11px; }
+.terminal-composer { flex-shrink: 0; border-top: 1px solid #293b31; padding: 7px 10px; display: grid; gap: 5px; }
+.project-workspace .terminal-composer > textarea { width: 100%; min-height: 38px; max-height: 70px; resize: vertical; padding: 6px 8px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+.terminal-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.terminal-controls label { display: flex; align-items: center; gap: 6px; color: #91a89b; font-size: 11px; }
+.terminal-controls label:first-child { flex: 1; }
+.terminal-controls input { width: 100%; max-width: 240px; }
+.project-workspace .terminal-controls input, .project-workspace .terminal-controls select { padding: 4px 6px; font-size: 11px; }
+.terminal-controls .button { min-height: 28px; padding: 4px 9px; font-size: 11px; }
+.terminal-submit-hint { color: #6e8b79; font-size: 10px; }
+.terminal-hint { font-size: 10px; line-height: 1.5; color: #82998b; margin: 0; }
+.terminal-coding-wait { font-size: 11px; line-height: 1.5; color: #c8b786; margin: 0; }
+.project-workspace { position: relative; }
+@media (max-width: 1050px), (max-height: 720px) {
+  .coding-terminal.open { position: absolute; bottom: 12px; left: 12px; right: 12px; height: min(365px, 61%); max-height: none; z-index: 8; box-shadow: 0 -12px 30px #0008; }
+  .terminal-history { width: 125px; }
+  .terminal-submit-hint { display: none; }
+  .terminal-controls input { max-width: 155px; }
+}
+@media (max-resolution: 1.5dppx) {
+  .terminal-hint, .terminal-history span, .terminal-summary { font-size: 11px; }
+}

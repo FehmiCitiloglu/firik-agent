@@ -83,7 +83,7 @@ class MCPServerConfig(BaseModel):
         if not self.enabled:
             data["enabled"] = self.enabled
         if self.tool_policy.mode != ToolPolicyMode.ALLOW or self.tool_policy.allowed_tools or self.tool_policy.confirm_tools:
-            data["tool_policy"] = self.tool_policy.model_dump()
+            data["tool_policy"] = self.tool_policy.model_dump(mode="json")
 
         return data
 

@@ -1,13 +1,14 @@
 import { StrictMode, Suspense, lazy, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, ChevronDown, Command, Globe, LoaderCircle, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw,
-  Search, Settings, ShieldCheck, Square, Terminal, X } from 'lucide-react';
+import { ArrowUp, ChevronDown, Code2, Command, Globe, LoaderCircle, MessageSquare, Mic, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw,
+  Plug, Search, Settings, ShieldCheck, Square, Terminal, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatState, DesktopEvent, Snapshot } from '@firik/contracts';
 import { BrowserPanel } from './browser-panel.js';
 import { Button } from './components/ui/button.js';
+import { ProjectNavigation } from './project-navigation.js';
 import {
   BROWSER_RESIZER_WIDTH,
   MIN_BROWSER_PANEL_WIDTH,
@@ -18,21 +19,28 @@ import {
   useUI,
 } from './store.js';
 import './style.css';
+import './workspaces.css';
+import './display.css';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity,
   refetchOnWindowFocus: false }, mutations: { retry: false } } });
 
 const SettingsDialog = lazy(() => import('./settings-dialog.js'));
+const MCPDialog = lazy(() => import('./mcp-dialog.js'));
+const ProjectWorkspace = lazy(() => import('./project-workspace.js'));
+const VoiceWorkspace = lazy(() => import('./voice-workspace.js'));
 
 function App() {
   const client = useQueryClient();
   const active = useUI(state => state.active);
+  const workspace = useUI(state => state.workspace);
   const drafts = useUI(state => state.drafts);
   const runs = useUI(state => state.runs);
   const approvals = useUI(state => state.approvals);
   const error = useUI(state => state.error);
   const disconnected = useUI(state => state.disconnected);
   const settingsOpen = useUI(state => state.settingsOpen);
+  const mcpOpen = useUI(state => state.mcpOpen);
   const browserOpen = useUI(state => state.browserOpen);
   const browserPanelWidth = useUI(state => state.browserPanelWidth);
   const sidebarCollapsed = useUI(state => state.sidebarCollapsed);
@@ -111,6 +119,22 @@ function App() {
     if (!useUI.getState().active && data.conversations[0]) useUI.getState().select(data.conversations[0].conversation_id);
   }, [snapshot.data]);
 
+  const modelCatalogKey = useRef('');
+  useEffect(() => {
+    if (!snapshot.data || disconnected) return;
+    const { base_url, has_api_key } = snapshot.data.settings;
+    if (!has_api_key) {
+      modelCatalogKey.current = '';
+      return;
+    }
+    const cacheKey = `${snapshot.data.backend_instance_id}:${base_url}`;
+    if (modelCatalogKey.current === cacheKey) return;
+    modelCatalogKey.current = cacheKey;
+    void window.firik.models.list({ silent: true }).then(models => {
+      client.setQueryData<Snapshot>(['snapshot'], old => old ? { ...old, models } : old);
+    }).catch(() => {});
+  }, [client, disconnected, snapshot.data]);
+
   useEffect(() => {
     if (conversation.data?.run) useUI.getState().updateRun(conversation.data.run);
   }, [conversation.data?.run]);
@@ -134,12 +158,14 @@ function App() {
     function shortcut(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n' && !disconnected) {
         event.preventDefault();
-        if (snapshot.data) void newChat();
+        if (!snapshot.data || event.repeat) return;
+        if (workspace === 'coding') useUI.getState().openCodingSession();
+        else { useUI.setState({ workspace: 'chat' }); void newChat(); }
       }
     }
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [snapshot.data?.settings.default_model, disconnected]);
+  }, [snapshot.data?.settings.default_model, disconnected, workspace]);
 
   async function send(event: FormEvent) {
     event.preventDefault();
@@ -178,7 +204,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!browserOpen || !active || browserEngine !== 'embedded') {
+    if (!browserOpen || !active || browserEngine !== 'embedded' || workspace !== 'chat') {
       void window.firik?.browser?.setViewLayout?.({
         conversation_id: active ?? null,
         visible: false,
@@ -190,7 +216,7 @@ function App() {
         fit_viewport: true,
       }).catch(() => {});
     }
-  }, [active, browserEngine, browserOpen]);
+  }, [active, browserEngine, browserOpen, workspace]);
 
   useEffect(() => {
     const element = workspaceRef.current;
@@ -207,7 +233,7 @@ function App() {
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [Boolean(data)]);
+  }, [Boolean(data), workspace]);
 
   const effectiveBrowserWidth = clampBrowserPanelWidth(browserPanelWidth, workspaceWidth);
   const maxBrowserPanelWidth = workspaceWidth
@@ -217,17 +243,26 @@ function App() {
   return <div className={`app-shell ${resizingBrowser ? 'resizing' : ''}`}>
     <aside className={sidebarCollapsed ? 'sidebar collapsed' : 'sidebar'}>
       <div className="brand"><div className="brand-icon">f<span>·</span></div><div><strong>firik<span>agent</span></strong><div className="brand-caption">KİŞİSEL ÇALIŞMA ALANINIZ</div></div></div>
-      <Button className="new-chat" onClick={() => void newChat()} disabled={!data || disconnected}><Plus size={17} /> Yeni sohbet <span className="shortcut"><Command size={11} /> N</span></Button>
+      <nav className="workspace-navigation" aria-label="Çalışma alanları">
+        {([{ id: 'chat', label: 'Sohbet', icon: MessageSquare }, { id: 'coding', label: 'Kodlama ajanı', icon: Code2 },
+          { id: 'voice', label: 'Sesli asistan', icon: Mic }] as const).map(item => <button
+          key={item.id} aria-current={workspace === item.id ? 'page' : undefined} className={workspace === item.id ? 'selected' : ''}
+          onClick={() => useUI.setState({ workspace: item.id, codingNavigation: null })}><item.icon size={17} /><span>{item.label}</span></button>)}
+      </nav>
+      {workspace === 'coding' ? <ProjectNavigation /> : <>
+      <Button className="new-chat" onClick={() => { useUI.setState({ workspace: 'chat' }); void newChat(); }} disabled={!data || disconnected}><Plus size={17} /> Yeni sohbet <span className="shortcut"><Command size={11} /> N</span></Button>
       <div className="history-search"><Search size={14} /><input aria-label="Sohbetlerde ara" placeholder="Sohbetlerde ara" value={search} onChange={e => setSearch(e.target.value)} /></div>
       <div className="section-caption">SOHBETLER <span>{data?.conversations.length ?? 0}</span></div>
       <nav className="history-list" aria-label="Sohbet geçmişi">
         {data?.conversations.filter(row => row.title.toLocaleLowerCase('tr').includes(search.toLocaleLowerCase('tr'))).map(row =>
-          <button key={row.conversation_id} className={`history-item ${active === row.conversation_id ? 'selected' : ''}`} onClick={() => { useUI.getState().select(row.conversation_id); following.current = true; }}>
+          <button key={row.conversation_id} className={`history-item ${active === row.conversation_id ? 'selected' : ''}`} onClick={() => { useUI.getState().select(row.conversation_id); useUI.setState({ workspace: workspace === 'voice' ? 'voice' : 'chat' }); following.current = true; }}>
             <MessageSquare size={15} /><span>{row.title}</span>{runs[row.conversation_id]?.status === 'running' && <span className="live-dot" />}
           </button>)}
         {data && data.conversations.length === 0 && <p className="history-empty">İlk sohbetiniz burada görünecek.</p>}
       </nav>
+      </>}
       <div className="sidebar-bottom"><div className="backend-status"><span className={`status-dot ${disconnected || !data ? 'offline' : ''}`} /><span>{disconnected ? 'Bağlantı kesildi' : data ? 'Python çekirdeği bağlı' : 'Başlatılıyor…'}</span><span className="preview-badge">Önizleme</span></div>
+        <Button variant="ghost" className="settings-button" onClick={() => useUI.setState({ mcpOpen: true })} disabled={!data}><Plug size={17} /> MCP sunucuları</Button>
         <Button variant="ghost" className="settings-button" onClick={() => useUI.setState({ settingsOpen: true })} disabled={!data}><Settings size={17} /> Ayarlar</Button>
       </div>
     </aside>
@@ -244,10 +279,10 @@ function App() {
           >
             {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </Button>
-          <div className="page-title"><span className="breadcrumb">Çalışma alanı</span><ChevronDown size={12} /><span>{chat?.title ?? 'Yeni sohbet'}</span></div>
+          <div className="page-title"><span className="breadcrumb">Çalışma alanı</span><ChevronDown size={12} /><span>{workspace === 'chat' ? chat?.title ?? 'Yeni sohbet' : { coding: 'Kodlama ajanı', voice: 'Sesli asistan' }[workspace]}</span></div>
         </div>
         <div className="topbar-right"><span className="local-badge"><span /> Masaüstü</span>
-          <Button variant={browserOpen ? 'outline' : 'ghost'} aria-label="Tarayıcı panelini aç" disabled={!active || disconnected} onClick={() => useUI.setState({ browserOpen: !browserOpen })}><Globe size={15} /> Tarayıcı</Button>
+          {workspace === 'chat' && <Button variant={browserOpen ? 'outline' : 'ghost'} aria-label="Tarayıcı panelini aç" disabled={!active || disconnected} onClick={() => useUI.setState({ browserOpen: !browserOpen })}><Globe size={15} /> Tarayıcı</Button>}
           <Button variant="ghost" aria-label="Model listesini yenile" title="Model listesini yenile" disabled={!data || disconnected} onClick={() => {
             void window.firik.models.list({}).then(models => client.setQueryData<Snapshot>(['snapshot'], old => old ? { ...old, models } : old)).catch(showError);
           }}><RefreshCw size={16} /></Button></div>
@@ -257,7 +292,11 @@ function App() {
       {snapshot.isError && <div className="startup-error" role="alert"><Terminal size={30} /><h2>Çekirdek başlatılamadı</h2><p>{snapshot.error.message}</p><p>Python bağımlılıklarını kontrol edip uygulamayı yeniden başlatın.</p></div>}
       {!data && !snapshot.isError && <div className="loading-state"><LoaderCircle size={24} className="spin" /><p>Çalışma alanınız hazırlanıyor…</p></div>}
 
-      {data && <div className="workspace-body" ref={workspaceRef}>
+      {data && workspace !== 'chat' && <Suspense fallback={<div className="loading-state">Çalışma alanı yükleniyor…</div>}>
+        {workspace === 'voice' ? <VoiceWorkspace chat={chat} approvals={pendingApprovals} onCreate={() => void newChat()} />
+          : <ProjectWorkspace models={data.models.models} effortLevels={data.models.effort_levels} />}
+      </Suspense>}
+      {data && workspace === 'chat' && <div className="workspace-body" ref={workspaceRef}>
         <div className="chat-column">
         <div className="messages-area" ref={scrollArea} onScroll={() => {
           const element = scrollArea.current;
@@ -304,10 +343,11 @@ function App() {
                 client.setQueryData<ChatState>(['chat', active], old => old ? { ...old, reasoning_effort: event.target.value || null } : old);
               }}><option value="">Varsayılan düşünme</option>{data.models.effort_levels[chat.model].map(level => <option key={level}>{level}</option>)}</select>}
               <div className="tools-picker"><Button type="button" variant="ghost" className="tools-trigger" onClick={() => setToolsOpen(!toolsOpen)} disabled={!chat || busy}><Terminal size={14} /> Araçlar <span>{chat?.active_mcp_servers.length ?? 0}</span></Button>
-                {toolsOpen && <div className="tools-popover"><strong>Sohbet araçları</strong>{data.mcps.map(mcp => <label key={mcp.name}><input type="checkbox" checked={chat?.active_mcp_servers.includes(mcp.name) ?? false} onChange={event => {
+                {toolsOpen && <div className="tools-popover"><strong>Sohbet araçları</strong>{data.mcps.map(mcp => <label key={mcp.name}><input type="checkbox" disabled={!mcp.enabled} checked={chat?.active_mcp_servers.includes(mcp.name) ?? false} onChange={event => {
                   if (!active) return;
                   void window.firik.mcp.set({ conversation_id: active, server_name: mcp.name, enabled: event.target.checked }).then(result => client.setQueryData(['chat', active], result)).catch(showError);
-                }} />{mcp.name}<span>{mcp.status}</span></label>)}{data.mcps.length === 0 && <p>Yapılandırılmış MCP bulunmuyor.</p>}</div>}
+                }} />{mcp.name}<span>{mcp.status}</span></label>)}{data.mcps.length === 0 && <p>Yapılandırılmış MCP bulunmuyor.</p>}
+                  <Button type="button" variant="ghost" onClick={() => { setToolsOpen(false); useUI.setState({ mcpOpen: true }); }}><Plus size={14} /> MCP sunucularını yönet</Button></div>}
               </div>
             </div>
               {busy && run ? <Button type="button" className="send-button stop-button" aria-label="Yanıtı durdur" onClick={() => void window.firik.runs.cancel({ run_id: run.run_id }).catch(showError)}><Square size={14} fill="currentColor" /></Button>
@@ -377,13 +417,14 @@ function App() {
               conversationId={active}
               initialGrant={chat?.browser}
               width={effectiveBrowserWidth}
-              obscured={settingsOpen || toolsOpen}
+              obscured={settingsOpen || mcpOpen || toolsOpen}
               onClose={() => useUI.setState({ browserOpen: false })}
             />
           </>
         )}
-        {settingsOpen && <Suspense fallback={null}><SettingsDialog snapshot={data} /></Suspense>}
       </div>}
+      {data && settingsOpen && <Suspense fallback={null}><SettingsDialog snapshot={data} /></Suspense>}
+      {data && mcpOpen && <Suspense fallback={null}><MCPDialog /></Suspense>}
     </main>
   </div>;
 }

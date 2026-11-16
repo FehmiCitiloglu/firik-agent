@@ -76,7 +76,7 @@ jobs:
           npm run desktop:check
       - name: Test desktop boundary
         run: |
-          python -m pytest -q tests/test_desktop_rpc.py tests/test_install.py tests/test_package_hybrid_release.py
+          python -m pytest -q tests/test_desktop_rpc.py tests/test_desktop_workspaces.py tests/test_desktop_mcp_management.py tests/test_install.py tests/test_package_hybrid_release.py
           npm run desktop:test
 
   hybrid-browser:

@@ -72,6 +72,10 @@ class DesktopServer:
         self._model_refresh = False
         self._known_key = ""
         self._host_pending: dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Future, Any]] = {}
+        from firik_agent.desktop_rpc.workspaces import WorkspaceRPC
+        self.workspaces = WorkspaceRPC(self)
+        from firik_agent.desktop_rpc.mcp import MCPRPC
+        self.mcp = MCPRPC(self)
         if hasattr(self.service, "browser_manager"):
             cfg = getattr(self.service.browser_manager, "config", None)
             self.service.browser_manager = RemoteBrowserManager(self, cfg)
@@ -140,7 +144,13 @@ class DesktopServer:
                              timeout=self.service.timeout, has_api_key=has_key)
 
     def models(self) -> ModelsResult:
-        names = list(dict.fromkeys([self.service.default_model, *self.service._cached_models]))
+        from firik_agent.api.client import DEFAULT_BASE_URL
+        default_model = self.service.default_model
+        names = list(self.service._cached_models)
+        if default_model and not (default_model == "mimo-v2.6-pro" and self.service.base_url.rstrip("/") == DEFAULT_BASE_URL.rstrip("/")):
+            names = list(dict.fromkeys([default_model, *names]))
+        else:
+            names = list(dict.fromkeys(names))
         return ModelsResult(models=names,
                             effort_levels={name: self.service.model_effort_levels(name) for name in names})
 
@@ -168,6 +178,8 @@ class DesktopServer:
     def _session(self, sid: str):
         # Existing histories are owned by this local user's backend. Unknown IDs
         # cannot silently create conversations or address another run.
+        if sid in getattr(self.service, "_coding_session_projects", {}):
+            raise RPCError(-32004, "Sohbet bulunamadı.")
         if sid not in self.service.sessions:
             if not self.service.chat_history.load(sid):
                 raise RPCError(-32004, "Sohbet bulunamadı.")
@@ -276,6 +288,7 @@ class DesktopServer:
                 self._runs.pop(key, None)
             if self._transcripts.get(run.conversation_id) is rows:
                 self._transcripts.pop(run.conversation_id, None)
+        self.workspaces.voice_response(run.conversation_id, "completed", text if status == "completed" else "")
 
     def _close_approvals(self, run_id: str) -> None:
         for approval_id, (state, decide, timer) in list(self._approvals.items()):
@@ -312,8 +325,10 @@ class DesktopServer:
             timer.start()
             self.emit("approval", conversation_id=run.conversation_id, run_id=run_id, approval=state)
 
-    def start(self, params) -> RunState:
+    def start(self, params, voice_request=None) -> RunState:
         with self._lock:
+            if self.mcp.busy:
+                raise RPCError(-32009, "Yanıt başlatmadan önce MCP işleminin tamamlanmasını bekleyin.")
             session = self._session(params.conversation_id)
             if self._active_run(session.session_id):
                 raise RPCError(-32009, "Bu sohbette bir yanıt zaten hazırlanıyor.")
@@ -340,6 +355,8 @@ class DesktopServer:
 
             def event(evt):
                 nonlocal last_save
+                if evt.type.value == "text_delta":
+                    self.workspaces.voice_response(run.conversation_id, "delta", evt.content or "")
                 with self._lock:
                     if run.status != "running":
                         return
@@ -361,7 +378,8 @@ class DesktopServer:
                     session.session_id, params.prompt, on_event=event,
                     on_done=lambda text: self._finish(run.run_id, "completed", text),
                     on_error=lambda error: self._finish(run.run_id, "failed", error=error),
-                    on_approval=lambda payload, decide: self._approval(run.run_id, payload, decide))
+                    on_approval=lambda payload, decide: self._approval(run.run_id, payload, decide),
+                    **({"voice_request": voice_request} if voice_request is not None else {}))
                 self._futures[run.run_id] = future
 
                 def finished(result):
@@ -496,7 +514,8 @@ class DesktopServer:
                 return HelloResult(protocol_version=PROTOCOL_VERSION, backend_instance_id=self.instance_id,
                                    app_version=version("firik-agent"),
                                    capabilities=["chat", "history", "settings", "streaming", "cancel",
-                                                 "mcp-selection", "approvals", "browser-typescript"])
+                                                 "mcp-selection", "mcp-management", "approvals", "browser-typescript",
+                                                 "coding-workspace", "git-workbench", "voice-assistant"])
             if not self._hello:
                 raise RPCError(-32000, "Önce protokol sürümü doğrulanmalıdır.")
             if method == "state.snapshot":
@@ -521,7 +540,10 @@ class DesktopServer:
                     self.service.cancel_active_stream(run.conversation_id)
                 return Ack()
             if method in {"settings.update", "credentials.set"}:
-                if any(run.status == "running" for run in self._runs.values()):
+                if self.mcp.busy:
+                    raise RPCError(-32009, "Ayarları değiştirmeden önce MCP işleminin tamamlanmasını bekleyin.")
+                if (any(run.status == "running" for run in self._runs.values())
+                        or self.workspaces.coding_busy()):
                     raise RPCError(-32009, "Ayarları değiştirmeden önce çalışan yanıtları durdurun.")
                 if method == "settings.update":
                     self.service.update_settings(params.base_url, params.default_model, params.timeout)
@@ -537,11 +559,15 @@ class DesktopServer:
             if method == "settings.get":
                 return self.settings()
             if method == "mcp.set":
+                if self.mcp.busy:
+                    raise RPCError(-32009, "Araç seçimini MCP işlemi tamamlandıktan sonra değiştirin.")
                 self._session(params.conversation_id)
                 if self._active_run(params.conversation_id):
                     raise RPCError(-32009, "Araç seçimini yanıt tamamlandıktan sonra değiştirin.")
                 if params.server_name not in self.service.mcp_manager.connections:
                     raise RPCError(-32004, "MCP sunucusu bulunamadı.")
+                if params.enabled and not self.service.mcp_manager.connections[params.server_name].config.enabled:
+                    raise RPCError(-32009, "Önce MCP sunucusunu etkinleştirin.")
                 self.service.set_session_mcp(params.conversation_id, params.server_name, params.enabled)
                 return self.chat(params.conversation_id)
             if method == "approval.resolve":
@@ -599,6 +625,7 @@ class DesktopServer:
 
         def stop():
             try:
+                self.workspaces.close()
                 self.service.shutdown()
                 if hasattr(self.service.projects, "scheduler"):
                     self.service.projects.scheduler.stop()
@@ -653,8 +680,15 @@ class DesktopServer:
             if method == "system.shutdown":
                 self._begin_shutdown(request_id)
                 return True
+            if method in {"mcp.list", "mcp.save", "mcp.remove", "mcp.command"}:
+                self.mcp.handle(request_id, method, params, result_type)
+                return True
             if method in {"browser.configure", "browser.userCommand", "browser.userInput"}:
                 self._handle_browser_async(request_id, method, params, result_type)
+                return True
+            from firik_agent.desktop_rpc.workspaces import WORKSPACE_METHODS
+            if method in WORKSPACE_METHODS:
+                self.workspaces.handle(request_id, method, params, result_type)
                 return True
             if method == "models.list":
                 if not self._hello:
@@ -669,8 +703,11 @@ class DesktopServer:
                         self.send({"jsonrpc": "2.0", "id": request_id,
                                    "result": self.models().model_dump()})
 
-                    self.service.fetch_models_async(done, lambda _: self.emit(
-                        "warning", content="Model kataloğu yenilenemedi; kayıtlı liste gösteriliyor."))
+                    self.service.fetch_models_async(
+                        done,
+                        None if params.silent else lambda _: self.emit(
+                            "warning", content="Model kataloğu yenilenemedi; kayıtlı liste gösteriliyor."),
+                    )
                     return True
             else:
                 result = self.dispatch(method, params)
@@ -720,6 +757,7 @@ class DesktopServer:
             if self._shutdown_thread:
                 self._shutdown_thread.join(timeout=40)
             elif not self._service_stopped:
+                self.workspaces.close()
                 self.service.shutdown()
                 if hasattr(self.service.projects, "scheduler"):
                     self.service.projects.scheduler.stop()

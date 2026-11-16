@@ -72,19 +72,20 @@ class CodingActions:
         """Resolve only configured providers; no model-supplied endpoints."""
         config = deepcopy(self.config)
         config["mcp_servers"] = {}
-        config["plugins"] = {"autoload_builtins": False, "directory": ""}
-        config["skills"] = {"active_skills": []}
+        config["plugins"] = dict(config.get("plugins", {}), autoload_builtins=False, directory="")
+        config["skills"] = dict(config.get("skills", {}), active_skills=[])
         config["computer_use"] = {"enabled": False}
         worker = Agent(config=config, config_path=str(self.config_path) if self.config_path else None)
         worker._is_initialized = True
         provider = provider or self.provider
         worker.providers.set_active(provider)
         selected = worker.providers.get_active()
-        selected.set_model(model or selected.current_model)
+        selected_model = model or getattr(selected, "current_model", "")
+        selected.set_model(selected_model)
         self.configure_model_metadata(selected)
-        metadata = self._coding_metadata(provider, selected.current_model)
+        metadata = self._coding_metadata(provider, selected_model)
         if metadata:
-            selected.model_metadata[selected.current_model] = metadata
+            selected.model_metadata[selected_model] = metadata
         caps = model_capabilities(metadata)
         worker.subagent_prices = {"input_per_million": caps.get("input_cost_per_million"),
                                  "output_per_million": caps.get("output_cost_per_million")}

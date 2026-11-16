@@ -1,0 +1,36 @@
+{
+  "scope": "Original CodingEvidence component extracted from current source and rendered with React server renderer; fixture inputs, no backend run",
+  "cases": [
+    {
+      "name": "stale passing evidence",
+      "row": {
+        "command": "pytest",
+        "passed": true,
+        "fresh": false,
+        "status": "stale",
+        "stale_reason": "Source changed after test"
+      },
+      "renderedHtml": "<div class=\"coding-evidence\"><article><strong>Başarılı</strong><pre>pytest</pre><pre></pre></article></div>"
+    },
+    {
+      "name": "blocked unexecuted evidence",
+      "row": {
+        "command": "pytest",
+        "executed": false,
+        "status": "blocked",
+        "reason": "Permission required"
+      },
+      "renderedHtml": "<div class=\"coding-evidence\"><article><strong>Başarısız</strong><pre>pytest</pre><pre>Permission required</pre></article></div>"
+    },
+    {
+      "name": "stdout and stderr both present",
+      "row": {
+        "command": "pytest",
+        "passed": false,
+        "stdout": "progress on stdout",
+        "stderr": "failure detail on stderr"
+      },
+      "renderedHtml": "<div class=\"coding-evidence\"><article><strong>Başarısız</strong><pre>pytest</pre><pre>progress on stdout</pre></article></div>"
+    }
+  ]
+}

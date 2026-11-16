@@ -6,6 +6,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import re
+import shlex
+import subprocess
+import sys
 import time
 
 import yaml
@@ -62,6 +65,26 @@ class Handler(BaseHTTPRequestHandler):
         tool_call = None
         parts = None
         slow = "uzun" in prompt.lower()
+        if "TERMINAL_SMOKE_AGENT_COMMAND" in prompt:
+            available = {tool["function"]["name"] for tool in request.get("tools", [])}
+            if not tool_results or tool_results[-1].get("name") == "discover_tools":
+                if "run_command" not in available:
+                    if not tool_results and "discover_tools" in available:
+                        tool_call = ("discover_tools", {"names": ["run_command"]})
+                    else:
+                        parts = ["Yerel test hatası: run_command sunulmadı."]
+                else:
+                    args = [sys.executable, "agent_command.py"]
+                    command = subprocess.list2cmdline(args) if sys.platform == "win32" else shlex.join(args)
+                    tool_call = ("run_command", {"command": command, "cwd": ".", "timeout": 30})
+            else:
+                try:
+                    result = json.loads(tool_results[-1]["content"])
+                except (ValueError, TypeError):
+                    result = {"output": str(tool_results[-1]["content"])}
+                self.server.tool_evidence.append({"name": tool_results[-1].get("name", ""),
+                    "status": result.get("status"), "exit_code": result.get("exit_code")})
+                parts = ["Ajan komutu tamamlandı: ", str(result.get("output", result))]
         if browser_prompt:
             available = {tool["function"]["name"] for tool in request.get("tools", [])}
             if not tool_results:

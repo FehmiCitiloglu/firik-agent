@@ -32,6 +32,7 @@ mac:
   icon: ../../firik_agent/ui/assets/icon.icns
   extendInfo:
     NSHighResolutionCapable: true
+    NSMicrophoneUsageDescription: Firik Agent, sesli asistan ve konuşmayı metne çevirme için mikrofonu kullanır.
 win:
   icon: ../../firik_agent/ui/assets/icon.ico
   target: nsis

@@ -19,6 +19,9 @@
     "desktop:browser:install": "node scripts/prepare_hybrid_browser.mjs",
     "desktop:test:browser": "node scripts/test_hybrid_browser.mjs",
     "desktop:smoke": "node scripts/smoke_hybrid_desktop.mjs",
+    "desktop:smoke:workspaces": "node scripts/smoke_hybrid_workspaces.mjs",
+    "desktop:smoke:terminal": "node scripts/smoke_hybrid_terminal.mjs",
+    "desktop:smoke:mcp": "node scripts/smoke_hybrid_mcp.mjs",
     "desktop:package": "node scripts/package_hybrid_desktop.mjs",
     "contracts:generate": "node scripts/generate_desktop_contracts.mjs"
   },
@@ -27,7 +30,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.2.1",
-    "electron": "45.2.3",
+    "electron": "44.11.3",
     "electron-builder": "26.18.0",
     "esbuild": "0.28.2",
     "json-schema-to-typescript": "16.0.0",

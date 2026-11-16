@@ -49,6 +49,24 @@ _POLICY_ALIASES = {"filesystem_read": "filesystem.read", "filesystem_write": "fi
 _POLICY_RANK = {"allow": 0, "ask": 1, "deny": 2}
 
 
+def command_policy_actions(command: str, config: ExecutionConfig) -> list[str]:
+    """Shared command restrictions for agent tools and explicit desktop commands."""
+    if re.search(r"(?i)(?:^|[\s;&|])(?:sudo|su)(?:\s|$)", command):
+        raise PermissionError("Yükseltilmiş yetkili shell işlemleri engellendi.")
+    if re.search(r"(?i)\bgit\b.*\bpush\b.*(?:--force(?:-with-lease)?\b|\s-f\b)", command):
+        raise PermissionError("Zorla Git push işlemi engellendi.")
+    actions = ["shell.safe"]
+    if config.backend == "docker" and config.network:
+        actions += ["network", "shell.network"]
+    if re.search(r"(?i)(?:https?://|\b(?:curl|wget|ssh|scp|rsync)\b|\bgit\b.*\b(?:fetch|pull|push|clone)\b|\b(?:npm|pnpm|pip|pip3|yarn)\b.*\b(?:install|add|publish)\b)", command):
+        actions += ["network", "shell.network"]
+    if re.search(r"(?i)\bgit\b.*\bcommit\b", command):
+        actions.append("git.commit")
+    if re.search(r"(?i)\bgit\b.*\bpush\b", command):
+        actions.append("git.push")
+    return list(dict.fromkeys(actions))
+
+
 def _policy_action(action: str) -> str:
     return _POLICY_ALIASES.get(action, action)
 
@@ -1144,20 +1162,7 @@ class CodingToolFilter:
                 if not self.control.permissions[permission]:
                     raise PermissionError("Bu terminal işleminin izni kapalı.")
                 command = arguments.get("command", "")
-                if re.search(r"(?i)(?:^|[\s;&|])(?:sudo|su)(?:\s|$)", command):
-                    raise PermissionError("Yükseltilmiş yetkili shell işlemleri engellendi.")
-                if re.search(r"(?i)\bgit\b.*\bpush\b.*(?:--force(?:-with-lease)?\b|\s-f\b)", command):
-                    raise PermissionError("Zorla Git push işlemi engellendi.")
-                actions = ["shell.safe"]
-                if self.control.execution_config.backend == "docker" and self.control.execution_config.network:
-                    # Arbitrary scripts can use the network without a visible URL.
-                    actions += ["network", "shell.network"]
-                if re.search(r"(?i)(?:https?://|\b(?:curl|wget|ssh|scp|rsync)\b|\bgit\b.*\b(?:fetch|pull|push|clone)\b|\b(?:npm|pnpm|pip|pip3|yarn)\b.*\b(?:install|add|publish)\b)", command):
-                    actions += ["network", "shell.network"]
-                if re.search(r"(?i)\bgit\b.*\bcommit\b", command):
-                    actions.append("git.commit")
-                if re.search(r"(?i)\bgit\b.*\bpush\b", command):
-                    actions.append("git.push")
+                actions = command_policy_actions(command, self.control.execution_config)
                 if any(self.control.permission_decision(action) == "deny" for action in actions):
                     raise PermissionError("Komutun shell, ağ veya Git işlemi izin politikasında engellendi.")
                 command_actions = actions
@@ -1502,8 +1507,27 @@ class CodingToolFilter:
                     running_processes=[{"command": safe_text(command)}])
                 self.control.emit(AgentEventType.TASK_STATE, "Komut seçili yürütme arka ucunda başlatılıyor.",
                                   execution=dict(self.control.execution_status))
-                task = asyncio.create_task(self.execution_backend.execute_command(workspace,
-                    CommandRequest(command=command, cwd=str(directory.relative_to(self.root)), timeout=timeout)))
+                request = CommandRequest(command=command, cwd=str(directory.relative_to(self.root)), timeout=timeout)
+                self.control.emit(AgentEventType.COMMAND_STARTED, command,
+                    command_id=request.command_id, command=command, cwd=request.cwd,
+                    backend=self.control.execution_config.backend,
+                    boundary="sandbox" if self.control.execution_config.backend == "docker" else "host")
+                task = asyncio.create_task(self.execution_backend.execute_command(workspace, request))
+                async def forward_output():
+                    if not callable(getattr(self.execution_backend, "stream_output", None)):
+                        return  # Older/custom adapters can still return a final receipt.
+                    # execute_command registers its record before its first process
+                    # await. Do not ask stream_output for an unknown command while
+                    # a backend is still entering execution.
+                    while request.command_id not in getattr(self.execution_backend, "commands", {}):
+                        if task.done():
+                            return
+                        await asyncio.sleep(.01)
+                    async for event in self.execution_backend.stream_output(request.command_id):
+                        self.control.emit(AgentEventType.COMMAND_OUTPUT, event.text,
+                            command_id=request.command_id, stream=event.stream)
+                output_task = asyncio.create_task(forward_output())
+                result = None
                 try:
                     while not task.done():
                         if self.control.cancel_event.is_set():
@@ -1518,6 +1542,24 @@ class CodingToolFilter:
                     except asyncio.CancelledError:
                         pass
                     raise
+                finally:
+                    # The process backend owns cleanup. Its final receipt also
+                    # exists after cancellation, so the UI never leaves a command
+                    # marked running after the coding run ends.
+                    await output_task
+                    record = getattr(self.execution_backend, "commands", {}).get(request.command_id)
+                    receipt = result or (record.result if record is not None else None)
+                    if receipt is not None:
+                        self.control.emit(AgentEventType.COMMAND_FINISHED, "",
+                            command_id=request.command_id, status=receipt.status,
+                            stdout=receipt.stdout, stderr=receipt.stderr,
+                            exit_code=receipt.exit_code, timed_out=receipt.timed_out,
+                            truncated=receipt.truncated, duration_seconds=receipt.duration_seconds,
+                            error=receipt.cleanup_error)
+                    else:
+                        self.control.emit(AgentEventType.COMMAND_FINISHED, "",
+                            command_id=request.command_id, status="error",
+                            error="Komut yürütme sonucu alınamadı.")
                 data = {"command": safe_text(command), "cwd": str(directory.relative_to(self.root)),
                     "exit_code": result.exit_code, "timed_out": result.timed_out,
                     "output": safe_text(result.format_shell()), "backend": result.backend,

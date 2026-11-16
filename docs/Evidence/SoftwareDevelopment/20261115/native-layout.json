@@ -1,0 +1,197 @@
+{
+  "scope": "Native Tk widget layout with isolated config and database; network/model discovery and PM checks disabled",
+  "measurements": [
+    {
+      "window": {
+        "width": 1120,
+        "height": 760
+      },
+      "workspace": {
+        "mapped": true,
+        "width": 908,
+        "height": 574,
+        "x": 196,
+        "y": 182
+      },
+      "left": {
+        "mapped": false,
+        "width": 220,
+        "height": 574,
+        "x": 196,
+        "y": 182
+      },
+      "middle": {
+        "mapped": true,
+        "width": 908,
+        "height": 574,
+        "x": 196,
+        "y": 182
+      },
+      "right": {
+        "mapped": false,
+        "width": 300,
+        "height": 574,
+        "x": 804,
+        "y": 182
+      },
+      "modelSelector": {
+        "mapped": true,
+        "width": 412,
+        "height": 28,
+        "x": 204,
+        "y": 220
+      },
+      "editorSelector": {
+        "mapped": true,
+        "width": 393,
+        "height": 28,
+        "x": 624,
+        "y": 220
+      },
+      "input": {
+        "mapped": true,
+        "width": 743,
+        "height": 52,
+        "x": 204,
+        "y": 605
+      },
+      "composerHint": {
+        "mapped": true,
+        "width": 892,
+        "height": 18,
+        "x": 204,
+        "y": 657
+      },
+      "workspaceTabCount": 9,
+      "inspectorTabCount": 5
+    },
+    {
+      "window": {
+        "width": 1440,
+        "height": 900
+      },
+      "workspace": {
+        "mapped": true,
+        "width": 1228,
+        "height": 748,
+        "x": 196,
+        "y": 148
+      },
+      "left": {
+        "mapped": true,
+        "width": 220,
+        "height": 748,
+        "x": 196,
+        "y": 148
+      },
+      "middle": {
+        "mapped": true,
+        "width": 694,
+        "height": 748,
+        "x": 423,
+        "y": 148
+      },
+      "right": {
+        "mapped": true,
+        "width": 300,
+        "height": 748,
+        "x": 1124,
+        "y": 148
+      },
+      "modelSelector": {
+        "mapped": true,
+        "width": 305,
+        "height": 28,
+        "x": 431,
+        "y": 186
+      },
+      "editorSelector": {
+        "mapped": true,
+        "width": 286,
+        "height": 28,
+        "x": 744,
+        "y": 186
+      },
+      "input": {
+        "mapped": true,
+        "width": 529,
+        "height": 52,
+        "x": 431,
+        "y": 745
+      },
+      "composerHint": {
+        "mapped": true,
+        "width": 678,
+        "height": 18,
+        "x": 431,
+        "y": 797
+      },
+      "workspaceTabCount": 9,
+      "inspectorTabCount": 5
+    },
+    {
+      "window": {
+        "width": 940,
+        "height": 620
+      },
+      "workspace": {
+        "mapped": true,
+        "width": 728,
+        "height": 434,
+        "x": 196,
+        "y": 182
+      },
+      "left": {
+        "mapped": false,
+        "width": 220,
+        "height": 748,
+        "x": 196,
+        "y": 182
+      },
+      "middle": {
+        "mapped": true,
+        "width": 728,
+        "height": 434,
+        "x": 196,
+        "y": 182
+      },
+      "right": {
+        "mapped": false,
+        "width": 300,
+        "height": 748,
+        "x": 1124,
+        "y": 182
+      },
+      "modelSelector": {
+        "mapped": false,
+        "width": 305,
+        "height": 28,
+        "x": 204,
+        "y": 220
+      },
+      "editorSelector": {
+        "mapped": false,
+        "width": 286,
+        "height": 28,
+        "x": 517,
+        "y": 220
+      },
+      "input": {
+        "mapped": true,
+        "width": 563,
+        "height": 52,
+        "x": 204,
+        "y": 483
+      },
+      "composerHint": {
+        "mapped": false,
+        "width": 678,
+        "height": 18,
+        "x": 204,
+        "y": 535
+      },
+      "workspaceTabCount": 9,
+      "inspectorTabCount": 5
+    }
+  ]
+}

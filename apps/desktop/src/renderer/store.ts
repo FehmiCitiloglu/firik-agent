@@ -77,11 +77,18 @@ function readStoredSearchEngine(): SearchEngine {
 }
 
 interface UIState {
+  workspace: 'chat' | 'coding' | 'voice';
+  codingTool: 'agent' | 'git';
+  codingContexts: Record<string, string[]>;
+  terminalOpen: boolean;
+  project: string | null;
+  codingNavigation: { projectId: string; recordId: string | null } | null;
   active: string | null;
   drafts: Record<string, string>;
   runs: Record<string, RunState>;
   approvals: Record<string, ApprovalState>;
   settingsOpen: boolean;
+  mcpOpen: boolean;
   browserOpen: boolean;
   browserPanelWidth: number;
   sidebarCollapsed: boolean;
@@ -91,6 +98,7 @@ interface UIState {
   error: string | null;
   disconnected: boolean;
   select: (id: string) => void;
+  openCodingSession: (recordId?: string | null) => void;
   draft: (id: string, text: string) => void;
   updateRun: (run: RunState) => void;
   setBrowserPanelWidth: (width: number, workspaceWidth?: number) => void;
@@ -102,11 +110,18 @@ interface UIState {
 }
 
 export const useUI = create<UIState>(set => ({
+  workspace: 'chat',
+  codingTool: 'agent',
+  codingContexts: {},
+  terminalOpen: false,
+  project: null,
+  codingNavigation: null,
   active: null,
   drafts: {},
   runs: {},
   approvals: {},
   settingsOpen: false,
+  mcpOpen: false,
   browserOpen: false,
   browserPanelWidth: clampBrowserPanelWidth(
     readStoredNumber(STORAGE_KEYS.browserPanelWidth, DEFAULT_BROWSER_PANEL_WIDTH),
@@ -118,6 +133,11 @@ export const useUI = create<UIState>(set => ({
   error: null,
   disconnected: false,
   select: id => set({ active: id }),
+  openCodingSession: (recordId = null) => set(state => ({
+    workspace: 'coding',
+    codingTool: 'agent',
+    codingNavigation: state.project ? { projectId: state.project, recordId } : null,
+  })),
   draft: (id, text) => set(state => ({ drafts: { ...state.drafts, [id]: text } })),
   updateRun: run => set(state => {
     const previous = state.runs[run.conversation_id];

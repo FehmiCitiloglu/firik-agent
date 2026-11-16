@@ -1,0 +1,281 @@
+{
+  "scope": "Current built Electron UI, isolated Python database and loopback fixture provider; no live model calls",
+  "checks": {
+    "folderPickerPresent": 0,
+    "enterInsertsNewline": true,
+    "enterSubmitted": false,
+    "codingTabSemantics": 0,
+    "codingHistoryOptions": [
+      "Oturum geçmişi",
+      "Kodlama oturumu · Tamamlandı"
+    ],
+    "draftPreservedWhileRunning": true,
+    "runControlAfterNavigation": 1,
+    "metaNInCodingOpensGeneralChat": true,
+    "draftAfterShortcut": "Gönderilmemiş taslak",
+    "gitToolCount": 72,
+    "gitToolCategories": [
+      "Çalışma alanı",
+      "Çalışma alanı",
+      "Çalışma alanı",
+      "Çalışma alanı",
+      "Çalışma alanı",
+      "Dallar",
+      "Dallar",
+      "Dallar",
+      "Dallar",
+      "Dallar",
+      "Kurtarma",
+      "Dallar",
+      "Dallar",
+      "Kurtarma",
+      "Kurtarma",
+      "Dallar",
+      "Dallar",
+      "Dallar",
+      "Dallar",
+      "Dallar",
+      "Dallar",
+      "Uzak depo",
+      "Uzak depo",
+      "Uzak depo",
+      "Uzak depo",
+      "Kurtarma",
+      "Kurtarma",
+      "Kurtarma",
+      "Kurtarma",
+      "Kurtarma",
+      "Kurtarma",
+      "Kurtarma",
+      "Kurtarma",
+      "Kurtarma",
+      "Kurtarma",
+      "Kurtarma",
+      "Dallar",
+      "Kurtarma",
+      "Dallar",
+      "Sürümler",
+      "Sürümler",
+      "Çalışma alanı",
+      "Çalışma alanı",
+      "Hata avı",
+      "Hata avı",
+      "Hata avı",
+      "Hata avı",
+      "Hata avı",
+      "Geçmiş",
+      "Geçmiş",
+      "Geçmiş",
+      "Geçmiş",
+      "Geçmiş",
+      "Geçmiş",
+      "Geçmiş",
+      "İnceleme",
+      "İnceleme",
+      "İnceleme",
+      "İnceleme",
+      "İnceleme",
+      "İnceleme",
+      "İnceleme",
+      "İnceleme",
+      "İnceleme",
+      "İnceleme",
+      "İnceleme",
+      "İnceleme",
+      "İnceleme",
+      "Depo sağlığı",
+      "Depo sağlığı",
+      "Dışa aktarma",
+      "Dışa aktarma"
+    ]
+  },
+  "measurements": [
+    {
+      "screen": "coding",
+      "viewport": {
+        "width": 1440,
+        "height": 768
+      },
+      "documentOverflow": false,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 264,
+        "height": 768,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "messages": {
+        "x": 280,
+        "y": 186,
+        "width": 754,
+        "height": 414,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "composer": {
+        "x": 280,
+        "y": 600,
+        "width": 754,
+        "height": 153,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "inspector": {
+        "x": 1046,
+        "y": 186,
+        "width": 378,
+        "height": 566,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "columnsDirection": "row"
+    },
+    {
+      "screen": "coding",
+      "viewport": {
+        "width": 1280,
+        "height": 768
+      },
+      "documentOverflow": false,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 264,
+        "height": 768,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "messages": {
+        "x": 280,
+        "y": 186,
+        "width": 647,
+        "height": 414,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "composer": {
+        "x": 280,
+        "y": 600,
+        "width": 647,
+        "height": 153,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "inspector": {
+        "x": 939,
+        "y": 186,
+        "width": 325,
+        "height": 566,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "columnsDirection": "row"
+    },
+    {
+      "screen": "coding",
+      "viewport": {
+        "width": 1050,
+        "height": 768
+      },
+      "documentOverflow": false,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 230,
+        "height": 768,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "messages": {
+        "x": 246,
+        "y": 186,
+        "width": 788,
+        "height": 317,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "composer": {
+        "x": 246,
+        "y": 503,
+        "width": 788,
+        "height": 153,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "inspector": {
+        "x": 246,
+        "y": 668,
+        "width": 788,
+        "height": 85,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "columnsDirection": "column"
+    },
+    {
+      "screen": "coding",
+      "viewport": {
+        "width": 940,
+        "height": 768
+      },
+      "documentOverflow": false,
+      "sidebar": {
+        "x": 0,
+        "y": 0,
+        "width": 230,
+        "height": 768,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "messages": {
+        "x": 246,
+        "y": 186,
+        "width": 678,
+        "height": 317,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "composer": {
+        "x": 246,
+        "y": 503,
+        "width": 678,
+        "height": 153,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "inspector": {
+        "x": 246,
+        "y": 668,
+        "width": 678,
+        "height": 85,
+        "belowViewport": false,
+        "fullyVisible": true
+      },
+      "columnsDirection": "column"
+    },
+    {
+      "screen": "git",
+      "viewport": {
+        "width": 1280,
+        "height": 768
+      },
+      "direction": "row",
+      "outputTop": 185.5,
+      "toolListHeight": 566.5,
+      "documentOverflow": false
+    },
+    {
+      "screen": "git",
+      "viewport": {
+        "width": 940,
+        "height": 768
+      },
+      "direction": "column",
+      "outputTop": 439.5,
+      "toolListHeight": 220,
+      "documentOverflow": false
+    }
+  ],
+  "errors": []
+}

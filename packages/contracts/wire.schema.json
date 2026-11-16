@@ -956,6 +956,441 @@
       "title": "ChatSummary",
       "type": "object"
     },
+    "CodingApproval": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "preview": {
+          "title": "Preview",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "tool_name",
+        "preview"
+      ],
+      "title": "CodingApproval",
+      "type": "object"
+    },
+    "CodingControlParams": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "session_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "action": {
+          "enum": [
+            "pause",
+            "resume",
+            "cancel",
+            "approve"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "allowed": {
+          "default": false,
+          "title": "Allowed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project_id",
+        "session_id",
+        "run_id",
+        "action"
+      ],
+      "title": "CodingControlParams",
+      "type": "object"
+    },
+    "CodingHistoryResult": {
+      "additionalProperties": false,
+      "properties": {
+        "records": {
+          "items": {
+            "$ref": "#/$defs/CodingRecordInfo"
+          },
+          "title": "Records",
+          "type": "array"
+        }
+      },
+      "required": [
+        "records"
+      ],
+      "title": "CodingHistoryResult",
+      "type": "object"
+    },
+    "CodingOpenParams": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "record_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Record Id"
+        },
+        "new_session": {
+          "default": false,
+          "title": "New Session",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "CodingOpenParams",
+      "type": "object"
+    },
+    "CodingPreferences": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_reads": {
+          "title": "Allow Reads",
+          "type": "boolean"
+        },
+        "allow_edits": {
+          "title": "Allow Edits",
+          "type": "boolean"
+        },
+        "allow_terminal": {
+          "title": "Allow Terminal",
+          "type": "boolean"
+        },
+        "allow_tests": {
+          "title": "Allow Tests",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "allow_reads",
+        "allow_edits",
+        "allow_terminal",
+        "allow_tests"
+      ],
+      "title": "CodingPreferences",
+      "type": "object"
+    },
+    "CodingPreferencesUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_reads": {
+          "title": "Allow Reads",
+          "type": "boolean"
+        },
+        "allow_edits": {
+          "title": "Allow Edits",
+          "type": "boolean"
+        },
+        "allow_terminal": {
+          "title": "Allow Terminal",
+          "type": "boolean"
+        },
+        "allow_tests": {
+          "title": "Allow Tests",
+          "type": "boolean"
+        },
+        "project_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "allow_reads",
+        "allow_edits",
+        "allow_terminal",
+        "allow_tests",
+        "project_id"
+      ],
+      "title": "CodingPreferencesUpdate",
+      "type": "object"
+    },
+    "CodingRecordInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "record_id": {
+          "title": "Record Id",
+          "type": "string"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "session_id",
+        "title",
+        "status",
+        "created_at"
+      ],
+      "title": "CodingRecordInfo",
+      "type": "object"
+    },
+    "CodingSessionParams": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "session_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "session_id"
+      ],
+      "title": "CodingSessionParams",
+      "type": "object"
+    },
+    "CodingStartParams": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "session_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        },
+        "prompt": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "title": "Prompt",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "mode": {
+          "default": "approved",
+          "enum": [
+            "ask",
+            "plan",
+            "approved",
+            "assisted"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning Effort"
+        },
+        "context_paths": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 24,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Paths"
+        }
+      },
+      "required": [
+        "project_id",
+        "session_id",
+        "prompt",
+        "model"
+      ],
+      "title": "CodingStartParams",
+      "type": "object"
+    },
+    "CodingState": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "title": "Project Id",
+          "type": "string"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "default": "",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "record_id": {
+          "default": "",
+          "title": "Record Id",
+          "type": "string"
+        },
+        "status": {
+          "default": "idle",
+          "title": "Status",
+          "type": "string"
+        },
+        "busy": {
+          "default": false,
+          "title": "Busy",
+          "type": "boolean"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "mode": {
+          "default": "approved",
+          "title": "Mode",
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning Effort"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/$defs/ChatMessage"
+          },
+          "title": "Messages",
+          "type": "array"
+        },
+        "plan": {
+          "default": "",
+          "title": "Plan",
+          "type": "string"
+        },
+        "changes": {
+          "default": "",
+          "title": "Changes",
+          "type": "string"
+        },
+        "tests": {
+          "default": "",
+          "title": "Tests",
+          "type": "string"
+        },
+        "approvals": {
+          "items": {
+            "$ref": "#/$defs/CodingApproval"
+          },
+          "title": "Approvals",
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        }
+      },
+      "required": [
+        "project_id",
+        "session_id",
+        "model"
+      ],
+      "title": "CodingState",
+      "type": "object"
+    },
     "CredentialsSetParams": {
       "additionalProperties": false,
       "properties": {
@@ -990,10 +1425,25 @@
             "approval",
             "approval_closed",
             "history",
-            "warning"
+            "warning",
+            "coding",
+            "voice",
+            "terminal"
           ],
           "title": "Kind",
           "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
         },
         "conversation_id": {
           "anyOf": [
@@ -1088,6 +1538,18 @@
           ],
           "default": null,
           "title": "Approval Id"
+        },
+        "command_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command Id"
         }
       },
       "required": [
@@ -1102,6 +1564,333 @@
       "additionalProperties": false,
       "properties": {},
       "title": "EmptyParams",
+      "type": "object"
+    },
+    "GitExecuteParams": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "token": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Token",
+          "type": "string"
+        },
+        "confirmed": {
+          "default": false,
+          "title": "Confirmed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project_id",
+        "token"
+      ],
+      "title": "GitExecuteParams",
+      "type": "object"
+    },
+    "GitField": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "label"
+      ],
+      "title": "GitField",
+      "type": "object"
+    },
+    "GitFileInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "index": {
+          "title": "Index",
+          "type": "string"
+        },
+        "worktree": {
+          "title": "Worktree",
+          "type": "string"
+        },
+        "original_path": {
+          "default": "",
+          "title": "Original Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "index",
+        "worktree"
+      ],
+      "title": "GitFileInfo",
+      "type": "object"
+    },
+    "GitOverview": {
+      "additionalProperties": false,
+      "properties": {
+        "branch": {
+          "title": "Branch",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "diff": {
+          "title": "Diff",
+          "type": "string"
+        },
+        "commits": {
+          "title": "Commits",
+          "type": "string"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/GitTool"
+          },
+          "title": "Tools",
+          "type": "array"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/GitFileInfo"
+          },
+          "title": "Files",
+          "type": "array"
+        }
+      },
+      "required": [
+        "branch",
+        "status",
+        "diff",
+        "commits",
+        "tools"
+      ],
+      "title": "GitOverview",
+      "type": "object"
+    },
+    "GitPreview": {
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "title": "Token",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "command": {
+          "title": "Command",
+          "type": "string"
+        },
+        "requires_confirmation": {
+          "title": "Requires Confirmation",
+          "type": "boolean"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "token",
+        "title",
+        "command",
+        "requires_confirmation",
+        "warnings"
+      ],
+      "title": "GitPreview",
+      "type": "object"
+    },
+    "GitPreviewParams": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "tool_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Tool Id",
+          "type": "string"
+        },
+        "arguments": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "maxProperties": 20,
+          "title": "Arguments",
+          "type": "object"
+        }
+      },
+      "required": [
+        "project_id",
+        "tool_id"
+      ],
+      "title": "GitPreviewParams",
+      "type": "object"
+    },
+    "GitResult": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "command": {
+          "title": "Command",
+          "type": "string"
+        },
+        "stdout": {
+          "title": "Stdout",
+          "type": "string"
+        },
+        "stderr": {
+          "title": "Stderr",
+          "type": "string"
+        },
+        "returncode": {
+          "title": "Returncode",
+          "type": "integer"
+        },
+        "conflicts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "command",
+        "stdout",
+        "stderr",
+        "returncode",
+        "conflicts",
+        "truncated"
+      ],
+      "title": "GitResult",
+      "type": "object"
+    },
+    "GitTool": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "risk": {
+          "title": "Risk",
+          "type": "string"
+        },
+        "mutates": {
+          "title": "Mutates",
+          "type": "boolean"
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/GitField"
+          },
+          "title": "Fields",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "category",
+        "description",
+        "risk",
+        "mutates",
+        "fields"
+      ],
+      "title": "GitTool",
       "type": "object"
     },
     "HelloParams": {
@@ -1150,6 +1939,248 @@
         "capabilities"
       ],
       "title": "HelloResult",
+      "type": "object"
+    },
+    "MCPCommandParams": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "command": {
+          "enum": [
+            "connect",
+            "disconnect",
+            "restart",
+            "test"
+          ],
+          "title": "Command",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "command"
+      ],
+      "title": "MCPCommandParams",
+      "type": "object"
+    },
+    "MCPConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "transport": {
+          "default": "stdio",
+          "enum": [
+            "stdio",
+            "http",
+            "sse"
+          ],
+          "title": "Transport",
+          "type": "string"
+        },
+        "command": {
+          "default": "",
+          "maxLength": 4096,
+          "title": "Command",
+          "type": "string"
+        },
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Args",
+          "type": "array"
+        },
+        "cwd": {
+          "default": "",
+          "maxLength": 4096,
+          "title": "Cwd",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "maxLength": 8192,
+          "title": "Url",
+          "type": "string"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "maxProperties": 256,
+          "title": "Env",
+          "type": "object"
+        },
+        "secret_env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "maxProperties": 256,
+          "title": "Secret Env",
+          "type": "object"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "maxProperties": 256,
+          "title": "Headers",
+          "type": "object"
+        },
+        "autostart": {
+          "default": false,
+          "title": "Autostart",
+          "type": "boolean"
+        },
+        "default_for_chat": {
+          "default": false,
+          "title": "Default For Chat",
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "tool_policy": {
+          "$ref": "#/$defs/MCPToolPolicy"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "MCPConfig",
+      "type": "object"
+    },
+    "MCPListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "servers": {
+          "items": {
+            "$ref": "#/$defs/MCPServerInfo"
+          },
+          "title": "Servers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "servers"
+      ],
+      "title": "MCPListResult",
+      "type": "object"
+    },
+    "MCPNameParams": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "MCPNameParams",
+      "type": "object"
+    },
+    "MCPOperationResult": {
+      "additionalProperties": false,
+      "properties": {
+        "success": {
+          "default": true,
+          "title": "Success",
+          "type": "boolean"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "tool_count": {
+          "default": 0,
+          "title": "Tool Count",
+          "type": "integer"
+        },
+        "tool_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tool Names",
+          "type": "array"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "MCPOperationResult",
+      "type": "object"
+    },
+    "MCPSaveParams": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "create",
+            "update"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "config": {
+          "$ref": "#/$defs/MCPConfig"
+        }
+      },
+      "required": [
+        "mode",
+        "config"
+      ],
+      "title": "MCPSaveParams",
+      "type": "object"
+    },
+    "MCPServerInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/MCPConfig"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "tool_count": {
+          "title": "Tool Count",
+          "type": "integer"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        }
+      },
+      "required": [
+        "config",
+        "status",
+        "tool_count"
+      ],
+      "title": "MCPServerInfo",
       "type": "object"
     },
     "MCPSetParams": {
@@ -1204,6 +2235,49 @@
       "title": "MCPState",
       "type": "object"
     },
+    "MCPToolPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "allow",
+          "enum": [
+            "allow",
+            "confirm",
+            "deny"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "allowed_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "confirm_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Confirm Tools",
+          "type": "array"
+        }
+      },
+      "title": "MCPToolPolicy",
+      "type": "object"
+    },
+    "ModelsListParams": {
+      "additionalProperties": false,
+      "properties": {
+        "silent": {
+          "default": false,
+          "title": "Silent",
+          "type": "boolean"
+        }
+      },
+      "title": "ModelsListParams",
+      "type": "object"
+    },
     "ModelsResult": {
       "additionalProperties": false,
       "properties": {
@@ -1230,6 +2304,212 @@
         "effort_levels"
       ],
       "title": "ModelsResult",
+      "type": "object"
+    },
+    "ProjectCreateParams": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "local_path": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Local Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "local_path"
+      ],
+      "title": "ProjectCreateParams",
+      "type": "object"
+    },
+    "ProjectFileEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "is_dir": {
+          "title": "Is Dir",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "name",
+        "is_dir"
+      ],
+      "title": "ProjectFileEntry",
+      "type": "object"
+    },
+    "ProjectFilesParams": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "path": {
+          "default": "",
+          "maxLength": 4096,
+          "title": "Path",
+          "type": "string"
+        },
+        "query": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "ProjectFilesParams",
+      "type": "object"
+    },
+    "ProjectFilesResult": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/ProjectFileEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "limited": {
+          "default": false,
+          "title": "Limited",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "entries"
+      ],
+      "title": "ProjectFilesResult",
+      "type": "object"
+    },
+    "ProjectInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "title": "Project Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "local_path": {
+          "title": "Local Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "name",
+        "local_path"
+      ],
+      "title": "ProjectInfo",
+      "type": "object"
+    },
+    "ProjectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "ProjectParams",
+      "type": "object"
+    },
+    "ProjectReadParams": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "path"
+      ],
+      "title": "ProjectReadParams",
+      "type": "object"
+    },
+    "ProjectReadResult": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ],
+      "title": "ProjectReadResult",
+      "type": "object"
+    },
+    "ProjectsResult": {
+      "additionalProperties": false,
+      "properties": {
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/ProjectInfo"
+          },
+          "title": "Projects",
+          "type": "array"
+        }
+      },
+      "required": [
+        "projects"
+      ],
+      "title": "ProjectsResult",
       "type": "object"
     },
     "RunCancelParams": {
@@ -1413,6 +2693,374 @@
       ],
       "title": "Snapshot",
       "type": "object"
+    },
+    "TerminalCancelParams": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "command_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Command Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "command_id"
+      ],
+      "title": "TerminalCancelParams",
+      "type": "object"
+    },
+    "TerminalCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "command_id": {
+          "title": "Command Id",
+          "type": "string"
+        },
+        "project_id": {
+          "title": "Project Id",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "user",
+            "agent"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "command": {
+          "title": "Command",
+          "type": "string"
+        },
+        "cwd": {
+          "title": "Cwd",
+          "type": "string"
+        },
+        "status": {
+          "default": "starting",
+          "title": "Status",
+          "type": "string"
+        },
+        "session_id": {
+          "default": "",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "default": "",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "stdout": {
+          "default": "",
+          "title": "Stdout",
+          "type": "string"
+        },
+        "stderr": {
+          "default": "",
+          "title": "Stderr",
+          "type": "string"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Code"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        },
+        "timed_out": {
+          "default": false,
+          "title": "Timed Out",
+          "type": "boolean"
+        },
+        "backend": {
+          "default": "host",
+          "title": "Backend",
+          "type": "string"
+        },
+        "boundary": {
+          "default": "host",
+          "title": "Boundary",
+          "type": "string"
+        },
+        "duration_seconds": {
+          "default": 0,
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "error": {
+          "default": "",
+          "title": "Error",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command_id",
+        "project_id",
+        "source",
+        "command",
+        "cwd"
+      ],
+      "title": "TerminalCommand",
+      "type": "object"
+    },
+    "TerminalListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "items": {
+            "$ref": "#/$defs/TerminalCommand"
+          },
+          "title": "Commands",
+          "type": "array"
+        },
+        "busy": {
+          "title": "Busy",
+          "type": "boolean"
+        },
+        "backend": {
+          "default": "host",
+          "title": "Backend",
+          "type": "string"
+        },
+        "boundary": {
+          "default": "host",
+          "title": "Boundary",
+          "type": "string"
+        },
+        "max_timeout": {
+          "default": 300,
+          "title": "Max Timeout",
+          "type": "number"
+        }
+      },
+      "required": [
+        "commands",
+        "busy"
+      ],
+      "title": "TerminalListResult",
+      "type": "object"
+    },
+    "TerminalStartParams": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Id",
+          "type": "string"
+        },
+        "command": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Command",
+          "type": "string"
+        },
+        "cwd": {
+          "default": ".",
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Cwd",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "required": [
+        "project_id",
+        "command"
+      ],
+      "title": "TerminalStartParams",
+      "type": "object"
+    },
+    "VoiceCommandParams": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "scope_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Scope Id",
+          "type": "string"
+        },
+        "action": {
+          "enum": [
+            "record",
+            "stop_recording",
+            "conversation",
+            "pause",
+            "resume",
+            "cancel",
+            "speak",
+            "stop_speaking",
+            "discard",
+            "submit"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 32000,
+          "title": "Text",
+          "type": "string"
+        },
+        "review_id": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Review Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conversation_id",
+        "scope_id",
+        "action"
+      ],
+      "title": "VoiceCommandParams",
+      "type": "object"
+    },
+    "VoicePreferences": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "asr_provider": {
+          "enum": [
+            "evren",
+            "local"
+          ],
+          "title": "Asr Provider",
+          "type": "string"
+        },
+        "tts_provider": {
+          "enum": [
+            "evren",
+            "system"
+          ],
+          "title": "Tts Provider",
+          "type": "string"
+        },
+        "language": {
+          "enum": [
+            "auto",
+            "tr",
+            "en"
+          ],
+          "title": "Language",
+          "type": "string"
+        },
+        "read_replies": {
+          "title": "Read Replies",
+          "type": "boolean"
+        },
+        "playback_speed": {
+          "maximum": 4,
+          "minimum": 0.25,
+          "title": "Playback Speed",
+          "type": "number"
+        }
+      },
+      "required": [
+        "enabled",
+        "asr_provider",
+        "tts_provider",
+        "language",
+        "read_replies",
+        "playback_speed"
+      ],
+      "title": "VoicePreferences",
+      "type": "object"
+    },
+    "VoiceState": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "scope_id": {
+          "title": "Scope Id",
+          "type": "string"
+        },
+        "state": {
+          "title": "State",
+          "type": "string"
+        },
+        "conversation_active": {
+          "title": "Conversation Active",
+          "type": "boolean"
+        },
+        "paused": {
+          "title": "Paused",
+          "type": "boolean"
+        },
+        "transcript": {
+          "default": "",
+          "title": "Transcript",
+          "type": "string"
+        },
+        "review_id": {
+          "default": "",
+          "title": "Review Id",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "settings": {
+          "$ref": "#/$defs/VoicePreferences"
+        }
+      },
+      "required": [
+        "conversation_id",
+        "scope_id",
+        "state",
+        "conversation_active",
+        "paused",
+        "settings"
+      ],
+      "title": "VoiceState",
+      "type": "object"
     }
   },
   "properties": {
@@ -1458,11 +3106,29 @@
     "CredentialsSetParams": {
       "$ref": "#/$defs/CredentialsSetParams"
     },
+    "ModelsListParams": {
+      "$ref": "#/$defs/ModelsListParams"
+    },
     "ModelsResult": {
       "$ref": "#/$defs/ModelsResult"
     },
     "MCPSetParams": {
       "$ref": "#/$defs/MCPSetParams"
+    },
+    "MCPListResult": {
+      "$ref": "#/$defs/MCPListResult"
+    },
+    "MCPSaveParams": {
+      "$ref": "#/$defs/MCPSaveParams"
+    },
+    "MCPNameParams": {
+      "$ref": "#/$defs/MCPNameParams"
+    },
+    "MCPCommandParams": {
+      "$ref": "#/$defs/MCPCommandParams"
+    },
+    "MCPOperationResult": {
+      "$ref": "#/$defs/MCPOperationResult"
     },
     "ApprovalResolveParams": {
       "$ref": "#/$defs/ApprovalResolveParams"
@@ -1478,6 +3144,90 @@
     },
     "BrowserUserInputParams": {
       "$ref": "#/$defs/BrowserUserInputParams"
+    },
+    "ProjectsResult": {
+      "$ref": "#/$defs/ProjectsResult"
+    },
+    "ProjectCreateParams": {
+      "$ref": "#/$defs/ProjectCreateParams"
+    },
+    "ProjectInfo": {
+      "$ref": "#/$defs/ProjectInfo"
+    },
+    "ProjectFilesParams": {
+      "$ref": "#/$defs/ProjectFilesParams"
+    },
+    "ProjectFilesResult": {
+      "$ref": "#/$defs/ProjectFilesResult"
+    },
+    "ProjectReadParams": {
+      "$ref": "#/$defs/ProjectReadParams"
+    },
+    "ProjectReadResult": {
+      "$ref": "#/$defs/ProjectReadResult"
+    },
+    "ProjectParams": {
+      "$ref": "#/$defs/ProjectParams"
+    },
+    "CodingPreferences": {
+      "$ref": "#/$defs/CodingPreferences"
+    },
+    "CodingPreferencesUpdate": {
+      "$ref": "#/$defs/CodingPreferencesUpdate"
+    },
+    "CodingOpenParams": {
+      "$ref": "#/$defs/CodingOpenParams"
+    },
+    "CodingState": {
+      "$ref": "#/$defs/CodingState"
+    },
+    "CodingSessionParams": {
+      "$ref": "#/$defs/CodingSessionParams"
+    },
+    "CodingHistoryResult": {
+      "$ref": "#/$defs/CodingHistoryResult"
+    },
+    "CodingStartParams": {
+      "$ref": "#/$defs/CodingStartParams"
+    },
+    "CodingControlParams": {
+      "$ref": "#/$defs/CodingControlParams"
+    },
+    "TerminalListResult": {
+      "$ref": "#/$defs/TerminalListResult"
+    },
+    "TerminalStartParams": {
+      "$ref": "#/$defs/TerminalStartParams"
+    },
+    "TerminalCommand": {
+      "$ref": "#/$defs/TerminalCommand"
+    },
+    "TerminalCancelParams": {
+      "$ref": "#/$defs/TerminalCancelParams"
+    },
+    "GitOverview": {
+      "$ref": "#/$defs/GitOverview"
+    },
+    "GitPreviewParams": {
+      "$ref": "#/$defs/GitPreviewParams"
+    },
+    "GitPreview": {
+      "$ref": "#/$defs/GitPreview"
+    },
+    "GitExecuteParams": {
+      "$ref": "#/$defs/GitExecuteParams"
+    },
+    "GitResult": {
+      "$ref": "#/$defs/GitResult"
+    },
+    "VoiceState": {
+      "$ref": "#/$defs/VoiceState"
+    },
+    "VoiceCommandParams": {
+      "$ref": "#/$defs/VoiceCommandParams"
+    },
+    "VoicePreferences": {
+      "$ref": "#/$defs/VoicePreferences"
     },
     "BrowserExecutorConfigParams": {
       "$ref": "#/$defs/BrowserExecutorConfigParams"
@@ -1516,13 +3266,47 @@
     "SettingsState",
     "SettingsUpdateParams",
     "CredentialsSetParams",
+    "ModelsListParams",
     "ModelsResult",
     "MCPSetParams",
+    "MCPListResult",
+    "MCPSaveParams",
+    "MCPNameParams",
+    "MCPCommandParams",
+    "MCPOperationResult",
     "ApprovalResolveParams",
     "BrowserConfigureParams",
     "BrowserStatusState",
     "BrowserUserCommandParams",
     "BrowserUserInputParams",
+    "ProjectsResult",
+    "ProjectCreateParams",
+    "ProjectInfo",
+    "ProjectFilesParams",
+    "ProjectFilesResult",
+    "ProjectReadParams",
+    "ProjectReadResult",
+    "ProjectParams",
+    "CodingPreferences",
+    "CodingPreferencesUpdate",
+    "CodingOpenParams",
+    "CodingState",
+    "CodingSessionParams",
+    "CodingHistoryResult",
+    "CodingStartParams",
+    "CodingControlParams",
+    "TerminalListResult",
+    "TerminalStartParams",
+    "TerminalCommand",
+    "TerminalCancelParams",
+    "GitOverview",
+    "GitPreviewParams",
+    "GitPreview",
+    "GitExecuteParams",
+    "GitResult",
+    "VoiceState",
+    "VoiceCommandParams",
+    "VoicePreferences",
     "BrowserExecutorConfigParams",
     "BrowserPrepareParams",
     "BrowserHostResult",
@@ -1573,12 +3357,28 @@
       "result": "Ack"
     },
     "models.list": {
-      "params": "EmptyParams",
+      "params": "ModelsListParams",
       "result": "ModelsResult"
     },
     "mcp.set": {
       "params": "MCPSetParams",
       "result": "ChatState"
+    },
+    "mcp.list": {
+      "params": "EmptyParams",
+      "result": "MCPListResult"
+    },
+    "mcp.save": {
+      "params": "MCPSaveParams",
+      "result": "MCPListResult"
+    },
+    "mcp.remove": {
+      "params": "MCPNameParams",
+      "result": "MCPListResult"
+    },
+    "mcp.command": {
+      "params": "MCPCommandParams",
+      "result": "MCPOperationResult"
     },
     "approval.resolve": {
       "params": "ApprovalResolveParams",
@@ -1595,6 +3395,86 @@
     "browser.userInput": {
       "params": "BrowserUserInputParams",
       "result": "BrowserStatusState"
+    },
+    "projects.list": {
+      "params": "EmptyParams",
+      "result": "ProjectsResult"
+    },
+    "projects.create": {
+      "params": "ProjectCreateParams",
+      "result": "ProjectInfo"
+    },
+    "projects.files": {
+      "params": "ProjectFilesParams",
+      "result": "ProjectFilesResult"
+    },
+    "projects.read": {
+      "params": "ProjectReadParams",
+      "result": "ProjectReadResult"
+    },
+    "coding.preferences": {
+      "params": "ProjectParams",
+      "result": "CodingPreferences"
+    },
+    "coding.preferences.update": {
+      "params": "CodingPreferencesUpdate",
+      "result": "CodingPreferences"
+    },
+    "coding.open": {
+      "params": "CodingOpenParams",
+      "result": "CodingState"
+    },
+    "coding.get": {
+      "params": "CodingSessionParams",
+      "result": "CodingState"
+    },
+    "coding.history": {
+      "params": "ProjectParams",
+      "result": "CodingHistoryResult"
+    },
+    "coding.start": {
+      "params": "CodingStartParams",
+      "result": "CodingState"
+    },
+    "coding.control": {
+      "params": "CodingControlParams",
+      "result": "Ack"
+    },
+    "terminal.list": {
+      "params": "ProjectParams",
+      "result": "TerminalListResult"
+    },
+    "terminal.start": {
+      "params": "TerminalStartParams",
+      "result": "TerminalCommand"
+    },
+    "terminal.cancel": {
+      "params": "TerminalCancelParams",
+      "result": "Ack"
+    },
+    "git.overview": {
+      "params": "ProjectParams",
+      "result": "GitOverview"
+    },
+    "git.preview": {
+      "params": "GitPreviewParams",
+      "result": "GitPreview"
+    },
+    "git.execute": {
+      "params": "GitExecuteParams",
+      "result": "GitResult"
+    },
+    "voice.get": {
+      "params": "ChatGetParams",
+      "result": "VoiceState"
+    },
+    "voice.command": {
+      "params": "VoiceCommandParams",
+      "result": "VoiceState"
+    },
+    "voice.settings": {
+      "params": "VoicePreferences",
+      "result": "VoicePreferences"
     },
     "system.shutdown": {
       "params": "EmptyParams",

@@ -64,6 +64,12 @@ export class BackendClient extends EventEmitter {
         ? 45000
         : method === 'models.list'
         ? 30000
+        : method === 'coding.start' || method === 'projects.create'
+        ? 135000
+        : method.startsWith('git.')
+        ? 90000
+        : method === 'mcp.command' || method === 'mcp.save' || method === 'mcp.remove'
+        ? 90000
         : method.startsWith('browser.')
           ? 270000 // A user navigation may need both bounded startup and navigation.
           : 15000;

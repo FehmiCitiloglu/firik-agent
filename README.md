@@ -2,7 +2,11 @@
 
 Masaüstü uygulaması: `firik-gui`; agent: `firik-agent`; doğrudan API istemcisi: `firik`. Python paketi: `firik_agent`.
 
-**Hibrit desktop önizlemesi:** Electron + React/TypeScript arayüz, mevcut Python Agent'e özel stdio/IPC üzerinden bağlanır. Sohbet akışı, geçmiş, ayarlar, iptal ve MCP seçimi ilk çalışan dilimde hazırdır: `make install-hybrid` (kurulum + `firik-hybrid` başlatıcı), `make ui-hybrid` (derleyip açma) veya `npm run desktop:dev`. [Kurulum, paketleme, doğrulama ve henüz taşınmayan özellikler](docs/HYBRID_DESKTOP_MIGRATION.md), [mimari plan ve browser geçişi](docs/HYBRID_DESKTOP_ARCHITECTURE.md). Varsayılan `make install` ve `firik-gui` komutu referans Python/CustomTkinter arayüzünü kullanmaya devam eder.
+**Hibrit desktop önizlemesi:** Electron + React/TypeScript arayüz, mevcut Python Agent'e özel stdio/IPC üzerinden bağlanır. Sohbet, tarayıcı ve ayarların yanında kodlama ajanı, GitGod ve sesli asistanın [ilk çalışan geçiş dilimi](docs/HYBRID_WORKSPACES_MIGRATION.md) hazırdır: `make install-hybrid` (kurulum + `firik-hybrid` başlatıcı), `make ui-hybrid` (derleyip açma) veya `npm run desktop:dev`. [Kurulum, paketleme, doğrulama ve henüz taşınmayan özellikler](docs/HYBRID_DESKTOP_MIGRATION.md), [mimari plan ve browser geçişi](docs/HYBRID_DESKTOP_ARCHITECTURE.md). Varsayılan `make install` ve `firik-gui` komutu referans Python/CustomTkinter arayüzünü kullanmaya devam eder.
+
+**Arayüz geliştirme yönü:** Yeni masaüstü arayüz çalışmaları tamamen Electron + React + TypeScript üzerinde ilerler. Python/CustomTkinter arayüzü için yeni geliştirme planlanmaz; mevcut Python backend servisi kullanılmaya devam eder. [Electron geliştirici deneyimi yol haritası ve ilk uygulama dilimi](docs/SOFTWARE_DEVELOPMENT_UX_AUDIT_20261115.md).
+
+**Electron'da MCP yönetimi:** Sol alt menüden **MCP sunucuları → MCP ekle** yolunu izleyin. Yerel komut (`stdio`) veya uzak sunucu (`HTTP`/`SSE`) tanımlayabilir; düzenleme, bağlantı testi, bağlanma/ayrılma ve silme işlemlerini bu ekrandan yapabilirsiniz. Kayıtlar uygulama yeniden açıldığında korunur. Sohbette kullanmak için **Araçlar** menüsünden seçin veya **Yeni sohbetlerde varsayılan olarak seç** ayarını açın. Yönetim ekranına Ayarlar'dan ve Araçlar menüsünden de erişilir. Yerel Electron doğrulaması: `npm run desktop:smoke:mcp`.
 
 FIRIK'in **LLM Çıkarım API'sini terminalden kullanmak** için CLI ve Python istemcisi. Sohbetin yanında görsel anlama, OCR, ses çözümleme, embeddings, rerank, medya yükleme, kota/kredi ve istek durumu sorgularını destekler. Önceki agent, MCP, skill ve plugin özellikleri `firik-agent` komutuyla kullanılmaya devam eder.
 
@@ -378,7 +382,7 @@ asyncio.run(main())
 
 ## Agent ve MCP modu
 
-CLI sorunlarını incelemek için `firik-agent doctor --json` kullanın. Yapılandırma, seçili sağlayıcı/model, bağlam ve kaynak bütçeleri çevrimdışı denetlenir; anahtar okunmaz ve ajan/araç başlatılmaz. `--config`, `--provider` ve `--model` ile seçimi belirleyebilirsiniz. `firik-agent doctor --probe --model mimo-v2.6-pro` seçili sağlayıcının anahtarıyla yalnızca `GET /models` çağrısı yapar; istem veya üretim isteği göndermez. Hatalı yapılandırma ve başarısız bağlantı/model kontrolü sıfırdan farklı çıkış kodu döndürür.
+CLI sorunlarını incelemek için `firik-agent doctor --json` kullanın. Yapılandırma, seçili sağlayıcı/model, bağlam ve kaynak bütçeleri çevrimdışı denetlenir; anahtar okunmaz ve ajan/araç başlatılmaz. `--config`, `--provider` ve `--model` ile seçimi belirleyebilirsiniz. `firik-agent doctor --probe --model deepseek-v4.1-flash` seçili sağlayıcının anahtarıyla yalnızca `GET /models` çağrısı yapar; istem veya üretim isteği göndermez. Hatalı yapılandırma ve başarısız bağlantı/model kontrolü sıfırdan farklı çıkış kodu döndürür.
 
 Etkileşimli oturumda `/doctor` mevcut modelin bütçelerini ve son hatanın güvenli ayrıntılarını, `/doctor --probe` bağlantı/model kontrolünü gösterir. Hata türü, HTTP durumu ve istek kimliği mevcutsa terminalde ve `/details` içinde korunur; sağlayıcının ham hata gövdesi gösterilmez.
 

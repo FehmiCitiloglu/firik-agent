@@ -479,3 +479,38 @@ def test_browser_resize_command_contract_and_uninitialized_handling(desktop):
     wait_until(lambda: any(row.get("id") == 14 for row in messages(output)))
     invalid = next(row for row in reversed(messages(output)) if row.get("id") == 14)
     assert "error" in invalid
+
+
+def test_models_list_silent_flag_and_removed_mimo_normalization(tmp_path, monkeypatch):
+    from firik_agent.api.client import DEFAULT_BASE_URL
+    from firik_agent.application.service import FirikService
+    from firik_agent.desktop_rpc.server import DesktopServer
+    import io
+
+    config = tmp_path / "config.yaml"
+    config.write_text(yaml.safe_dump({
+        "providers": {"firik": {"base_url": DEFAULT_BASE_URL, "default_model": "mimo-v2.6-pro"}},
+        "disabled_default_mcps": ["web", "computer-use"], "mcp_servers": {}, "browser": {"enabled": False},
+    }))
+    service = FirikService(config_path=config)
+    assert service.default_model == "glm-5.3"
+    service.default_model = "mimo-v2.6-pro"
+
+    output = io.BytesIO()
+    server = DesktopServer(service, output)
+    server.handle({"jsonrpc": "2.0", "id": 1, "method": "system.hello", "params": {"protocol_version": 1}})
+    assert "mimo-v2.6-pro" not in server.models().models
+
+    def failing_fetch(on_success, on_error=None):
+        service._cached_models = ["glm-5.3", "deepseek-v4.1-flash"]
+        on_success(service._cached_models)
+        if on_error:
+            on_error("offline")
+
+    monkeypatch.setattr(service, "fetch_models_async", failing_fetch)
+    server.handle({"jsonrpc": "2.0", "id": 2, "method": "models.list", "params": {"silent": True}})
+    server.handle({"jsonrpc": "2.0", "id": 3, "method": "models.list", "params": {"silent": False}})
+    frames = messages(output)
+    warnings = [row for row in frames if row.get("method") == "desktop.event" and row["params"].get("kind") == "warning"]
+    assert len(warnings) == 1
+    assert any(row.get("id") == 2 and "deepseek-v4.1-flash" in row["result"]["models"] for row in frames)

@@ -13,7 +13,6 @@ import threading
 import time
 from uuid import uuid4
 
-from firik_agent.core.agent import Agent
 from firik_agent.core.events import AgentEventType
 from firik_agent.core.metrics import RunMetrics
 from firik_agent.core.session import ChatSession
@@ -481,18 +480,7 @@ class CodingBridge(CodingActions):
                         state=control.state)
                 if cancel_event.is_set():
                     raise asyncio.CancelledError
-                config = deepcopy(self.config)
-                config["mcp_servers"] = {}
-                config["plugins"] = dict(config.get("plugins", {}), autoload_builtins=False, directory="")
-                config["skills"] = dict(config.get("skills", {}), active_skills=[])
-                config["computer_use"] = {"enabled": False}
-                agent = Agent(config=config, config_path=str(self.config_path) if self.config_path else None)
-                # Initialize providers/meta registries without plugin discovery or
-                # implicit MCP connections. Only CodingToolFilter is exposed.
-                agent._is_initialized = True
-                agent.providers.set_active(options.get("provider", self.provider))
-                agent.providers.get_active().set_model(session.model)
-                self.configure_model_metadata(agent.providers.get_active())
+                agent = self._coding_worker(options.get("provider", self.provider), session.model)
                 policy_registry = self.mcp_manager.tool_registry
                 # Honor server deny/allow lists as well as exact session selection.
                 from firik_agent.core.session import SessionToolFilter
@@ -550,12 +538,7 @@ class CodingBridge(CodingActions):
                 if options.get("subagents_enabled") is True:
                     from firik_agent.projects.subagents import SubagentToolFilter
                     def child_agent():
-                        worker = Agent(config=deepcopy(config), config_path=str(self.config_path) if self.config_path else None)
-                        worker._is_initialized = True
-                        worker.providers.set_active(options.get("provider", self.provider))
-                        worker.providers.get_active().set_model(session.model)
-                        self.configure_model_metadata(worker.providers.get_active())
-                        return worker
+                        return self._coding_worker(options.get("provider", self.provider), session.model)
                     selected_provider = options.get("provider", self.provider)
                     limits = dict(options.get("subagent_limits") or {})
                     parallel = control.harness_profile["max_parallel_agents"]

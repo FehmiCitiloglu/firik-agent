@@ -21,12 +21,18 @@ export default function SettingsDialog({ snapshot }: { snapshot: Snapshot }) {
 
   async function save(event: FormEvent) {
     event.preventDefault(); setSaving(true);
+    const hasKey = Boolean(key.trim()) || snapshot.settings.has_api_key;
     try {
       await window.firik.settings.update({ base_url: url.trim(), default_model: model.trim(), timeout });
       if (key.trim()) await window.firik.settings.setKey({ api_key: key.trim() });
       setKey('');
       await client.invalidateQueries({ queryKey: ['snapshot'] });
       useUI.setState({ settingsOpen: false });
+      if (hasKey) {
+        void window.firik.models.list({ silent: true }).then(models => {
+          client.setQueryData<Snapshot>(['snapshot'], old => old ? { ...old, models } : old);
+        }).catch(() => {});
+      }
     } catch (error) { showError(error); await client.invalidateQueries({ queryKey: ['snapshot'] }); }
     finally { setSaving(false); }
   }
@@ -36,9 +42,11 @@ export default function SettingsDialog({ snapshot }: { snapshot: Snapshot }) {
       <div className="dialog-heading"><div><span className="eyebrow">ÇALIŞMA ALANINIZ</span>
         <Dialog.Title>Ayarlar</Dialog.Title></div><Dialog.Close asChild><Button variant="ghost" aria-label="Ayarları kapat"><X size={18} /></Button></Dialog.Close></div>
       <Dialog.Description>Firik bağlantınızı ve yeni sohbetlerin varsayılan modelini düzenleyin.</Dialog.Description>
+      <Button variant="outline" disabled={saving} onClick={() => useUI.setState({ settingsOpen: false, mcpOpen: true })}>MCP sunucularını yönet</Button>
       <form onSubmit={save} className="settings-form">
         <label>API adresi<input required type="url" value={url} onChange={e => setURL(e.target.value)} /></label>
-        <label>Varsayılan model<input required value={model} maxLength={256} onChange={e => setModel(e.target.value)} /></label>
+        <label>Varsayılan model<input required value={model} list="firik-model-options" maxLength={256} onChange={e => setModel(e.target.value)} /></label>
+        <datalist id="firik-model-options">{snapshot.models.models.map(item => <option key={item} value={item} />)}</datalist>
         <label>Zaman aşımı <span className="muted">saniye</span><input required type="number" min={5} max={1800} value={timeout} onChange={e => setTimeoutValue(Number(e.target.value))} /></label>
         <label>API anahtarı<span className="key-state">{snapshot.settings.has_api_key ? <><Check size={13} /> Anahtar yapılandırılmış</> : 'Henüz yapılandırılmadı'}</span>
           <input type="password" autoComplete="new-password" value={key} maxLength={8192} placeholder="Değiştirmek için yeni anahtarı girin" onChange={e => setKey(e.target.value)} /></label>

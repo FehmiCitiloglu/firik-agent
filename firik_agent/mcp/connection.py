@@ -340,7 +340,7 @@ class MCPConnectionManager:
         conn = MCPConnection(config, on_status_change=self._on_connection_status)
         self.connections[config.name] = conn
 
-        if connect_now or config.autostart:
+        if config.enabled and (connect_now or config.autostart):
             try:
                 await conn.connect()
                 self._register_tools_in_registry(conn)
@@ -361,7 +361,7 @@ class MCPConnectionManager:
             del self.connections[name]
         self.connections[new_config.name] = new_conn
 
-        if was_connected or new_config.autostart:
+        if new_config.enabled and (was_connected or new_config.autostart):
             await new_conn.connect()
             self._register_tools_in_registry(new_conn)
 
@@ -373,7 +373,7 @@ class MCPConnectionManager:
 
         await conn.disconnect(force=True)
         self.tool_registry.unregister_by_source(f"mcp:{name}")
-        delete_all_mcp_secrets(name)
+        delete_all_mcp_secrets(name, list(conn.config.secret_env))
         return True
 
     def duplicate_server(self, name: str, new_name: str) -> MCPServerConfig:

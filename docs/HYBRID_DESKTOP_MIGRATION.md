@@ -1,8 +1,15 @@
-# Hibrit desktop: aşama 1, 2 ve 3 geçişi
+# Hibrit desktop: aşama 1–3 ve özellik eşliğinin ilk dilimi
 
-Güncelleme: 10 Kasım 2026. Kapsam: mimari planın 1, 2 ve 3. aşamalarındaki sohbet, backend
-bağlantısı ve TypeScript Playwright Browser geçişi. Mevcut native masaüstü ve CLI
+Güncelleme: 15 Kasım 2026. Kapsam: mimari planın 1, 2 ve 3. aşamalarındaki sohbet, backend
+bağlantısı ve TypeScript Browser geçişi; 4. aşamadaki kodlama, GitGod ve sesli asistanın
+ilk çalışan arayüz dilimi. Mevcut native masaüstü ve CLI
 giriş noktaları korunur.
+
+15 Kasım'da React/TypeScript tarafına proje seçimi/kaydı, gerçek kodlama ajanı akışı,
+oturum geçmişi, işlem onayları, duraklatma/iptal, plan/değişiklik/test görünümü;
+GitGod araç kataloğu, tek kullanımlık komut önizlemesi/onayı; sesli sohbet,
+transkript inceleme ve ses ayarları eklendi. Ortak Python çalışma motorları kullanılır.
+[Bu dilimin kapsamı, doğrulaması ve kalan işler](HYBRID_WORKSPACES_MIGRATION.md).
 
 ## Çalışan parçalar
 
@@ -14,6 +21,12 @@ giriş noktaları korunur.
   anahtar yazma; UI'ya kayıtlı anahtar değeri döndürülmez.
 - Model kataloğunu yenileme, doğrulanmış reasoning seviyeleri, mevcut MCP'leri
   konuşma başına seçme ve mevcut ajan onay callback'lerini cevaplama.
+- Kenar menüsündeki **MCP sunucuları** ekranından stdio/HTTP/SSE sunucusu
+  ekleme, düzenleme, silme, bağlantı testi, bağlanma, ayrılma ve yeniden başlatma.
+  Ortam değişkenleri, gizli değişkenler, HTTP başlıkları, araç izinleri,
+  otomatik başlatma ve yeni sohbetlerde varsayılan seçim ayarlanabilir.
+  Ekran Ayarlar ve sohbetin Araçlar menüsünden de açılır; kayıtlı gizli
+  değişkenler ve HTTP başlık değerleri arayüze geri gönderilmez.
 - Özel stdio üzerinde çift yönlü sürümlü JSON-RPC 2.0 (`browser.configureExecutor`, `browser.prepare`,
   `browser.execute`, `browser.revoke` Python → Host; `browser.configure`, `browser.userCommand`, `browser.userInput`
   Host → Python); Pydantic'ten üretilen ortak JSON Schema ve TypeScript sözleşmeleri.
@@ -60,6 +73,16 @@ Windows'ta Python yolu `.venv\Scripts\python.exe` olur. Python ve Yarn'ın globa
 kurulumunu değiştirmek gerekmez. Yarn sürümü `packageManager` alanında, doğrudan
 bağımlılıklar ve çözümlenen bağımlılıklar manifest/kilit dosyasında sabittir.
 Yarn'ın paket yayın yaşı koruması kapatılmadı.
+
+Electron çalışma zamanı `44.11.3` sürümüne sabittir. Electron 45 / Chromium 156'da
+macOS başlık çubuğundan monitörler arası taşınan pencerenin yerel konumu eski
+ekranda kalabilir; bunun sonucunda dropdown menüleri yanlış monitörde açılır ve
+büyütme işlemi pencereyi önceki ekrana geri taşır. 44 serisi bu regresyondan
+etkilenmediği için kullanılır ([Electron #55518](https://github.com/electron/electron/issues/55518)).
+45 veya sonrasına yükseltmeden önce gerçek başlık çubuğu sürüklemesiyle iki
+monitör arasında gidiş/dönüş, dropdown açma, çift tıklayarak büyütme/geri alma
+ve kenardan boyutlandırma doğrulanmalıdır; yalnız `setBounds()` ile taşıma bu
+yerel hatayı sınamaz.
 
 Vite sunucusu geliştirmede kullanılır. Derlenmiş arayüzü sunucusuz açmak için:
 
@@ -203,8 +226,10 @@ Aşama 3'ün worker, Python adaptörü ve önizleme paneli eklendi. Gerçek Chro
 Electron üzerindeki macOS arm64 kapsamı tarihli kanıtla izlenir; bu sonuç diğer
 platformlar, canlı sağlayıcı veya tüm özelliklerin taşındığı anlamına gelmez.
 
-Coding cockpit, Monaco, mevcut komut çıktıları/Git akışı, MCP sunucusu yönetimi,
-ses/OCR/rerank/kota ve improvement ekranları sonraki aşamadadır. Etkileşimli
+Coding cockpit'in temel oturum/ajan/onay akışı, GitGod ve sohbet için sesli asistan
+ilk dilim olarak eklendi. Monaco, dosya gezgini, bağımsız komut/terminal paneli,
+alt ajan ve harness yönetimi, kodlama içinde ses yönlendirmesi,
+OCR/rerank/kota ve improvement ekranları sonraki aşamadadır. Etkileşimli
 terminal için xterm.js yanında mevcut izinli çalışma sınırına bağlı PTY gerekir.
 Bu ekranlar ve platform/imza kapıları geçilmeden `firik gui` / `firik-gui`
 varsayılanları değişmez. Tk sürümü mevcut ortak Python servisleriyle çalışır.
