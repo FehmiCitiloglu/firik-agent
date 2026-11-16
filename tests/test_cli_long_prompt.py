@@ -45,7 +45,7 @@ async def test_model_switch_long_paste_error_is_inspectable_and_repl_remains_usa
         requests.append(request)
         if request.method == "GET":
             return httpx.Response(200, json={"data": [
-                {"id": "mimo-v2.6-pro", "context_length": 1_048_576}]})
+                {"id": "deepseek-v4.1-flash", "context_length": 1_048_576}]})
         if sum(item.method == "POST" for item in requests) == 1:
             return httpx.Response(status, json={"error": {
                 "code": code, "message": "password=PRIVATE-PROVIDER-BODY"}},
@@ -74,7 +74,7 @@ async def test_model_switch_long_paste_error_is_inspectable_and_repl_remains_usa
         monkeypatch.setattr(cli, "PromptSession", ObservedSession)
         task = asyncio.create_task(cli.run_repl(agent))
         try:
-            for text in ["/model mimo-v2.6-pro",
+            for text in ["/model deepseek-v4.1-flash",
                          f"Implement this prompt \x1b[200~{pasted}\x1b[201~",
                          "/doctor --json", "/details", "Continue diagnostic test", "/exit"]:
                 await asyncio.wait_for(ready.get(), timeout=5)
@@ -89,7 +89,7 @@ async def test_model_switch_long_paste_error_is_inspectable_and_repl_remains_usa
 
     posts = [json.loads(request.content) for request in requests if request.method == "POST"]
     assert len(posts) == 2  # No automatic replay of the failed paid request.
-    assert all(body["model"] == "mimo-v2.6-pro" for body in posts)
+    assert all(body["model"] == "deepseek-v4.1-flash" for body in posts)
     assert posts[0]["messages"][-1]["content"] == "Implement this prompt " + pasted
     assert posts[1]["messages"][-1]["content"] == "Continue diagnostic test"
     assert agent.messages[4].content == "Implement this prompt " + pasted

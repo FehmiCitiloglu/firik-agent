@@ -32,7 +32,7 @@ def test_conflicting_total_context_limits_respect_smaller_declaration():
                                "default_max_output_tokens": 16_384})
     assert caps["context_window"] == 32_768
     assert caps["max_output_tokens"] is None  # A default is not a hard output limit.
-    assert model_capabilities({"id": "mimo-v2.6-pro", "source": "provider"})["context_window"] is None
+    assert model_capabilities({"id": "deepseek-v4.1-flash", "source": "provider"})["context_window"] is None
 
 
 def catalogue_service():
@@ -46,7 +46,7 @@ def test_desktop_catalogue_provenance_enables_large_context_without_gui(monkeypa
     # Exercise the actual fetch/transfer boundary without a Tk interpreter,
     # credential lookup, background timing, or network calls.
     data = {"data": [
-        {"id": "mimo-v2.6-pro", "context_length": 1_048_576, "default_max_output_tokens": 16_384,
+        {"id": "deepseek-v4.1-flash", "context_length": 1_048_576, "default_max_output_tokens": 16_384,
          "capabilities": {"tools": True, "vision": True}},
         {"id": "revoked", "context_length": 1_048_576, "verified": False},
         {"id": "name-only"}, None, "malformed", {"id": []},
@@ -79,17 +79,20 @@ def test_desktop_catalogue_provenance_enables_large_context_without_gui(monkeypa
     service = catalogue_service()
     models, errors = [], []
     FirikService.fetch_models_async(service, models.extend, errors.append)
-    assert models == ["mimo-v2.6-pro", "revoked", "name-only"]
+    assert models == ["deepseek-v4.1-flash", "revoked", "name-only"]
     assert not errors and calls == [service.base_url]
     assert data == original
-    provider = FirikProvider(default_model="mimo-v2.6-pro", base_url=service.base_url)
+    provider = FirikProvider(default_model="deepseek-v4.1-flash", base_url=service.base_url)
     FirikService.configure_model_metadata(service, provider)
-    assert model_capabilities(provider.model_metadata[provider.current_model])["context_window"] == 1_048_576
+    caps = model_capabilities(provider.model_metadata[provider.current_model])
+    assert caps["context_window"] == 1_048_576
+    assert caps["supports_tools"] is True
+    assert caps["supports_vision"] is True
     assert model_capabilities(provider.model_metadata["revoked"])["context_window"] is None
     assert model_capabilities(provider.model_metadata["name-only"])["context_window"] is None
 
     service.base_url = "https://different.invalid/v1"
-    provider = FirikProvider(default_model="mimo-v2.6-pro", base_url=service.base_url)
+    provider = FirikProvider(default_model="deepseek-v4.1-flash", base_url=service.base_url)
     FirikService.configure_model_metadata(service, provider)
     assert not provider.model_metadata
 

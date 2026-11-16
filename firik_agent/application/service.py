@@ -59,7 +59,6 @@ VARSAYILAN_MODELLER = [
     "glm-5.3",
     "qwen3.8-flash-next",
     "deepseek-v4.1-flash",
-    "mimo-v2.6-pro",
     "gemma-4-31b",
     "qwen3-vl-30b",
 ]
@@ -139,6 +138,8 @@ class FirikService(CodingBridge, ImprovementBridge, BrowserBridge):
         self._provider_cfg = self.config.get("providers", {}).get(self.provider, {})
         self.base_url = self._provider_cfg.get("base_url", DEFAULT_BASE_URL)
         self.default_model = self._provider_cfg.get("default_model", "glm-5.3")
+        if self.default_model == "mimo-v2.6-pro" and self.base_url.rstrip("/") == DEFAULT_BASE_URL.rstrip("/"):
+            self.default_model = "glm-5.3"
         self.timeout = float(self.config.get("timeout", 180.0))
         self._model_metadata: Dict[str, Dict[str, Any]] = {}
         self._model_metadata_url = self.base_url
@@ -209,9 +210,14 @@ class FirikService(CodingBridge, ImprovementBridge, BrowserBridge):
         self.stop_voice()
         self._voice_catalogue = self._voice_catalogue_url = None
         self._voice_revision = getattr(self, "_voice_revision", 0) + 1
+        previous_url = self.base_url.rstrip("/")
         self.base_url = base_url.strip()
         self.default_model = default_model.strip()
         self.timeout = float(timeout)
+        if self.base_url.rstrip("/") != previous_url:
+            self._model_metadata = {}
+            self._model_metadata_url = None
+            self._cached_models = VARSAYILAN_MODELLER.copy()
 
         if "providers" not in self.config:
             self.config["providers"] = {}

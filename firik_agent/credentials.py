@@ -32,16 +32,31 @@ def _backend():
     raise RuntimeError("İşletim sistemi kimlik bilgisi kasası kullanılamıyor.")
 
 
+def _normalized_url(provider: str, config: dict, base_url: str | None) -> str:
+    _, default_url = DEFAULTS[provider]
+    url = (base_url or config.get("base_url", default_url)).rstrip("/")
+    return url[:-3] if url.endswith("/v1") else url
+
+
 def _identity(provider: str, config: dict, base_url: str | None):
-    default_env, default_url = DEFAULTS[provider]
+    default_env, _ = DEFAULTS[provider]
     env = config.get("api_key_env", default_env)
     # Scope stored credentials to the provider, environment name AND endpoint.
     # A custom --base-url must not silently receive the production credential.
-    url = (base_url or config.get("base_url", default_url)).rstrip("/")
-    if url.endswith("/v1"):
-        url = url[:-3]
+    url = _normalized_url(provider, config, base_url)
     scope = hashlib.sha256(f"{provider}\n{env}\n{url}".encode()).hexdigest()
     return env, f"firik-agent:{scope}", provider
+
+
+def _fallback_env(provider: str, env: str, url: str) -> str | None:
+    """Allow EVREN_API_KEY only for the default direct FIRIK endpoint and env name."""
+    default_env, default_url = DEFAULTS["firik"]
+    default_root = default_url.rstrip("/")
+    if default_root.endswith("/v1"):
+        default_root = default_root[:-3]
+    if provider == "firik" and env == default_env and url == default_root:
+        return "EVREN_API_KEY"
+    return None
 
 
 def _usable(value: str | None) -> str:
@@ -52,9 +67,12 @@ def _usable(value: str | None) -> str:
 def get_api_key(provider: str, config: dict, *, base_url: str | None = None) -> str:
     """Non-interactive lookup: environment (including legacy .env), then OS store."""
     env, service, account = _identity(provider, config, base_url)
-    value = _usable(os.environ.get(env))
-    if value:
-        return value
+    fallback_env = _fallback_env(provider, env, _normalized_url(provider, config, base_url))
+    for candidate_env in (env, fallback_env):
+        if candidate_env:
+            value = _usable(os.environ.get(candidate_env))
+            if value:
+                return value
     try:
         return _usable(_backend().get_password(service, account))
     except Exception:
@@ -108,7 +126,9 @@ def ensure_api_key(provider: str, config: dict, *, base_url: str | None = None,
               "Sonraki açılışta tekrar istenir.", file=sys.stderr)
     else:
         print("API anahtarı kimlik bilgisi kasasına kaydedildi.", file=sys.stderr)
-    if replace and _usable(os.environ.get(env)):
-        print(f"{env} ortam değişkeni veya mevcut .env değeri önceliklidir. "
+    fallback_env = _fallback_env(provider, env, _normalized_url(provider, config, base_url))
+    active_env = next((name for name in (env, fallback_env) if name and _usable(os.environ.get(name))), None)
+    if replace and active_env:
+        print(f"{active_env} ortam değişkeni veya mevcut .env değeri önceliklidir. "
               "Kaydettiğiniz anahtarı kullanmak için bu değeri kaldırın.", file=sys.stderr)
     return key

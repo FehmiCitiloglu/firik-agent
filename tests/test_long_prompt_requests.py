@@ -17,7 +17,7 @@ from firik_agent.core.types import Message
 from firik_agent.providers.firik import FirikProvider
 
 
-MODEL = "mimo-v2.6-pro"
+MODEL = "deepseek-v4.1-flash"
 LONG_PROMPT = "\n".join(f"Requirement {index}: preserve this complete implementation instruction." for index in range(550))
 assert len(LONG_PROMPT.split()) > 2730
 

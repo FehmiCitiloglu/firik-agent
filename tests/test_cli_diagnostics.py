@@ -68,9 +68,9 @@ def test_known_context_and_explicit_harness_limit_match_runtime_budget(tmp_path,
     context_tokens: 12000
 providers:
   firik:
-    default_model: mimo-v2.6-pro
+    default_model: deepseek-v4.1-flash
     model_capabilities:
-      mimo-v2.6-pro:
+      deepseek-v4.1-flash:
         source: verified_config
         context_window: 1048576
 """)
@@ -97,11 +97,11 @@ def test_zero_resource_budget_is_not_ready(field, tmp_path, capsys):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("row", [None, {"id": "mimo-v2.6-pro"}, {"id": "mimo-v2.6-pro", "verified": False, "context_length": 1048576},
-                                   {"id": "mimo-v2.6-pro", "context_length": 1024}])
+@pytest.mark.parametrize("row", [None, {"id": "deepseek-v4.1-flash"}, {"id": "deepseek-v4.1-flash", "verified": False, "context_length": 1048576},
+                                   {"id": "deepseek-v4.1-flash", "context_length": 1024}])
 async def test_probe_recomputes_capacity_with_fresh_evidence_without_mutating_active_provider(row, monkeypatch):
     from firik_agent.providers.firik import FirikProvider
-    provider = FirikProvider(default_model="mimo-v2.6-pro")
+    provider = FirikProvider(default_model="deepseek-v4.1-flash")
     before = dict(provider.model_metadata)
     report = diagnostics.inspect_configuration({}, provider)
     original = httpx.AsyncClient

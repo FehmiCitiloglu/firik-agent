@@ -41,6 +41,7 @@ def credential_store(monkeypatch):
         values=values,
         native_lookup=credentials._backend,
     )
+    monkeypatch.delenv("EVREN_API_KEY", raising=False)
     monkeypatch.setattr(credentials, "_backend", lambda: backend)
     return backend
 

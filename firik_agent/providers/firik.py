@@ -15,11 +15,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_FIRIK_DIRECT_URL = "https://evren-llmapi.ssyz.org.tr/v1"
 DEFAULT_LLMTR_GATEWAY_URL = "https://llmtr.com/v1"
 
-# Deployment limits read from the direct endpoint's /models on 2026-10-30.
+# Deployment limits read from the direct endpoint's /models.
 # These are exact endpoint/model fallbacks, not capabilities inferred from names.
 FIRIK_CONTEXT_WINDOWS = {
     "glm-5.3": 524288,
-    "mimo-v2.6-pro": 1048576,
     "deepseek-v4.1-flash": 1048576,
     "qwen3.8-flash-next": 262144,
     "gemma-4-31b": 262144,
@@ -35,12 +34,6 @@ FIRIK_KNOWN_MODELS = [
         context_window=524288,
         supports_tools=True,
         description="GLM-5.3 general reasoning and tool-calling model hosted by FIRIK",
-    ),
-    ModelInfo(
-        id="mimo-v2.6-pro",
-        name="MiMo V2.6 Pro (Direct Firik)",
-        context_window=1048576,
-        supports_tools=True,
     ),
     ModelInfo(
         id="deepseek-v4.1-flash",
@@ -297,7 +290,10 @@ class FirikProvider(BaseProvider):
                         self.model_metadata[m_id] = metadata
                         models.append(self.model_info(metadata))
                     if models:
-                        return models
+                        from firik_agent.voice.providers import conversational_models
+                        chat_ids = set(conversational_models([m.id for m in models], self.model_metadata))
+                        filtered = [m for m in models if m.id in chat_ids]
+                        return filtered or models
         except Exception as e:
             logger.debug("Could not fetch remote models: %s", type(e).__name__)
 

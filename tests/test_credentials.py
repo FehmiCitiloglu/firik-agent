@@ -18,6 +18,7 @@ def isolated_environment(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     for env, _ in credentials.DEFAULTS.values():
         monkeypatch.delenv(env, raising=False)
+    monkeypatch.delenv("EVREN_API_KEY", raising=False)
     monkeypatch.delenv("FIRIK_BASE_URL", raising=False)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(credentials.getpass, "getpass", lambda *a, **kw: KEY)
@@ -54,6 +55,18 @@ def test_provider_endpoint_and_env_isolation(monkeypatch):
     assert credentials.get_api_key("firik", {}, base_url="https://evren-llmapi.ssyz.org.tr/v1/") == KEY
     monkeypatch.setenv("CUSTOM_FIRIK_KEY", "custom-key")
     assert credentials.get_api_key("firik", {"api_key_env": "CUSTOM_FIRIK_KEY"}) == "custom-key"
+
+
+def test_evren_api_key_fallback_and_precedence(monkeypatch):
+    monkeypatch.setenv("EVREN_API_KEY", "evren-shell-key")
+    assert credentials.get_api_key("firik", {}) == "evren-shell-key"
+    assert credentials.get_api_key("firik", {"api_key_env": "FIRIK_API_KEY"}) == "evren-shell-key"
+    assert credentials.get_api_key("firik", {}, base_url="https://evren-llmapi.ssyz.org.tr/v1/") == "evren-shell-key"
+    assert credentials.get_api_key("firik", {"api_key_env": "CUSTOM_FIRIK_KEY"}) == ""
+    assert credentials.get_api_key("firik", {}, base_url="https://other.example/v1") == ""
+    assert credentials.get_api_key("llmtr", {}) == ""
+    monkeypatch.setenv("FIRIK_API_KEY", "primary-firik-key")
+    assert credentials.get_api_key("firik", {}) == "primary-firik-key"
 
 
 def test_noninteractive_requires_existing_key(monkeypatch):

@@ -16,12 +16,8 @@ providers:
     type: firik
     base_url: https://evren-llmapi.ssyz.org.tr/v1
     api_key_env: FIRIK_API_KEY
-    default_model: mimo-v2.6-pro
+    default_model: auto
     models:
-    - id: mimo-v2.6-pro
-      name: MiMo V2.6 Pro
-      context_window: 1048576
-      supports_tools: true
     - id: glm-5.3
       name: GLM 5.3
       context_window: 512000
@@ -132,3 +128,4 @@ voice:
   wake_word_enabled: false
   retain_audio: false
   playback_speed: 1.0
+timeout: 180.0

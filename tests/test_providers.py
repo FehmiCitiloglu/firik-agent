@@ -67,7 +67,8 @@ async def test_firik_known_models(monkeypatch):
     model_ids = [m.id for m in models]
     assert "glm-5.3" in model_ids
     assert "deepseek-v4-flash" in model_ids
-    assert "mimo-v2.6-pro" in model_ids
+    assert "deepseek-v4.1-flash" in model_ids
+    assert "mimo-v2.6-pro" not in model_ids
     assert all(not model.startswith("evren/") for model in model_ids)
     gateway = FirikProvider(base_url=DEFAULT_LLMTR_GATEWAY_URL)
     assert all(model.id.startswith("evren/") for model in await gateway.list_models())
@@ -75,7 +76,7 @@ async def test_firik_known_models(monkeypatch):
 
 def test_direct_context_defaults_are_scoped_and_do_not_enable_other_capabilities():
     from firik_agent.projects.model_capabilities import model_capabilities
-    provider = FirikProvider(default_model="mimo-v2.6-pro")
+    provider = FirikProvider(default_model="deepseek-v4.1-flash")
     caps = model_capabilities(provider.model_metadata[provider.current_model])
     assert caps["context_window"] == 1048576
     assert caps["source"] == "verified_config"
@@ -96,7 +97,7 @@ def test_desktop_uses_context_defaults_without_overriding_live_or_host_evidence(
     service.provider, service.base_url = "firik", DEFAULT_FIRIK_DIRECT_URL
     service._model_metadata_url = service.base_url
     service._model_metadata, service.config = {}, {}
-    provider = FirikProvider(default_model="mimo-v2.6-pro")
+    provider = FirikProvider(default_model="deepseek-v4.1-flash")
     service.configure_model_metadata(provider)
     assert model_capabilities(provider.model_metadata[provider.current_model])["context_window"] == 1048576
     service._model_metadata = {provider.current_model: {"source": "provider", "context_length": 65536}}
@@ -114,7 +115,7 @@ def test_desktop_uses_context_defaults_without_overriding_live_or_host_evidence(
 @pytest.mark.asyncio
 async def test_catalogue_replaces_static_capacity_and_preserves_revocation(monkeypatch):
     from firik_agent.projects.model_capabilities import model_capabilities
-    row = {"id": "mimo-v2.6-pro", "context_length": 32768}
+    row = {"id": "deepseek-v4.1-flash", "context_length": 32768}
     native_client = httpx.AsyncClient
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: native_client(
         transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"data": [row]})), **kwargs))
@@ -179,3 +180,28 @@ async def test_nested_usage_frames_do_not_restart_model_or_repeat_tools(monkeypa
         assert sum(event.type == AgentEventType.TOOL_CALL_STARTED for event in events) == 1
     finally:
         await agent.close()
+
+
+@pytest.mark.asyncio
+async def test_firik_list_models_filters_specialized_tasks_and_maps_capabilities(monkeypatch):
+    rows = [
+        {
+            "id": "deepseek-v4.1-flash",
+            "task": "chat",
+            "context_length": 1048576,
+            "capabilities": {"tools": True, "thinking": True, "vision": True},
+        },
+        {"id": "dots-ocr", "task": "ocr"},
+        {"id": "voxcpm2", "task": "tts"},
+    ]
+    native_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: native_client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"data": rows})), **kwargs))
+    provider = FirikProvider(api_key="evren-key", base_url=DEFAULT_FIRIK_DIRECT_URL)
+    models = await provider.list_models()
+    assert [model.id for model in models] == ["deepseek-v4.1-flash"]
+    assert models[0].context_window == 1048576
+    assert models[0].supports_tools is True
+    assert models[0].supports_vision is True
+    assert models[0].supports_reasoning is True
+    assert "voxcpm2" in provider.model_metadata

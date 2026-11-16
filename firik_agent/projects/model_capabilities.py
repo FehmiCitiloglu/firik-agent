@@ -71,6 +71,9 @@ def model_capabilities(metadata: Mapping[str, Any] | None = None) -> dict[str, A
             result[key] = metadata[key]
     if result["supports_reasoning"] is None and isinstance(metadata.get("reasoning_effort"), bool):
         result["supports_reasoning"] = metadata["reasoning_effort"]
+    for alias, canonical in (("tools", "supports_tools"), ("vision", "supports_vision"), ("thinking", "supports_reasoning")):
+        if result[canonical] is None and isinstance(metadata.get(alias), bool):
+            result[canonical] = metadata[alias]
     tokenizer = metadata.get("tokenizer")
     if isinstance(tokenizer, Mapping) and tokenizer.get("verified") is True:
         # An explicit encoding is required; the model's name is never consulted.
