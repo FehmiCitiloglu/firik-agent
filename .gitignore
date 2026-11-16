@@ -25,3 +25,6 @@ apps/desktop/out/
 apps/desktop/artifacts/
 playwright-report/
 test-results/
+
+# macOS Finder metadata
+.DS_Store
