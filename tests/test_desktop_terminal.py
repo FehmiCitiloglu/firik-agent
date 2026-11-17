@@ -9,6 +9,7 @@ import time
 import pytest
 
 from firik_agent.core.types import StreamChunk, ToolCall, ToolCallFunction
+from firik_agent.core.execution import BackendAvailability, CommandResult
 from test_desktop_workspaces import coding_params, eventually, frames, workspace  # noqa: F401
 
 
@@ -172,3 +173,68 @@ def test_terminal_cancel_during_preparation_and_close_cleanup(workspace, monkeyp
         assert not server.workspaces.terminal.busy()
     finally:
         released.set()
+
+
+def test_terminal_cancel_during_workspace_cleanup_keeps_reservation(workspace, monkeypatch):
+    server, _, call, _, _, _ = workspace
+    entered, released, interrupted = threading.Event(), threading.Event(), threading.Event()
+
+    class CleaningBackend:
+        async def create_workspace(self, root):
+            return object()
+
+        async def prepare_environment(self, root):
+            return BackendAvailability(True, "host")
+
+        async def execute_command(self, workspace, request):
+            return CommandResult(request.command_id, "fixture", "host", "host", "completed", exit_code=0)
+
+        async def destroy_workspace(self, workspace, *, discard):
+            entered.set()
+            try:
+                while not released.is_set():
+                    await asyncio.sleep(.01)
+            except asyncio.CancelledError:
+                interrupted.set()
+                raise
+
+    monkeypatch.setattr("firik_agent.desktop_rpc.terminal.build_backend", lambda config: CleaningBackend())
+    row = call("terminal.start", {"project_id": "p1", "command": "fixture"})["result"]
+    try:
+        assert entered.wait(2)
+        assert commands(call)[0]["status"] == "stopping"
+        call("terminal.cancel", {"project_id": "p1", "command_id": row["command_id"]})
+        assert server.workspaces.terminal.busy("p1")
+        assert "error" in call("terminal.start", {"project_id": "p1", "command": "second"})
+        assert not interrupted.wait(.05)
+    finally:
+        released.set()
+    eventually(lambda: commands(call)[0]["status"] == "completed")
+    assert not server.workspaces.terminal.busy("p1")
+
+
+def test_terminal_close_cleans_other_commands_when_one_finishes_during_cancel(workspace, monkeypatch, python_command):
+    server, _, call, _, roots, _ = workspace
+    roots["p1"].joinpath("first.py").write_text(
+        "import time\nfrom pathlib import Path\nprint('ready', flush=True)\n"
+        "while not Path('release-first').exists(): time.sleep(.01)\n")
+    first = call("terminal.start", {"project_id": "p1", "command": python_command("-u", "first.py")})["result"]
+    second = call("terminal.start", {"project_id": "p2", "command": python_command("-u", "-c", "import time; print('ready',flush=True); time.sleep(30)")})["result"]
+    eventually(lambda: all("ready" in commands(call, project)[0]["stdout"] for project in ("p1", "p2")))
+    terminal = server.workspaces.terminal
+    first_future = terminal._futures[first["command_id"]]
+    original_cancel = terminal.cancel
+
+    def finish_before_cancel(params):
+        if params.command_id == first["command_id"]:
+            roots["p1"].joinpath("release-first").touch()
+            first_future.result(timeout=3)
+        return original_cancel(params)
+
+    monkeypatch.setattr(terminal, "cancel", finish_before_cancel)
+    terminal.close()
+    assert commands(call, "p1")[0]["status"] == "completed"
+    assert commands(call, "p2")[0]["command_id"] == second["command_id"]
+    assert commands(call, "p2")[0]["status"] == "cancelled"
+    assert not terminal.busy()
+    eventually(lambda: not terminal._futures)

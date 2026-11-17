@@ -1,3 +1,12 @@
+## v0.2.53 değişiklikleri
+
+- Electron masaüstüne proje tabanlı kodlama, Git, terminal ve ses çalışma alanları eklendi. GitGod, seçili projeyi ve kodlama iş akışını paylaşan bir geliştirme aracı olarak bütünleştirildi.
+- Kodlama çalışma alanına dosya ve bağlam seçimi, işlem onayları, değişiklik farkları, test sonuçları ve kalıcı çalışma geçmişi eklendi; MCP sunucuları arayüzden yönetilebilir hale getirildi.
+- Gömülü tarayıcı Electron/CDP motoruyla geliştirildi; yeniden boyutlandırılabilir panel, görünür ajan imleci ve tarayıcı durumunun daha güvenilir aktarımı eklendi.
+- Proje terminaline canlı çıktı, komut geçmişi, çalışma klasörü ve zaman aşımı seçimi, komut durdurma ve fare/klavye ile yükseklik ayarı eklendi. Daha küçük varsayılan terminal yüksekliği sohbet ve çıktı alanını korur.
+- Uygulama kapanırken eşzamanlı tamamlanan terminal komutlarının diğer süreçlerin temizlenmesini engellemesi düzeltildi; terminal, çalışma alanı ve MCP doğrulamaları genişletildi.
+- Kullanımdan kaldırılan MiMo modeli kaldırıldı; model kataloğu ve kimlik bilgisi arama davranışı iyileştirildi.
+
 ## v0.2.52 değişiklikleri
 
 - TypeScript/React ve Electron tabanlı hibrit masaüstü arayüzü, paylaşılan Python JSON-RPC arka ucu (`stdio`) ve entegre TypeScript tarayıcı desteği eklendi.

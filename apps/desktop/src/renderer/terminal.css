@@ -1,5 +1,7 @@
 .coding-terminal { flex-shrink: 0; min-width: 0; border: 1px solid #30463a; border-radius: 9px; background: #0d1511; overflow: hidden; }
-.coding-terminal.open { display: flex; flex-direction: column; height: 310px; max-height: 49%; }
+.coding-terminal.open { display: flex; flex-direction: column; height: var(--terminal-height, 240px); max-height: 49%; }
+.terminal-resizer { height: 5px; flex-shrink: 0; background: #1c3024; cursor: row-resize; touch-action: none; }
+.terminal-resizer:hover, .terminal-resizer:focus-visible { background: #78dba0; outline: none; }
 .terminal-heading { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 2px 6px; flex-shrink: 0; border-bottom: 1px solid transparent; }
 .coding-terminal.open .terminal-heading { border-bottom-color: #293b31; }
 .terminal-heading .button { min-height: 28px; padding: 4px 8px; font-size: 12px; }
@@ -31,7 +33,7 @@
 .terminal-output > p, .terminal-empty { font-size: 12px; color: #91a89b; line-height: 1.6; margin: 8px 0; }
 .terminal-latest { align-self: center; flex-shrink: 0; padding: 2px 7px; min-height: 24px; font-size: 11px; }
 .terminal-composer { flex-shrink: 0; border-top: 1px solid #293b31; padding: 7px 10px; display: grid; gap: 5px; }
-.project-workspace .terminal-composer > textarea { width: 100%; min-height: 38px; max-height: 70px; resize: vertical; padding: 6px 8px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+.project-workspace .terminal-composer > textarea { width: 100%; min-height: 32px; max-height: 70px; resize: vertical; padding: 6px 8px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
 .terminal-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .terminal-controls label { display: flex; align-items: center; gap: 6px; color: #91a89b; font-size: 11px; }
 .terminal-controls label:first-child { flex: 1; }
@@ -44,6 +46,7 @@
 .project-workspace { position: relative; }
 @media (max-width: 1050px), (max-height: 720px) {
   .coding-terminal.open { position: absolute; bottom: 12px; left: 12px; right: 12px; height: min(365px, 61%); max-height: none; z-index: 8; box-shadow: 0 -12px 30px #0008; }
+  .terminal-resizer { display: none; }
   .terminal-history { width: 125px; }
   .terminal-submit-hint { display: none; }
   .terminal-controls input { max-width: 155px; }

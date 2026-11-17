@@ -286,11 +286,18 @@ class TerminalRPC:
 
     def close(self):
         from firik_agent.desktop_rpc.models import TerminalCancelParams
+        from firik_agent.desktop_rpc.server import RPCError
         with self.workspaces._lock:
             active = [record for record in self._commands.values()
                       if record.row.source == "user" and record.row.status in _ACTIVE]
         for record in active:
-            self.cancel(TerminalCancelParams(project_id=record.row.project_id, command_id=record.row.command_id))
+            try:
+                self.cancel(TerminalCancelParams(project_id=record.row.project_id, command_id=record.row.command_id))
+            except RPCError as error:
+                # A command can finish between the snapshot and cancellation.
+                # That stale receipt must not skip cleanup of the other commands.
+                if error.code != -32004:
+                    raise
         # Concurrent futures settle only after coroutine cleanup; unlike Future.cancel,
         # cancellation above cannot report completion while a process still runs.
         deadline = time.monotonic() + 15

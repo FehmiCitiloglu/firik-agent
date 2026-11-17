@@ -11,6 +11,10 @@ yerel klasör seçimi, dosya bağlamı, etkili proje izinleri ve günlük Git i�
 eklendi. Aşağıdaki kullanım bu güncel davranışı, ilk dilime ait kanıtlar ise kendi
 tarihindeki kapsamı anlatır.
 
+17 Kasım 2026 güncellemesi: Kodlama alanına yerleşik komut terminali eklendi.
+Kullanıcının komutları ve ajanın mevcut onaylı komut araçları aynı proje geçmişinde
+görünür; komut yürütmek için ek bir MCP sunucusu gerekmez.
+
 **Arayüz yönü:** Yeni arayüz geliştirmelerinin hedefi tamamen Electron + React +
 TypeScript'tir. Python/CustomTkinter arayüzü için yeni geliştirme veya eşlik işi
 planlanmaz. Ortak Python backend servisi kullanılmaya devam eder. Güncel kapsam,
@@ -77,6 +81,51 @@ Bu dilimde kodlama MCP/browser/alt ajanları etkinleştiren ayar ekranları hen�
 taşınmadığından bu yetkiler kapalı başlar. Mevcut native ayarların bu yetkileri
 kendiliğinden açması engellenir. İleride taşınan denetimler aynı izin sınırını kullanmalıdır.
 
+### Yerleşik komut terminali
+
+Kodlama alanının altındaki **Terminal**, **Ajan / GitGod** sekmeleri arasında
+korunan, açılıp kapatılabilen bir paneldir. Geniş görünümde yüksekliği fareyle veya
+klavyeyle ayarlanabilir; dar görünümde çekmece olarak açılır. Panel kapanınca komut
+çalışmaya devam eder. **Komutu çalıştır** veya Cmd/Ctrl+Enter kullanıcı komutunu
+başlatır; **Klasör** her komutun proje içindeki başlangıç klasörünü, **Süre** ise
+projenin izin verdiği zaman aşımını seçer.
+
+- Geçmişte **Siz / Ajan** kaynağı, komut, çalışma klasörü, yerel/Docker yürütme
+  hedefi, durum, çıkış kodu ve süre gösterilir. stdout ve stderr ayrı ayrı canlı
+  güncellenir. Her akışta en fazla 32.768 karakter tutulur; kısaltma bildirilir.
+  Geçmiş proje başına bu uygulama oturumundaki son 10 komutla sınırlıdır;
+  uygulama genelindeki kayıt sayısı ve iletişim boyutu da sınırlandırılır.
+- **Komutu durdur** kullanıcının komutunu alt süreçleriyle durdurur. Ajanın
+  komutları kodlama çalışmasının mevcut **Durdur** denetimiyle iptal edilir.
+  Kaynak temizliği bitene kadar komut meşgul kalır; uygulama kapanışı da sahip
+  olduğu kullanıcı komutlarını durdurup temizliği bekler.
+- **Çıktıyı ajana ekle**, seçili sonucu aktif kodlama oturumunun mevcut taslağına
+  ekler ve Ajan sekmesine döner. İstek kendiliğinden gönderilmez; çıktı taslağa
+  eklenirken ayrıca sınırlanır. Komut tekrar çalıştırılmadan düzenlenebilir veya
+  sonuç kopyalanabilir.
+- Ajanın yerleşik `run_command`, `run_tests` ve kalite kapısı komutları mevcut
+  çalışma modu, proje politikası ve işlem onayları üzerinden yürür. Terminal
+  paneli bu araçların gerçek başlangıç/çıktı/sonuç olaylarını gösterir; ek MCP
+  veya paralel bir ajan komut yetkisi oluşturmaz. Kullanıcının **Komutu çalıştır**
+  eylemi doğrudan komut isteğidir; kapalı proje izinlerini veya politika
+  engellerini aşmaz.
+- Aynı projede kullanıcı komutu ve kodlama çalışması eşzamanlı başlatılmaz.
+  Kullanıcı komutu sürerken yeni ajan çalışması, değişiklik yapan Git işlemleri
+  ve proje izinlerini değiştirme engellenir. Başka projelerde en fazla dört
+  kullanıcı komutu eşzamanlı yürüyebilir.
+
+`terminal.list`, ilk komuttan önce seçili yürütme hedefini ve zaman sınırını
+bildirir. Mevcut `execution_config` kullanılır; Docker seçiliyse hazırlanamadığında
+yerel makinede yeniden denenmez. **Yerel makine** komutları kullanıcının normal
+süreç yetkileriyle çalışır; başlangıç klasörünü projede seçmek OS izolasyonu sağlamaz.
+**Docker** kullanıcı komutu her seferinde geçici proje kopyasında çalışır; dosya
+değişiklikleri, kurulan bağımlılıklar ve üretilen dosyalar çalışma kopyasına uygulanmaz.
+
+Bu panel komut terminalidir. Her komut yeni, etkileşimsiz bir shell sürecidir;
+`cd`, ortam değişkenleri ve shell durumu sonraki komuta taşınmaz. stdin/TTY,
+parola istemleri, `vim` gibi TUI programları ve kalıcı PTY oturumları bu dilimde
+desteklenmez. Tam etkileşimli terminal ayrı sonraki kapsamdır.
+
 ### Kodlama ajanı içindeki GitGod
 
 GitGod, kodlama ajanının seçili projesinde çalışır. **Değişen dosyalar** listesinde
@@ -94,7 +143,7 @@ görünür bir onay kutusu gerekir.
 
 Sunucuda tutulan önizleme jetonu proje/kök dizin, araç parametreleri, çözülmüş
 komut ve hedeflere bağlıdır; beş dakika geçerlidir ve bir kez çalıştırılır.
-Renderer ham Git/shell komutu gönderemez. Yürütme sırasında mevcut Git servisi
+GitGod renderer'ı ham Git/shell komutu göndermez. Yürütme sırasında mevcut Git servisi
 onaylanan komutu ve hedefi yeniden karşılaştırır. Çalışan kodlama ajanıyla aynı
 projeyi değiştirecek Git işlemi, ajan bitene/durdurulana kadar reddedilir.
 
@@ -130,14 +179,22 @@ denetimi uygulanır. Bağlam, Git ve aygıt işleri stdio okuyucusunu bloke etme
 İptal/onay denetimlerinin ayrı, sınırlı kuyruğu vardır; dört bağlam işçisi meşgulken
 de iptal ulaşır. Kopan bağlantıda işlemler otomatik gönderilmez/tekrarlanmaz.
 
+17 Kasım dilimi `terminal.list`, `terminal.start` ve `terminal.cancel` yöntemlerini
+ekler. Renderer süreç kimliği, shell, yürütme backend'i veya izin enjekte edemez;
+iptal proje ve sunucunun oluşturduğu komut kimliğiyle eşleşir. Terminal olayları
+çıktıyı taşımayan tipli yenileme bildirimleridir; sınırlı ve maskelenmiş durum
+ayrı sorgulanır. Komut süreçleri mevcut ortak execution backend'inde çalışır;
+Python arayüzüne yeni bir terminal ekranı eklenmez.
+
 ## Doğrulama
 
 ```sh
 npm run desktop:check
 npm run desktop:test
 npm run desktop:build
-.venv/bin/python -m pytest -q tests/test_desktop_rpc.py tests/test_desktop_workspaces.py tests/test_desktop_coding_tools.py
+.venv/bin/python -m pytest -q tests/test_desktop_rpc.py tests/test_desktop_workspaces.py tests/test_desktop_coding_tools.py tests/test_desktop_terminal.py
 npm run desktop:smoke:workspaces
+npm run desktop:smoke:terminal
 npm run desktop:smoke
 ```
 
@@ -163,9 +220,22 @@ Git formu kalıcılığı, dışarıdan Git değişikliğini yenileme, gerçek s
 dar pencere/kart boyutları doğrulandı. Sonuçlar `test-results/hybrid-workspaces/`
 altındadır. Gerçek Windows/Linux yerel dosya seçici etkileşimi henüz sınanmadı.
 
+**17 Kasım terminal doğrulaması:** TypeScript kontrolü ve üretim derlemesi başarılı;
+50 masaüstü testi ile 79 backend/yürütme testi geçti. Standart masaüstü komutunda
+5 isteğe bağlı tarayıcı testi atlandı. Güncel gerçek Electron terminal smoke testi
+12 kontrol grubunu geçti: kullanıcı komutu, stdout/stderr, hata çıkışı, canlı çıktı,
+çalışma klasörü, süreç grubuyla iptal, taslağa çıktı ekleme, proje izolasyonu,
+komut öncesi yürütme hedefi/zaman sınırı, klavyeyle boyutlandırma, konuşma alanının
+korunması ve onaydan sonra gerçek ajan komutu doğrulandı. Backend testleri kapanış
+sırasında eşzamanlı tamamlanmayı ve temizlik sürerken iptali de kapsar. Mevcut
+çalışma alanı smoke testi 10, sohbet/tarayıcı smoke testi 13 kontrolü yeniden geçti.
+Sonuçlar ve görüntüler `test-results/hybrid-terminal/` altındadır. Gerçek model
+veya kullanıcı verisi kullanılmadı; Windows/Linux ve gerçek Docker kabulü ayrıca
+yapılmalıdır.
+
 ## Sonraki geçiş dilimleri
 
-Tam dosya düzenleyicisi ve satır numaralı diff/IDE'ye açma; bağımsız komut/PTY paneli;
+Tam dosya düzenleyicisi ve satır numaralı diff/IDE'ye açma; kalıcı etkileşimli PTY terminali;
 bağlam bütçesi/kaynak ayrıntıları; checkpoint/recovery ve harness/alt ajan panellerinin
 tam eşliği; görev/planlama yaşam döngüsü; geçmiş sayfalaması; kodlama içinde
 ses yönlendirmesi ve sesle gezinme komutları; ses aygıtı seçimi/tanılama; MCP sunucusu

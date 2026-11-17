@@ -1,11 +1,11 @@
 # Electron / TypeScript: geliştirici deneyimi ve arayüz yol haritası
 
-**Güncelleme:** 16 Kasım 2026; ilk denetim ve ilk dilim: 15 Kasım 2026.  
+**Güncelleme:** 17 Kasım 2026; ilk denetim ve ilk dilim: 15 Kasım 2026.
 **Ürün kararı:** Tüm yeni masaüstü arayüz çalışmaları Electron + React + TypeScript üzerinde yapılır. Python/CustomTkinter arayüzüne ilişkin geliştirme, tasarım düzeltmesi, özellik eşleme ve test işleri bu planın kapsamından çıkarılmıştır. Mevcut Python ajan/backend servisi ile stdio/IPC bağlantısı kullanılmaya devam eder; bu karar backend dilini değiştirmez.
 
 **Kapsam:** Projeler, Kodlama Ajanı, oturumlar, değişiklik inceleme, test kanıtları, GitGod ve ileride eklenecek görev/planlama ekranları.
 
-Temel hedef, proje → görev → ajan çalışması → değişiklik → doğrulama → Git akışını aynı çalışma bağlamında takip edilebilir kılmak. İlk geliştirme dilimi kanıt doğruluğu, proje oturumları, görünür çalışma kontrolleri ve klavye erişimine odaklandı. 16 Kasım dilimi proje seçimini, dosya bağlamını, etkili izinleri ve kodlama içindeki günlük Git akışını ekler.
+Temel hedef, proje → görev → ajan çalışması → değişiklik → doğrulama → Git akışını aynı çalışma bağlamında takip edilebilir kılmak. İlk geliştirme dilimi kanıt doğruluğu, proje oturumları, görünür çalışma kontrolleri ve klavye erişimine odaklandı. 16 Kasım dilimi proje seçimini, dosya bağlamını, etkili izinleri ve kodlama içindeki günlük Git akışını ekler. 17 Kasım dilimi kullanıcı ve ajan komutlarını aynı yerleşik komut terminalinde izlemeyi sağlar.
 
 ## Denetimin dayanağı
 
@@ -24,7 +24,7 @@ Bunlar önceki davranışın kanıtıdır; yeni uygulamanın ekran görüntüler
 
 ## Bulgu ve iş listesi
 
-P1, sonucun doğru anlaşılmasını veya temel çalışma kontrolünü etkiler. P2, günlük geliştirme akışındaki sürtünmeleri kapsar. Durumlar 16 Kasım itibarıyla uygulanan parçaları gösterir; bir başlığın ilk parçasının uygulanması bütün başlığın tamamlandığı anlamına gelmez. 15 Kasım kanıtları kendi tarihindeki davranışı belgelendirir.
+P1, sonucun doğru anlaşılmasını veya temel çalışma kontrolünü etkiler. P2, günlük geliştirme akışındaki sürtünmeleri kapsar. Durumlar 17 Kasım itibarıyla uygulanan parçaları gösterir; bir başlığın ilk parçasının uygulanması bütün başlığın tamamlandığı anlamına gelmez. 15 ve 16 Kasım kanıtları kendi tarihindeki davranışı belgelendirir.
 
 | No | Öncelik | Bulgu / ihtiyaç | Electron / TypeScript düzeltmesi | Durum |
 | --- | --- | --- | --- | --- |
@@ -32,7 +32,7 @@ P1, sonucun doğru anlaşılmasını veya temel çalışma kontrolünü etkiler.
 | 02 | P1 | Model/mod ve görev kontrollerinin her boyutta erişilebilir olması gerekiyor. | Üst görev çubuğu; sabit model/mod/durum ve aktif çalışmanın durdurulması. | İlk dilimde uygulandı. |
 | 03 | P1 | Kodlama alanında genel sohbet geçmişi ve genel sohbet açan Cmd/Ctrl+N bulunuyor. | Proje oturumları, proje içi arama ve bağlama göre yeni kodlama oturumu. | İlk dilimde uygulandı. |
 | 04 | P1 | Değişiklik inceleme dosya adı ve ham diff ile sınırlı. | Dosya listesi, birleşik diff, satır numarası, satıra gitme ve IDE'ye açma. | Sıradaki ana dilim; uzun diff satırlarının bölünmesi ilk dilimde kaldırıldı. |
-| 05 | P1 | Ajanın dosya/araç/komut düzeyindeki işi görünmüyor. | Gerçek runtime olaylarından etkinlik ve komut paneli; bekleme nedeni ve süre. | Planlandı; tipli backend verisi gerekiyor. |
+| 05 | P1 | Ajanın dosya/araç/komut düzeyindeki işi görünmüyor. | Gerçek runtime olaylarından etkinlik ve komut paneli; bekleme nedeni ve süre. | Komut başlangıcı/canlı stdout-stderr/sonuç ve kullanıcı–ajan kaynak ayrımı terminalde uygulandı. Dosya ve diğer araçlar için tam etkinlik paneli bekliyor. |
 | 06 | P1 | Mod ve etkili izinler karar noktasında anlaşılmıyor. | Mod açıklamaları; backend'den gelen etkili dosya/komut/test izinleri ve proje içi ayarları. | Etkili dört izin özeti ve kalıcı düzenleme uygulandı; ayrıntılı sandbox/çalıştırma ortamı inceleyicisi bekliyor. |
 | 07 | P2 | Proje eklemek için tam klasör yolu yazılıyor. | Electron klasör seçici, önerilen proje adı ve ilk kullanım eylemleri. | İşletim sisteminin klasör seçicisi, otomatik ad ve elle yol girme seçeneği uygulandı. |
 | 08 | P2 | GitGod'da 72 araç tek listede; dosya yolları elle yazılıyor. | Değişen dosyalar → diff → stage → commit; ayrı gelişmiş katalog; mevcut önizleme/onayı koruma. | GitGod kodlama alanına alındı; seçili dosyalardan stage/unstage/diff ve commit formuna geçiş uygulandı. Gelişmiş katalog ve işlem onayları korundu. |
@@ -66,7 +66,18 @@ P1, sonucun doğru anlaşılmasını veya temel çalışma kontrolünü etkiler.
 - **Düşünme** seçimi, model kataloğunda desteklenen seviyeler olan modeller için görünür; seçilen değer istekle iletilir ve backend'de doğrulanır. **Projeyi tanı**, **Özellik geliştir**, **Hata gider**, **Test ekle** ve **Değişiklikleri incele** başlangıçları uygun modu ve düzenlenebilir istek taslağını doldurur; kullanıcı gönderir.
 - GitGod'da **Değişen dosyalar** seçimi, **Seçilenleri hazırla** ve **Hazırlıktan çıkar** için yolları forma doldurur; dosya satırındaki **Diff** ilgili dosyayı seçer. **Commit oluştur** commit formunu açar. Bu eylemler doğrudan komut çalıştırmaz: **Komutu önizle**, gerekiyorsa görünür onay ve **Çalıştır** akışı kullanılır. **Tüm Git araçları** gelişmiş kataloğu açar. Sunucudaki tek kullanımlık, süreli önizleme jetonları korunur.
 
-Bu dilim dosya okuma ve bağlam seçimi sağlar. Tam IDE/editör, bağımsız PTY/terminal, kontrol noktası/geri alma, görev/planlama yaşam döngüsü ve ayrıntılı etkinlik paneli tamamlanmış özellikler değildir.
+16 Kasım dilimi dosya okuma ve bağlam seçimi sağlar; komut terminali sonraki 17 Kasım diliminde eklendi. Tam IDE/editör, kalıcı etkileşimli PTY, kontrol noktası/geri alma, görev/planlama yaşam döngüsü ve ayrıntılı etkinlik paneli tamamlanmış özellikler değildir.
+
+## 17 Kasım: yerleşik komut terminali
+
+- Kodlama alanının altındaki **Terminal**, Ajan ve GitGod içinde aynı proje geçmişini gösterir. Panel açılır/kapanır; geniş görünümde yüksekliği fare veya klavyeyle ayarlanır, dar görünümde çekmece olur. Kullanıcı komutu **Komutu çalıştır** veya Cmd/Ctrl+Enter ile açıkça başlatır; klasör ve zaman aşımı her komut için seçilir.
+- Kullanıcı ve ajanın komutları ayrı kaynak etiketleriyle aynı geçmişte görünür. stdout/stderr canlı ve ayrı gösterilir; durum, gerçek çıkış kodu, süre ve yürütme hedefi korunur. Her çıktı akışı en fazla 32.768 karakter, proje geçmişi bu uygulama oturumundaki son 10 komutla sınırlıdır. Bu geçmiş uygulama kapanınca kalıcı bir terminal oturumuna dönüşmez.
+- **Komutu durdur** kullanıcı komutunun süreç grubunu temizler. Ajan komutunu durdurmak için mevcut kodlama **Durdur** denetimi kullanılır. İptal veya kapanış sırasında kaynak temizliği bitmeden aynı projede yeni çalışma başlatılmaz.
+- **Çıktıyı ajana ekle**, sonucu aktif kodlama taslağına mevcut metni koruyarak ekler; isteği kendiliğinden göndermez. Ajanın mevcut `run_command`, `run_tests` ve kalite kapısı araçları gerçek yürütme olaylarını bu panele aktarır. Mevcut mod, izin ve işlem onayları geçerlidir; terminal için ek MCP gerekmez.
+- Kullanıcı komutu ile aynı projedeki ajan çalışması çakıştırılmaz; aktif kullanıcı komutu kodlama başlangıcını, değişiklik yapan Git işlemlerini ve izin değişikliğini engeller. Başka projelerde en fazla dört kullanıcı komutu eşzamanlı yürür. Mevcut host/Docker seçimi korunur ve Docker hatasında host'a geçilmez; hedef ve proje zaman sınırı ilk komuttan önce görünür.
+- Host komutları yerel kullanıcı yetkileriyle çalışır; proje içi başlangıç klasörü OS sandbox değildir. Docker kullanıcı komutları geçici proje kopyasında çalışır ve dosya/bağımlılık değişiklikleri sonraki komuta veya kullanıcının çalışma kopyasına uygulanmaz.
+
+Bu teslimat **komut terminalidir**: her komut yeni, etkileşimsiz shell süreci kullanır; `cd` ve ortam değişkenleri sonraki komuta taşınmaz. stdin, parola istemleri, `vim` gibi TUI programları ve kalıcı PTY oturumları desteklenmez. Tam etkileşimli terminal ayrı sonraki iştir. Tüm yeni ekranlar Electron içindedir; Python tarafındaki ekler ortak servis ve tipli RPC ile sınırlıdır.
 
 ## Hedef çalışma alanı
 
@@ -105,6 +116,7 @@ npm run desktop:check
 npm run desktop:test
 npm run desktop:build
 npm run desktop:smoke:workspaces
+npm run desktop:smoke:terminal
 npm run desktop:smoke
 ```
 
@@ -113,5 +125,7 @@ Bileşen regresyonları eski başarılı kayıt, engellenmiş/çalıştırılmam
 **İlk dilim sonucu:** TypeScript kontrolü ve üretim derlemesi başarılı. 40 test geçti; 5 isteğe bağlı tarayıcı entegrasyon testi standart test komutunda atlandı. Electron çalışma alanı smoke testi 7 kontrol grubunu, genel sohbet/tarayıcı smoke testi 13 kontrolü geçti. 940×620'de kritik kontroller, Esc ile inceleyiciyi kapatma/odak dönüşü, uzun çıktı takibi ve iki proje arasında geçmiş/taslak izolasyonu doğrulandı. Derlemede ana JavaScript paketi için 500 kB boyut uyarısı bulunuyor; bu bir derleme hatası değil.
 
 **16 Kasım doğrulaması:** TypeScript kontrolü ve üretim derlemesi başarılı. 45 masaüstü testi ve 34 Python backend testi geçti; standart masaüstü komutunda 5 isteğe bağlı tarayıcı testi atlandı. Gerçek Electron çalışma alanı smoke testi 10 kontrol grubunu, genel sohbet/tarayıcı smoke testi 13 kontrolü geçti. Yeni kontroller klasör seçici IPC'sini (yalnız OS penceresi test dublörü), iptali, boşluklu yolları, dosya arama/önizleme/bağlamı, okuma iznini kapatıp açmayı, oturum izolasyonunu, Git formunun sekmeler arasında korunmasını, dışarıdan değişen Git durumunun yenilenmesini ve dosya seçimiyle gerçek stage işlemini kapsar. 940×620 görünüm ile Git kartlarının ve komut çıktısının kesilmemesi de sınandı. Sonuçlar [doğrulama kaydında](../test-results/hybrid-workspaces/verification.json); ekranlar aynı dizindedir. Gerçek model kotası ve kullanıcı verileri kullanılmadı. Yerel klasör seçicinin gerçek Windows/Linux etkileşimi bu değişiklikte doğrulanmış sayılmaz.
+
+**17 Kasım terminal doğrulaması:** TypeScript kontrolü ve üretim derlemesi başarılı; 50 masaüstü testi ile 79 backend/yürütme testi geçti. Standart masaüstü komutunda 5 isteğe bağlı tarayıcı testi atlandı. Gerçek Electron terminal smoke testi 12 kontrol grubunu geçti. Kullanıcı komutu ve ajanın onaylı yerleşik komutu; stdout/stderr, hata kodu, canlı çıktı, çalışma klasörü, alt süreçlerle iptal, taslağa çıktı ekleme, proje izolasyonu, komut öncesi yürütme hedefi/zaman sınırı, klavyeyle panel boyutlandırma ve 940×620 görünüm [terminal kaydında](../test-results/hybrid-terminal/verification.json) doğrulandı. Terminal açıkken konuşma/çıktı alanı ve kullanıcı komutu sırasında ajan gönderiminin engellenmesi de sınandı. Backend regresyonları kapanış sırasında tamamlanan komutun diğer komutların temizliğini atlatmamasını ve temizlik sürerken iptali kapsar. Mevcut çalışma alanı smoke testi 10, sohbet/tarayıcı smoke testi 13 kontrolü yeniden geçti. Gerçek model ve kullanıcı verisi kullanılmadı; gerçek Docker/Windows/Linux kabulü bu kayıtla sağlanmış sayılmaz.
 
 Gerçek model, büyük depo performansı, ekran okuyucu ve paketlenmiş Windows/Linux kabulü ayrıca yapılmalıdır. Eski denetimin kanıtları tarihsel kayıt olarak korunur; Python arayüzü için bir sonraki geliştirme işi oluşturmaz.

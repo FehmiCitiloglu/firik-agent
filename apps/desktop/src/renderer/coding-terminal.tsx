@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ChevronDown, ChevronUp, Copy, LoaderCircle, RefreshCw, Send, Square, Terminal } from 'lucide-react';
 import type { TerminalCommand } from '@firik/contracts';
@@ -28,7 +28,11 @@ export function CodingTerminal({ projectId, codingState }: { projectId: string; 
   const [selectedId, setSelectedId] = useState('');
   const [newOutput, setNewOutput] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [height, setHeight] = useState(240);
+  const [maxHeight, setMaxHeight] = useState(440);
   const panelId = useId();
+  const container = useRef<HTMLElement>(null);
+  const resizeStart = useRef<{ y: number; height: number } | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const output = useRef<HTMLDivElement>(null);
   const following = useRef(true);
@@ -75,6 +79,16 @@ export function CodingTerminal({ projectId, codingState }: { projectId: string; 
     else setNewOutput(true);
   }, [selected?.stdout, selected?.stderr, selected?.command_id, open]);
   useEffect(() => { if (open) input.current?.focus(); }, [open]);
+  useEffect(() => {
+    const parent = container.current?.parentElement;
+    if (!parent) return;
+    const measure = () => setMaxHeight(Math.max(210, Math.min(440, Math.floor(parent.clientHeight * .49))));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, []);
+  function resize(value: number) { setHeight(Math.round(Math.max(210, Math.min(maxHeight, value)))); }
 
   const disabled = busy || !!codingState?.busy || start.isPending || disconnected || list.isPending || preferences.data?.allow_terminal !== true || preferences.data?.allow_reads !== true;
   function submit(event: FormEvent) {
@@ -95,7 +109,17 @@ export function CodingTerminal({ projectId, codingState }: { projectId: string; 
     try { await navigator.clipboard.writeText(terminalContext(selected)); setCopied(true); }
     catch (error) { showError(error); }
   }
-  return <section className={`coding-terminal${open ? ' open' : ''}`} aria-label="Terminal paneli">
+  return <section ref={container} className={`coding-terminal${open ? ' open' : ''}`} aria-label="Terminal paneli" style={{ '--terminal-height': `${Math.min(height, maxHeight)}px` } as CSSProperties}>
+    {open && <div className="terminal-resizer" role="separator" aria-label="Terminal yüksekliğini ayarla" aria-orientation="horizontal" tabIndex={0}
+      aria-valuemin={210} aria-valuemax={maxHeight} aria-valuenow={Math.min(height, maxHeight)}
+      onKeyDown={event => {
+        const next = event.key === 'ArrowUp' ? height + 20 : event.key === 'ArrowDown' ? height - 20 : event.key === 'Home' ? 210 : event.key === 'End' ? maxHeight : null;
+        if (next !== null) { event.preventDefault(); resize(next); }
+      }}
+      onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); resizeStart.current = { y: event.clientY, height: container.current?.clientHeight ?? height }; event.currentTarget.setPointerCapture(event.pointerId); }}
+      onPointerMove={event => { if (resizeStart.current) resize(resizeStart.current.height + resizeStart.current.y - event.clientY); }}
+      onPointerUp={event => { resizeStart.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
+      onPointerCancel={() => { resizeStart.current = null; }} />}
     <div className="terminal-heading"><Button variant="ghost" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(!open)}><Terminal size={15} /> Terminal {open ? <ChevronDown size={13} /> : <ChevronUp size={13} />}</Button>
       <span className="terminal-summary" role="status">{disconnected ? 'Bağlantı kesildi' : busy ? <><LoaderCircle size={12} className="spin" /> Komut çalışıyor</> : `${commands.length} komut · ${docker ? 'Docker' : 'Yerel makine'}`}</span>
       {live && <Button className="terminal-stop" variant="outline" disabled={cancel.isPending || disconnected} onClick={() => cancel.mutate()}><Square size={12} /> Komutu durdur</Button>}
@@ -133,7 +157,7 @@ export function CodingTerminal({ projectId, codingState }: { projectId: string; 
         </> : <p className="terminal-empty">Proje komutlarını burada çalıştırın. Ajanın onaylanan komutları ve test sonuçları da bu alanda görünür.</p>}
       </div></div>
       <form className="terminal-composer" onSubmit={submit}>
-        <textarea ref={input} aria-label="Terminal komutu" placeholder="Çalıştırılacak komutu yazın…" value={command} onChange={event => setCommand(event.target.value)} maxLength={8000} spellCheck={false} disabled={disconnected}
+        <textarea ref={input} rows={1} aria-label="Terminal komutu" placeholder="Çalıştırılacak komutu yazın…" value={command} onChange={event => setCommand(event.target.value)} maxLength={8000} spellCheck={false} disabled={disconnected}
           onKeyDown={event => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.repeat && !event.nativeEvent.isComposing) submit(event); }} />
         <div className="terminal-controls"><label>Klasör<input aria-label="Komut çalışma klasörü" value={cwd} maxLength={4096} disabled={start.isPending || disconnected} onChange={event => setCwd(event.target.value)} /></label>
           <label>Süre<select aria-label="Komut zaman aşımı" value={runTimeout} disabled={start.isPending || disconnected} onChange={event => setTimeoutSeconds(Number(event.target.value))}>{timeoutOptions.map(value => <option key={value} value={value}>{value} sn</option>)}</select></label>

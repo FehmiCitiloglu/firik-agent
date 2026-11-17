@@ -18,7 +18,7 @@ await mkdir(join(root, 'nested'));
 const scripts = {
   'output.py': 'import sys\nprint("terminal-stdout", flush=True)\nprint("terminal-stderr", file=sys.stderr, flush=True)\n',
   'failure.py': 'import sys\nprint("terminal-failure", file=sys.stderr, flush=True)\nsys.exit(7)\n',
-  'live.py': 'import time\nprint("terminal-live-start", flush=True)\ntime.sleep(3)\nprint("terminal-live-end", flush=True)\n',
+  'live.py': 'import time\nprint("terminal-live-start", flush=True)\ntime.sleep(4)\nprint("terminal-live-end", flush=True)\n',
   'cancel.py': 'import subprocess, sys, time\nsubprocess.Popen([sys.executable, "-c", "from pathlib import Path; import time; time.sleep(3); Path(\\\"child-leak.txt\\\").write_text(\\\"unexpected\\\")"])\nprint("terminal-cancel-start", flush=True)\ntime.sleep(30)\n',
   'agent_command.py': 'from pathlib import Path\nPath("agent-result.txt").write_text("approved-agent-command")\nprint("agent-terminal-output", flush=True)\n',
 };
@@ -96,6 +96,17 @@ try {
   }
   const finished = row => !['starting', 'preparing', 'running', 'stopping'].includes(row.status);
 
+  await openTerminal();
+  const initialTerminal = await commands(projectId);
+  assert.equal(initialTerminal.commands.length, 0);
+  assert.equal(initialTerminal.backend, 'host');
+  assert.equal(initialTerminal.boundary, 'host');
+  assert.equal(initialTerminal.max_timeout, 300);
+  await page.locator('.terminal-summary').getByText('0 komut · Yerel makine', { exact: true }).waitFor();
+  assert((await terminal.getByLabel('Komut zaman aşımı', { exact: true }).locator('option').evaluateAll(options => options.map(option => Number(option.value))))
+    .every(value => value > 0 && value <= initialTerminal.max_timeout));
+  checks.push('the execution target and maximum timeout are available and displayed before the first command');
+
   let command = await run(python('output.py'));
   let result = await waitCommand(command.command_id, finished);
   assert.equal(result.exit_code, 0);
@@ -106,8 +117,21 @@ try {
   assert.equal(await terminal.isVisible(), true);
   await page.getByRole('tab', { name: 'Ajan', exact: true }).click();
   await terminal.getByRole('region', { name: 'Komut çıktısı', exact: true }).getByText('terminal-stdout', { exact: false }).waitFor();
+  const terminalPanel = page.locator('.coding-terminal');
+  const separator = page.getByRole('separator', { name: 'Terminal yüksekliğini ayarla', exact: true });
+  const initialHeight = await terminalPanel.evaluate(element => element.clientHeight);
+  assert(await page.locator('.coding-messages').evaluate(element => element.clientHeight >= 40), 'The open terminal must leave a usable coding conversation area.');
+  await separator.focus();
+  await separator.press('ArrowUp');
+  await page.waitForFunction(before => document.querySelector('.coding-terminal').clientHeight >= before + 15, initialHeight);
+  const outputRegion = terminal.getByRole('region', { name: 'Komut çıktısı', exact: true });
+  assert(await outputRegion.evaluate(element => element.clientHeight >= 32), 'The enlarged terminal must keep a usable output viewport.');
+  await separator.press('ArrowDown');
+  await page.waitForFunction(before => Math.abs(document.querySelector('.coding-terminal').clientHeight - before) <= 1, initialHeight);
+  assert(await outputRegion.evaluate(element => element.clientHeight >= 32), 'The default terminal must keep a usable output viewport.');
   await page.screenshot({ path: join(output, '01-user-command.png') });
   checks.push('manual shell command runs in the selected project, keeps stdout/stderr separate and remains visible across Ajan/GitGod tabs');
+  checks.push('the desktop terminal leaves conversation space and can be resized with ArrowUp/ArrowDown while preserving an output viewport');
 
   command = await run(python('failure.py'));
   result = await waitCommand(command.command_id, finished);
@@ -127,9 +151,15 @@ try {
   result = (await commands(projectId)).commands.find(row => row.command_id === command.command_id);
   assert.equal(result.status, 'running');
   assert.equal(result.stdout.includes('terminal-live-end'), false);
+  await page.getByLabel('Kodlama isteği').fill('Ajan isteği terminal tamamlanınca gönderilecek.');
+  await page.getByText('Terminal komutu çalışıyor. Yeni ajan isteği için bitmesini bekleyin veya terminalden durdurun.', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Gönder', exact: true }).isDisabled(), true);
+  await page.getByLabel('Kodlama isteği').press('Control+Enter');
+  assert.equal(await page.locator('.coding-messages .workspace-message').count(), 0);
   result = await waitCommand(command.command_id, finished);
   assert(result.stdout.includes('terminal-live-end'));
   checks.push('incremental command output reaches the Electron UI before the process exits');
+  checks.push('a running manual command preserves a coding draft and blocks both button and keyboard submission');
 
   command = await run(python('cancel.py'));
   await terminal.getByText('terminal-cancel-start', { exact: false }).waitFor();
@@ -186,6 +216,8 @@ try {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(940, 620));
   await openTerminal();
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  assert.equal(await page.getByRole('separator', { name: 'Terminal yüksekliğini ayarla', exact: true }).count(), 0);
+  assert(await terminal.getByRole('region', { name: 'Komut çıktısı', exact: true }).evaluate(element => element.clientHeight >= 32));
   for (const locator of [terminal.getByLabel('Terminal komutu', { exact: true }), terminal.getByRole('button', { name: 'Komutu çalıştır', exact: true })]) {
     const bounds = await locator.boundingBox();
     assert(bounds && bounds.y >= 0 && bounds.y + bounds.height <= await page.evaluate(() => innerHeight));
