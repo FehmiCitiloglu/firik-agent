@@ -368,6 +368,11 @@ def test_leaving_visible_level_test_stops_capture_and_late_delivery_is_ignored(v
 
 def test_settings_canvas_controls_support_keyboard_focus_activation_and_menu_selection(voice_form):
     root, service, form = voice_form
+    # Some Windows Tk builds have not loaded the native traversal procedures
+    # when the first synthetic Tab arrives. Load Tk's own implementation before
+    # exercising the real class binding and checking that focus actually moves.
+    if not root.tk.call("info", "commands", "tk_focusNext"):
+        root.tk.call("source", str(Path(str(root.tk.call("set", "tk_library"))) / "focus.tcl"))
     root.focus_force()
     canvas = form.enabled_control._canvas
     canvas.focus_set()

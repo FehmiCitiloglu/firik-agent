@@ -114,6 +114,7 @@ async def test_timeout_and_cancellation_remove_pending_requests(tmp_path):
         with pytest.raises(asyncio.TimeoutError):
             await adapter.references("main.py", 0)
         assert not adapter._pending
+        adapter.timeout = 5
         task = asyncio.create_task(adapter.references("main.py", 0))
         await asyncio.sleep(.02)
         task.cancel()

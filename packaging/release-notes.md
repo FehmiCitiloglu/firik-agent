@@ -1,3 +1,9 @@
+## v0.2.54 değişiklikleri
+
+- Windows tarayıcı oturumlarının IANA saat dilimlerini doğrulayabilmesi için `tzdata` bağımlılığı eklendi.
+- Windows dosya sistemi kurallarıyla uyumsuz test verileri düzeltildi; terminal iptali, Git yol doğrulaması, LSP iptali ve yerel klavye gezinmesi kontrolleri platformlar arasında daha kararlı hale getirildi.
+- v0.2.53 için hazırlanan tüm Electron çalışma alanı, terminal, tarayıcı, MCP ve model kataloğu geliştirmeleri bu yayına dahildir.
+
 ## v0.2.53 değişiklikleri
 
 - Electron masaüstüne proje tabanlı kodlama, Git, terminal ve ses çalışma alanları eklendi. GitGod, seçili projeyi ve kodlama iş akışını paylaşan bir geliştirme aracı olarak bütünleştirildi.

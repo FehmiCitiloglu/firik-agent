@@ -1,7 +1,10 @@
 """Electron coding tools reuse the scoped project reader and durable settings."""
 from __future__ import annotations
 
+import os
 import threading
+
+from firik_agent.projects.git_service import GitService
 
 from test_desktop_workspaces import coding_params, eventually, workspace  # noqa: F401
 
@@ -118,14 +121,23 @@ def test_explicit_context_is_validated_before_run_and_reaches_preparation(worksp
     assert any("selected_marker = 42" in str(row) for row in state["requests"][0])
 
 
-def test_busy_preferences_are_rejected_and_git_lists_selectable_paths(workspace):
+def test_busy_preferences_are_rejected_and_git_lists_selectable_paths(workspace, monkeypatch):
     server, _, call, state, roots, _ = workspace
     root = roots["p1"]
     (root / "main.py").write_text("value = 3\n")
     (root / "new file.py").write_text("new = 1\n")
     (root / ".env").write_text("secret=never-display")
-    (root / "odd\nname.py").write_text("odd = 1\n")
-    overview = call("git.overview", {"project_id": "p1"})["result"]
+    with monkeypatch.context() as git_patch:
+        if os.name == "nt":
+            # Windows cannot create control characters in filenames. Supply the
+            # equivalent Git entry so the overview still validates that path.
+            status = GitService.get_status(root)
+            status["files"].append({"path": "odd\nname.py", "index": "?",
+                                    "worktree": "?", "original_path": ""})
+            git_patch.setattr(GitService, "get_status", lambda path: status)
+        else:
+            (root / "odd\nname.py").write_text("odd = 1\n")
+        overview = call("git.overview", {"project_id": "p1"})["result"]
     assert {row["path"] for row in overview["files"]} == {"main.py", "new file.py"}
     assert next(row for row in overview["files"] if row["path"] == "main.py")["worktree"] == "M"
 

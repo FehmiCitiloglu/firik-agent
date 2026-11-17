@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 import time
 
@@ -32,8 +33,9 @@ def test_terminal_streams_both_channels_and_retains_real_exit(workspace, python_
     assert any(item.get("params", {}).get("kind") == "terminal" for item in frames(output))
 
 
-def test_terminal_cancel_survives_renamed_project_and_reaps_process(workspace, python_command):
-    _, _, call, _, roots, _ = workspace
+@pytest.mark.parametrize("root_change", ["metadata"] if os.name == "nt" else ["rename", "metadata"])
+def test_terminal_cancel_survives_renamed_project_and_reaps_process(workspace, python_command, root_change):
+    _, service, call, _, roots, _ = workspace
     root = roots["p1"]
     script = root / "cancel.py"
     script.write_text("import time\nfrom pathlib import Path\nprint('ready',flush=True)\ntime.sleep(2)\nPath('must-not-exist').touch()\n")
@@ -41,14 +43,29 @@ def test_terminal_cancel_survives_renamed_project_and_reaps_process(workspace, p
     eventually(lambda: "ready" in commands(call)[0]["stdout"])
     assert "error" in call("terminal.cancel", {"project_id": "p2", "command_id": row["command_id"]})
     moved = root.with_name("renamed-project")
-    root.rename(moved)
+    if root_change == "rename":
+        root.rename(moved)
+        active_root = moved
+    else:
+        # Windows locks a running process's cwd. Make the saved project root
+        # unavailable without moving that directory while the process runs.
+        project = service.projects.db.get_project("p1")
+        project.local_path = str(moved)
+        service.projects.db.update_project(project)
+        active_root = root
     try:
+        unavailable = call("terminal.start", {"project_id": "p1", "command": "echo unavailable"})
+        assert unavailable["error"]["code"] == -32004
         assert call("terminal.cancel", {"project_id": "p1", "command_id": row["command_id"]})["result"]["ok"]
         eventually(lambda: commands(call)[0]["status"] == "cancelled")
         time.sleep(.1)
-        assert not (moved / "must-not-exist").exists()
+        assert not (active_root / "must-not-exist").exists()
     finally:
-        moved.rename(root)
+        if root_change == "rename":
+            moved.rename(root)
+        else:
+            project.local_path = str(root)
+            service.projects.db.update_project(project)
 
 
 def test_terminal_enforces_scope_permissions_and_action_policy(workspace, python_command):
